@@ -12,19 +12,27 @@
 #include "debug/rsl_shadow.h"
 #include "debug/rsl_trace.h"
 #include "game/vcs_display.h"
+#include "game/vcs_driveby.h"
 #include "game/vcs_framerate.h"
 #include "game/vcs_movie.h"
 #include "game/vcs_input.h"
 #include "game/vcs_volume.h"
+#include "game/vcs_world_detail.h"
+#include "game/vcs_script_fixes.h"
 #include "game/vcs_script_timing.h"
+#include "game/vcs_effects_timing.h"
+#include "game/vcs_particle_timing.h"
 #include "game/vcs_physics_timing.h"
+#include "game/vcs_music_timing.h"
 #include "game/vcs_inflate.h"
 #include "game/vcs_sound.h"
 #include "game/vcs_stream.h"
 #include "game/vcs_aim.h"
 #include "game/vcs_carcam.h"
 #include "game/vcs_freecam.h"
+#include "game/vcs_frontend.h"
 #include "game/vcs_hud.h"
+#include "game/vcs_prompts.h"
 #include "game/vcs_rsl_native.h"
 #include "game/vcs_rsl_world.h"
 #include "ps2_runtime.h"
@@ -1099,8 +1107,11 @@ namespace
         vcs::input::holdInBackground(runtime);      // paused while the window is in the background (game/vcs_input.h)
         vcs::trainer::onGameFrame(rdram);           // the trainer's actions and held toggles (game/vcs_trainer.h)
         vcs::volume::onGameFrame(rdram);            // the music / effects levels and the pause menu's (game/vcs_volume.h)
+        vcs::world::onGameFrame(rdram);             // density, draw distance and their guards (game/vcs_world_detail.h)
         vcs::gameinfo::onGameFrame(rdram);          // the F3 game-state panel's snapshot (debug/game_info.h)
         vcs::onFrameKick();                         // the HUD context ends (game/vcs_hud.h)
+        vcs::frontend::onFrameKick();               // the pause menu's drawing is over (game/vcs_frontend.h)
+        vcs::prompts::onFrameKick(rdram);           // the button prompts' glyphs to the renderer (game/vcs_prompts.h)
         vcs::rsltrace::onFrameKick(rdram);          // VCS_TRACE_RSL (debug/rsl_trace.h)
         vcs::rslshadow::onFrameKick(rdram);         // VCS_RSL_SHADOW (debug/rsl_shadow.h)
         vcs::rslworld::onFrameKick();               // world / model draws from RSL calls (game/vcs_rsl_world.h)
@@ -1178,12 +1189,20 @@ namespace
         runtime.replaceFunction(0x002723E8u, &markFrameKick);
         vcs::installDisplayHooks(runtime); // widescreen (settings menu)
         vcs::installHudHooks(runtime);     // 2D at the RenderWare level
+        vcs::frontend::install(runtime);   // the pause menu with Enter / Escape and the mouse (game/vcs_frontend.h)
+        vcs::prompts::install(runtime);    // button prompts by device (game/vcs_prompts.h; chains onto the 2D hooks above)
         vcs::freecam::install(runtime);    // the trainer's free camera (game/vcs_freecam.h)
         vcs::aim::install(runtime);        // free aim with the mouse / right stick (game/vcs_aim.h)
         vcs::carcam::install(runtime);     // the mouse on the camera behind a vehicle (game/vcs_carcam.h)
+        vcs::world::install(runtime);      // density and draw distance (game/vcs_world_detail.h)
+        vcs::driveby::install(runtime);    // the NPC drive-by's fire rate (game/vcs_driveby.h)
         vcs::installFrameRateHooks(runtime); // 30 / 60 fps (game/vcs_framerate.h)
         vcs::installScriptTimingHooks(runtime); // per-frame mission meters on the time step (game/vcs_script_timing.h)
         vcs::installPhysicsTimingHooks(runtime); // per-frame vehicle pushes on the time step (game/vcs_physics_timing.h)
+        vcs::installMusicTimingHooks(runtime);   // the radio off the air on the time step (game/vcs_music_timing.h)
+        vcs::installParticleTimingHooks(runtime); // particle fades and emitters on the time step (game/vcs_particle_timing.h)
+        vcs::installEffectsTimingHooks(runtime);  // lightning, clouds, shake ... at 30 a second (game/vcs_effects_timing.h)
+        vcs::installScriptFixHooks(runtime); // mission scripts stuck above 30 fps (game/vcs_script_fixes.h)
         vcs::installMovieHooks(runtime);     // STINGS / INTRO played natively (game/vcs_movie.h)
         const bool stream = vcs::installStreamHooks(runtime); // disc streaming without the IOP (game/vcs_stream.h)
         const bool sound = vcs::installSoundHooks(runtime);   // sound without the IOP (game/vcs_sound.h)

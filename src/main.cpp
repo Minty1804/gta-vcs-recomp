@@ -22,11 +22,15 @@
 #include "disc/iso_image.h"
 #include "disc/vcs_disc_id.h"
 #include "game/vcs_display.h"
+#include "game/vcs_driveby.h"
+#include "game/vcs_effects_timing.h"
 #include "game/vcs_framerate.h"
 #include "game/vcs_movie.h"
 #include "game/vcs_hud.h"
 #include "game/vcs_input.h"
+#include "game/vcs_prompts.h"
 #include "game/vcs_volume.h"
+#include "game/vcs_world_detail.h"
 #include "platform/platform.h"
 #include "render/presenter.h"
 #include "rhi/rhi.h"
@@ -38,6 +42,10 @@
 #include "util/sha1.h"
 
 #include "imgui.h"
+
+#if defined(__APPLE__)
+#include <mach-o/dyld.h> // _NSGetExecutablePath
+#endif
 
 #include <algorithm>
 #include <cfloat>
@@ -125,6 +133,17 @@ namespace
         const fs::path self = fs::read_symlink("/proc/self/exe", ec);
         if (!ec && !self.empty())
             return self.parent_path();
+#elif defined(__APPLE__)
+        uint32_t size = 0;
+        _NSGetExecutablePath(nullptr, &size);
+        std::string buffer(size, '\0');
+        if (_NSGetExecutablePath(buffer.data(), &size) == 0)
+        {
+            std::error_code ec;
+            const fs::path self = fs::canonical(fs::path(buffer.c_str()), ec);
+            if (!ec && !self.empty())
+                return self.parent_path();
+        }
 #endif
         return fs::current_path();
     }
@@ -137,6 +156,9 @@ namespace
 #if defined(_WIN32)
         if (const char *local = std::getenv("LOCALAPPDATA"))
             return fs::path(local) / "VCSRecomp";
+#elif defined(__APPLE__)
+        if (const char *home = std::getenv("HOME"); home && *home == '/')
+            return fs::path(home) / "Library/Application Support/VCSRecomp";
 #endif
         if (const char *xdg = std::getenv("XDG_DATA_HOME"); xdg && *xdg == '/') // absolute only (the XDG spec)
             return fs::path(xdg) / "VCSRecomp";
@@ -213,6 +235,14 @@ namespace
         }
     }
 
+    // Display > Cutscene black bars: always on at 4:3 (the PS2's picture; the menu greys the setting out), the player's
+    // choice in widescreen. "Match window" with a 4:3 window counts as 4:3.
+    bool cutsceneBarsLocked() { return g_appliedAspect < 4.0f / 3.0f + 0.01f; }
+    void applyCutsceneBars()
+    {
+        vcs::setCutsceneBars(cutsceneBarsLocked() || settings::value("display.cutscene_bars") != 0);
+    }
+
     // Display aspect: the presenter's ratio, the game camera's Hor+ widening and the HUD squeeze (game/vcs_display.h).
     void applyAspect()
     {
@@ -223,7 +253,9 @@ namespace
         gsHwSetAspectWidening(aspect / (4.0f / 3.0f)); // post effects keep their 4:3 proportions
         const int hud = settings::value("display.hud");
         gsHwSetHudSqueeze(hud != 1 ? (4.0f / 3.0f) / aspect : 1.0f);
+        vcs::setHudSqueeze(hud != 1 ? (4.0f / 3.0f) / aspect : 1.0f); // the scope mask's bars (game/vcs_hud.h)
         vcs::setHudAnchoring(hud == 2); // per-element placement (game/vcs_hud.h)
+        applyCutsceneBars();
         std::fprintf(stderr, "[settings] display aspect %.3f, HUD %s\n", aspect, hud == 0 ? "4:3" : hud == 2 ? "screen edges" : "stretched");
     }
 
@@ -298,12 +330,17 @@ namespace
         const char *key;
         int value;
     };
-    const Preset kEnhanced[] = {{"display.aspect", 0},   {"display.hud", 2},    {"display.scale", 0},
-                                {"display.msaa", 4},     {"display.aniso", 16}, {"display.timing", 1},
-                                {"display.fps", vcs::kCapRefresh}, {"display.vsync", 0}};
-    const Preset kLight[] = {{"display.aspect", 0}, {"display.hud", 2},    {"display.scale", 1},  {"display.msaa", 1},
-                             {"display.aniso", 4},  {"display.timing", 1}, {"display.fps", 60}, {"display.vsync", 0}};
-    const char *const kPresetKeys[] = {"display.aspect", "display.hud", "display.scale", "display.msaa",
+    // Vertical sync's default: On on macOS (the user's choice, 2026-11-13; DECISIONS.md), Off elsewhere. The presets
+    // that set it keep to it. (An Enhanced preset was removed on 2026-11-14, the user's choice; DECISIONS.md.)
+#if defined(__APPLE__)
+    constexpr int kVsyncDefault = 1;
+#else
+    constexpr int kVsyncDefault = 0;
+#endif
+    // Balanced (until 2026-11-14 "Widescreen, light" at 1x; the user asked for the name and 2x).
+    const Preset kBalanced[] = {{"display.aspect", 0}, {"display.hud", 2},    {"display.scale", 2},  {"display.msaa", 1},
+                                {"display.aniso", 4},  {"display.timing", 1}, {"display.fps", 60}, {"display.vsync", kVsyncDefault}};
+    const char *const kPresetKeys[] = {"display.aspect", "display.hud", "display.cutscene_bars", "display.scale", "display.msaa",
                                        "display.aniso",  "display.timing", "display.fps", "display.vsync"};
 
     template <size_t N> void applyPreset(const char *name, const Preset (&values)[N])
@@ -381,28 +418,16 @@ namespace
         settings::add(s);
 
         s = {};
-        s.key = "presets.enhanced";
+        s.key = "presets.balanced";
         s.page = "Display";
         s.section = "Presets";
-        s.label = "Enhanced";
-        s.help = "Widescreen in the window's shape with the HUD at the screen edges, rendered at the window's resolution, "
-                 "4x anti-aliasing, 16x texture filtering and frame-rate independent timing at the display's refresh rate. "
-                 "Needs a reasonably modern graphics card; resolution, anti-aliasing and timing apply after a restart.";
+        s.label = "Balanced";
+        s.help = "Widescreen in the window's shape with the HUD at the screen edges, 60 fps with frame-rate independent "
+                 "timing, twice the original resolution, no anti-aliasing, 4x texture filtering. Resolution and timing "
+                 "apply after a restart.";
         s.type = Type::Action;
         s.button = "Apply";
-        s.onChange = [](int) { applyPreset("Enhanced", kEnhanced); };
-        settings::add(s);
-
-        s = {};
-        s.key = "presets.light";
-        s.page = "Display";
-        s.section = "Presets";
-        s.label = "Widescreen, light";
-        s.help = "Widescreen and 60 fps for older PCs and integrated graphics: the original resolution, no anti-aliasing, "
-                 "4x texture filtering. Resolution and timing apply after a restart.";
-        s.type = Type::Action;
-        s.button = "Apply";
-        s.onChange = [](int) { applyPreset("Widescreen, light", kLight); };
+        s.onChange = [](int) { applyPreset("Balanced", kBalanced); };
         settings::add(s);
 
         s = {};
@@ -414,7 +439,7 @@ namespace
                  "and Alt+Tab are instant). Alt+Enter switches too.";
         s.type = Type::Choice;
         s.choices = {{"Windowed", 0}, {"Full screen", 1}};
-        s.defaultValue = 0;
+        s.defaultValue = 1; // full screen since 2026-11-13 (the user's choice); test runs pin VCS_FULLSCREEN=0
         s.env = "VCS_FULLSCREEN";
         s.onChange = [](int v) { platform::setFullscreen(v != 0); };
         s.read = [] { return platform::fullscreen() ? 1 : 0; };
@@ -447,6 +472,22 @@ namespace
         s.env = "VCS_HUD";
         s.defaultValue = 0;
         s.onChange = [](int) { applyAspect(); };
+        settings::add(s);
+
+        s = {};
+        s.key = "display.cutscene_bars";
+        s.page = "Display";
+        s.section = "Screen";
+        s.label = "Cutscene black bars";
+        s.help = "The black bars above and below cutscenes, as on the PS2. Off shows the whole picture in widescreen "
+                 "(the PS2's own widescreen mode had none).";
+        s.type = Type::Toggle;
+        s.defaultValue = 1;
+        s.env = "VCS_CUTSCENE_BARS";
+        s.onChange = [](int) { applyCutsceneBars(); };
+        s.locked = [] { return cutsceneBarsLocked(); };
+        s.lockedValue = 1;
+        s.lockedNote = "Always on at 4:3, as on the PS2: choose a widescreen aspect ratio to change it.";
         settings::add(s);
 
         s = {};
@@ -563,7 +604,7 @@ namespace
                  "delay, and for G-Sync / FreeSync monitors (with a cap a few fps below the refresh rate).";
         s.type = Type::Choice;
         s.choices = {{"Off", 0}, {"On", 1}, {"Off, allow tearing (VRR)", 2}};
-        s.defaultValue = 0;
+        s.defaultValue = kVsyncDefault;
         s.env = "VCS_VSYNC";
         s.onChange = [](int v) { present::setPresentMode(v); };
         settings::add(s);
@@ -634,6 +675,17 @@ namespace
         s.onChange = [](int v) { setEnv("PS2X_HW_ANISO", std::to_string(v)); };
         settings::add(s);
 
+        // The reflection on car paint (docs/game-internals.md 6g): the PS2 samples the frame once per spot, so a panel
+        // flickers as the camera moves - the same at every resolution, but plainer to see when the rest of the picture is
+        // sharp. Always Auto: the original at 1x, Smooth above it - no setting (the user's choice, DECISIONS.md
+        // 2026-11-06). VCS_REFLECTIONS=0|1|2 (Original / Smooth / Auto) picks for one run, for comparisons.
+        {
+            int mode = 2;
+            if (const char *e = std::getenv("VCS_REFLECTIONS"); e && *e >= '0' && *e <= '2' && !e[1])
+                mode = *e - '0';
+            vcs::setReflectionFilter(mode);
+        }
+
         // The graphics API, when the build has more than one (Windows with VCS_RHI_VULKAN); VCS_RHI=d3d11|vulkan|null
         // chooses for one run (render/presenter.h).
         s = {};
@@ -643,7 +695,7 @@ namespace
         s.label = "Graphics API";
         s.help = "The graphics API the game draws with. D3D11 is the reference on Windows; Vulkan is the one on Linux.";
         s.type = Type::Choice;
-        for (rhi::Backend b : {rhi::Backend::D3D11, rhi::Backend::Vulkan})
+        for (rhi::Backend b : {rhi::Backend::D3D11, rhi::Backend::Vulkan, rhi::Backend::Metal})
             if (rhi::backendBuilt(b))
                 s.choices.push_back({rhi::backendName(b), static_cast<int>(b)});
         s.defaultValue = static_cast<int>(rhi::defaultBackend());
@@ -652,7 +704,34 @@ namespace
         if (s.choices.size() > 1)
             settings::add(s);
 
+        // The graphics card, on a PC with more than one (GitHub issue 112: a laptop started the game on its integrated
+        // chip): the cards this PC has, by name, the fastest first and the default. vcs.ini keeps the card's id (rhi::Gpu);
+        // a card no longer there falls back to the fastest. The log's "[rhi] graphics cards" line names them with their
+        // ids (VCS_GPU=<id> for one run), "[present] ... on ..." the one in use.
+        if (const std::vector<rhi::Gpu> gpus = rhi::listGpus(); !gpus.empty())
+        {
+            s = {};
+            s.key = "display.gpu";
+            s.page = "Graphics";
+            s.section = "Renderer";
+            s.label = "Graphics card";
+            s.help = "The graphics card the game draws with, on a PC with more than one (most gaming laptops). The first "
+                     "is the fastest, and the default.";
+            s.type = Type::Choice;
+            for (const rhi::Gpu &g : gpus)
+                s.choices.push_back({g.name + (g.integrated ? " (integrated)" : ""), g.id});
+            s.defaultValue = gpus[0].id;
+            s.apply = Apply::Restart;
+            s.env = "VCS_GPU";
+            s.onChange = [](int v) { present::setGpu(v); };
+            settings::add(s);
+        }
+
         vcs::input::registerSettings(); // the Keyboard & mouse and Gamepad pages (game/vcs_input.h)
+        vcs::prompts::registerSettings(); // the Enhancements page: button prompts by device (game/vcs_prompts.h)
+        vcs::world::registerSettings();   // Enhancements > World: density, draw distance (game/vcs_world_detail.h)
+        vcs::driveby::registerSettings(); // Enhancements > Combat: drive-by fire rate (game/vcs_driveby.h)
+        vcs::registerEffectsSettings();   // Enhancements > Effects: Reduce Post Processing Effects (game/vcs_effects_timing.h)
 
         s = {};
         s.key = "graphics.perf_overlay";
@@ -784,8 +863,10 @@ int main(int argc, char *argv[])
             setEnv("PS2X_GS", "hw");
         registerSettings();
         settings::load(exeDirectory() / "vcs.ini");
-        if (ps2control::hiddenMode())
-            settings::keepFile(); // a test run never changes the player's settings
+        // a test run never changes the player's settings: hidden, or shown (VCS_KEEP_SETTINGS=1 from
+        // toolchain.test_window when VCS_TEST_VISIBLE=1)
+        if (const char *keep = std::getenv("VCS_KEEP_SETTINGS"); ps2control::hiddenMode() || (keep && keep[0] == '1'))
+            settings::keepFile();
         settings::applyAll();
         restoreWindowPlacement();
         const fs::path isoPath = locateIso(argc, argv);
@@ -848,6 +929,7 @@ int main(int argc, char *argv[])
                                         ps2control::setGameInputBlocked(ui::settingsMenuBlocksInput() || ui::trainerMenuBlocksInput());
                                         vcs::input::onHostFrame(ui::settingsMenuOpen() || ui::trainerMenuBlocksInput());
                                         vcs::volume::onHostFrame();
+                                        vcs::prompts::onHostFrame();
                                         drawFrameRateCounter();
                                     },
                                     nullptr, nullptr);

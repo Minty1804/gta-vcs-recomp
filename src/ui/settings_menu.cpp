@@ -184,6 +184,8 @@ namespace ui
             if (settings::overridden(s.key))
                 text += " Locked: the environment variable " + s.env + " sets it for this run (tools/run.py sets some for "
                         "test runs); start the game without it to change it here.";
+            else if (s.locked && s.locked())
+                text += " " + s.lockedNote;
             if (s.type == settings::Type::Key && s.optional)
                 text += " Click, then press a key or mouse button or turn the wheel (Esc: cancel). Right-click: clear.";
             return text;
@@ -251,14 +253,18 @@ namespace ui
         void row(const settings::Spec &s, std::string &focusedNow)
         {
             const ImGuiStyle &style = ImGui::GetStyle();
-            const bool locked = settings::overridden(s.key);
-            int v = settings::value(s.key);
+            const bool byEnv = settings::overridden(s.key);
+            const bool bySetting = !byEnv && s.locked && s.locked(); // another setting decides it for now
+            const bool locked = byEnv || bySetting;
+            int v = bySetting ? s.lockedValue : settings::value(s.key);
             ImGui::TableNextRow(ImGuiTableRowFlags_None, ImGui::GetFrameHeight() + style.CellPadding.y * 2.0f);
             ImGui::TableNextColumn();
             const float top = ImGui::GetCursorScreenPos().y - style.CellPadding.y;
             ImGui::AlignTextToFramePadding();
-            if (locked) // greyed out with the reason beside it, so a click that does nothing doesn't look like a bug
+            if (byEnv) // greyed out with the reason beside it, so a click that does nothing doesn't look like a bug
                 ImGui::TextDisabled("%s (%s)", s.label.c_str(), s.env.c_str());
+            else if (bySetting) // the reason is in the help line (lockedNote)
+                ImGui::TextDisabled("%s", s.label.c_str());
             else
                 ImGui::TextUnformatted(s.label.c_str());
             if (restartPending(s))
@@ -509,14 +515,27 @@ namespace ui
                     ImGui::SetScrollY(g_scrollTo * ImGui::GetScrollMaxY());
                     g_scrollTo = -1.0f;
                 }
+                // the label column: 45% of the width, wider (to 60%) when a label of this page needs it - the same on
+                // every section of the page, so their controls line up
+                float labelShare = 0.45f;
+                {
+                    float widest = 0.0f;
+                    for (const settings::Spec &s : settings::all())
+                        if (s.page == page && !s.hidden)
+                            widest = std::max(widest, ImGui::CalcTextSize(s.label.c_str()).x);
+                    const float avail = ImGui::GetContentRegionAvail().x;
+                    if (avail > 0.0f)
+                        labelShare = std::clamp((widest + ImGui::GetStyle().CellPadding.x * 2.0f + ImGui::GetFontSize()) / avail,
+                                                0.45f, 0.6f);
+                }
                 for (const std::string &section : sections(page))
                 {
                     if (!section.empty())
                         ImGui::SeparatorText(section.c_str());
                     if (ImGui::BeginTable(section.c_str(), 2, ImGuiTableFlags_SizingStretchProp))
                     {
-                        ImGui::TableSetupColumn("label", ImGuiTableColumnFlags_WidthStretch, 0.45f);
-                        ImGui::TableSetupColumn("value", ImGuiTableColumnFlags_WidthStretch, 0.55f);
+                        ImGui::TableSetupColumn("label", ImGuiTableColumnFlags_WidthStretch, labelShare);
+                        ImGui::TableSetupColumn("value", ImGuiTableColumnFlags_WidthStretch, 1.0f - labelShare);
                         for (const settings::Spec &s : settings::all())
                             if (s.page == page && s.section == section && !s.hidden)
                                 row(s, focusedNow);

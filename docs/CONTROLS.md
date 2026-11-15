@@ -37,6 +37,10 @@ Keypad Enter is Enter here). Every action has two slots on the Keyboard page.
 | Look behind | middle mouse button, Keypad 1 | R3 |
 | Sniper zoom in / out (scopes, camera, binoculars) | Page Up, Z / Page Down, X; mouse wheel | Square / Cross |
 
+The wheel bound to Sniper zoom in / out zooms in steps that the scope eases (as the unbound wheel does), not as short
+Square / Cross taps. Whenever the wheel's meaning changes (into or out of a scope, a vehicle, the menus), notches still
+queued are dropped, so zoom notches scrolled just before leaving the scope don't come out as weapon changes.
+
 **Fighting** (VCS's unarmed combat: fists in hand and Target / lock on held - locked on to a ped, or ready to). These
 keys win over the on-foot ones meanwhile (Space kicks instead of jumping, Shift blocks instead of sprinting); let go of
 Target and they are the on-foot keys again.
@@ -102,7 +106,7 @@ everywhere but the menus. The fighting keys may share with the on-foot keys (the
 | L2 | 1, Z | LT |
 | R2 | 3, X | RT |
 | L3 / R3 | C / V | stick clicks |
-| Start | Enter | Start / Menu |
+| Start (pause menu) | Escape | Start / Menu |
 | Select | Backspace | Back / View |
 | Walk (hold) | - (unbound) | - (a small stick tilt) |
 
@@ -118,7 +122,7 @@ foot they keep their bindings above (W walks, Space jumps):
 | Lean back / nose up | Keypad 5 | Left stick down |
 
 Steering stays on A / D (the left stick); Shift still accelerates and E / the right mouse button is still R1. The
-game's own PS2 controls apply on top. Start or Cross (Enter / Shift) skips the intro movie; the Rockstar logos before
+game's own PS2 controls apply on top. Start or Cross (Escape / Shift) skips the intro movie; the Rockstar logos before
 it can't be skipped, as on the PS2 (Game > Skip intro movies skips both). The test tools use this scheme
 (`VCS_KEYS=0`, set by `toolchain.test_keys`).
 
@@ -142,6 +146,8 @@ game-internals.md 12c):
   is added. Letting go leaves the camera looking where the aim did. The camera moves into the aim in 0.1 s and out of
   it in 0.2 s, with every gun (the game blends 0.35-0.4 s, and cuts out of the aim with the guns that stand Vic still;
   its other camera changes keep their blends and cuts).
+- Sprinting the game doesn't aim: with the button held the mouse turns the camera as without it, and the aim starts
+  when Vic stops sprinting.
 - When the gun runs dry while aiming the game puts the fists in Vic's hand: with the button still held nothing
   locks on until it is let go, and choosing another gun (the wheel) aims again at once.
 - Fists, melee weapons, thrown weapons and the scoped guns (sniper rifles, rocket launcher, camera, binoculars) keep
@@ -165,8 +171,10 @@ game-internals.md 12c):
 
 **In the scopes** (sniper rifles, rocket launcher, M16 view, camera, binoculars) the mouse turns the view itself, 1:1,
 with Mouse camera on (zoomed in it turns slower). **Mouse wheel** (Keyboard page, on by default): on foot down is the
-next weapon and up the previous one (R2 / L2, one per notch); in the sniper scope, the camera and binoculars it zooms.
-It does nothing of this while a control is bound to the wheel, while driving or while aiming.
+next weapon and up the previous one (R2 / L2, one per notch); in the sniper scope, the camera and binoculars it zooms;
+while driving down is the next radio station and up the one before (the game's own L1 steps forwards only: a step back
+is the station written two back and L1 - game-internals.md 12a; nothing happens while the radio plays an announcement,
+as with L1). It does nothing of this while a control is bound to the wheel or while aiming.
 
 ## Keyboard page
 
@@ -184,11 +192,14 @@ It does nothing of this while a control is bound to the wheel, while driving or 
   in the menus and when the window is in the background). **On foot** it turns the camera itself, as in a PC game:
   every movement turns it by the same angle at any speed and frame rate (100%: 400 counts - half an inch at 800 DPI -
   a radian), moving the mouse forward looks up. Looking up / down goes through the game's own stick pitch, which has a
-  top speed (about 1.5 rad/s at 100%); a faster movement still arrives, a few frames later. **In the scopes and free
+  top speed (about 1.5 rad/s at 100%); a faster movement still arrives, a few frames later. Turned toward a wall, the
+  camera is pulled in toward the player, as the gamepad's is (`VCS_FOOT_WALL=0`: it stops at the wall's edge, as
+  before 2026-11-11). **In the scopes and free
   aim** it turns the view itself too (above). **Behind a car, bike or boat** it turns the camera itself as well, and
   while the mouse moves the camera stays where it is put - the car neither drags it along nor pulls it back; **Car
   camera return** (1.5 s; 0.5-5 s or Never) after the mouse stops it eases back behind the vehicle (about 2 s) and the
-  game's camera carries on. The gamepad's right stick (or the camera keys) takes it back at once, held or not.
+  game's camera carries on. Never while a fire truck sprays water: its hose aims where the camera looks, so the camera
+  stays where the mouse left it until the water has stopped. The gamepad's right stick (or the camera keys) takes it back at once, held or not.
   **Car camera sensitivity** (100%, 10-400%) scales its turn on top of Mouse sensitivity.
   `VCS_CARCAM=0` puts the old way back (the mouse as the right stick). **In the other vehicle
   cameras and locked on** the mouse's speed becomes the right stick's tilt (1,500 counts a second is full tilt), so very
@@ -205,6 +216,41 @@ It does nothing of this while a control is bound to the wheel, while driving or 
   give R1 the LT and move L2 to another button).
 - **Vibration**: the DualShock 2's motors on the gamepad's rumble, 0-200% (100% as on the PS2, 0% off). The game
   drives them itself (crashes, explosions, gunfire; game-internals.md 12a).
+
+## The game's pause menu
+
+Escape (Start) opens it - also the Save menu a safehouse opens - and it works as a PC game's menu (src/game/vcs_frontend.cpp,
+game-internals.md 6m; before 2026-11-05 Start was Enter and the menu took the pad's buttons only):
+- **Keyboard**: the arrow keys move, **Enter** selects (Cross), **Escape** goes back (Triangle) - on the tab bar
+  (map / brief / game / stats / controls / audio / display) that closes the menu. Shift / F still work as Cross /
+  Triangle, and Start's own key (Escape unless rebound) is the menu's back while it is up. In the PS2 scheme Enter
+  does nothing outside it; in the PC scheme Escape is the fixed pause key and the menu's own Enter / Escape win over
+  the PC menu keys while it is up (Space and Backspace still select / go back).
+- **Mouse**: the cursor shows while the menu is up. Pointing at a tab or an item moves the game's highlight there (a tab
+  shows its page, as the D-pad does); a click selects it - a tab opens its page, an item of the page under the tab bar
+  opens that page and selects it (Game > Load Game in one click). The **right button** goes back (closes the menu on
+  the tab bar).
+  - **Sliders** (Audio > Music / SFX volume, Display > Brightness): a click on a bar sets the level, holding the button
+    and moving drags it, the wheel turns it a step a notch; a click on the label only moves the highlight there.
+  - **Choices** (Speaker setup, Radio station, Subtitles, Radar, HUD, Widescreen, Trails, the Controls page): a click
+    turns to the next one, the wheel turns either way (up: next).
+  - **Map**: drag it with the left button (it stays in the range the D-pad scrolls it); the wheel zooms (up: in, as R1).
+    Cross (Enter) shows the legend, Square (Space) places the target as on the PS2.
+  - **Brief, Stats**: the wheel scrolls.
+- **Gamepad**: unchanged (Start opens and closes, the D-pad / left stick move, Cross selects, Triangle goes back).
+- What the menu takes stays out of the game: the mouse buttons and the wheel aren't Circle / R1 / weapon changes while
+  it is up, nor while still held after it closed (a click on Load Game doesn't punch); Escape held from opening it
+  isn't a back. Any key or gamepad button pressed while the mouse is on its way to an item takes over.
+- It all goes through the game's own pad: the menu sees D-pad steps, Cross and Triangle, so it sounds, highlights and
+  switches pages as on the PS2. `VCS_MENU_MOUSE=0` leaves the mouse out (Enter / Escape stay).
+  `python tools/menu_check.py` checks all of it.
+
+## Button prompts
+
+F2 > Enhancements > **Button prompts** (default Original): the controls the game's help text and pause menu show.
+Automatic follows the device used last - the keys and mouse buttons bound on the Keyboard page, or the gamepad's own
+buttons (PlayStation or Xbox glyphs, from the pad's maker) as mapped on the Gamepad page. PlayStation, Xbox and
+Keyboard & mouse fix a set; Original is the PS2's text. game-internals.md 6n, DECISIONS.md 2026-11-07.
 
 ## Menus
 
@@ -230,7 +276,7 @@ the settings menu waits for a key to bind. `VCS_SCREENSHOT_DIR=<dir>` saves them
 ## Window
 
 Alt+Enter switches between full screen and the window (Display > Window mode; saved in vcs.ini). Enter with Alt
-held is not Start. Game > **In the background** decides what happens when another window is in front: keep running
+held is not Cross in the pause menu (nor a binding). Game > **In the background** decides what happens when another window is in front: keep running
 (as before), mute, or pause.
 
 ## Debug keys
@@ -238,7 +284,7 @@ held is not Start. Game > **In the background** decides what happens when anothe
 |---|---|
 | F3 | performance overlay: game fps and frame-time percentiles, EE thread time per phase (game / render / IOP / wait), GS and DMA counters, host frame and GPU submit times, audio buffer, and a frame-time graph; under it (beside it on a short screen) the game's state: the player's position, heading, state, health, armour, money and weapons, the vehicle (model, position, heading, health, speed), the camera (mode, position, heading, pitch, FOV), the clock, area, world level, game time, time step, pauses, pool use and the running scripts (the mission's with its IP). The same lines answer `python tools/gamectl.py gameinfo` |
 | F4 | start / stop recording one CSV row per game frame to `perf_<date>_<time>.csv` (working directory); summarise with `python tools/perf_report.py <file>` |
-| F12 | (hardware renderer) list the next frame's draws on stderr and dump its render targets |
+| F12 | (hardware renderer, only with `PS2X_HW_DUMP_KEY=1`: F12 is Steam's and Bandicam's key) list the next frame's draws on stderr and dump its render targets |
 
 ## Test runs without a window
 `python tools/run.py 600 test --hidden` starts the game with no window on the desktop, no sound, and the physical

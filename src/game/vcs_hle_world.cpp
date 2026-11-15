@@ -18,7 +18,11 @@
 #include "game/vcs_hle_world.h"
 
 #include <algorithm>
+#if defined(USE_SSE2NEON) // arm64 (macOS): the SSE code through NEON
+#include "sse2neon.h"
+#else
 #include <immintrin.h>
+#endif
 #include <chrono>
 #include <cfenv>
 #include <cmath>
@@ -34,24 +38,10 @@ namespace
 {
     constexpr uint32_t kQwords = 1024u; // VU1 data memory
 
-    // The rounding mode in MXCSR alone (FE_* values): fegetround / fesetround also read and reprogram the x87
-    // unit, unused on x64 - their calls around every native draw were ~3% of the render worker.
-    int sseRounding()
-    {
-        switch ((_mm_getcsr() >> 13) & 3u)
-        {
-        case 0u: return FE_TONEAREST;
-        case 1u: return FE_DOWNWARD;
-        case 2u: return FE_UPWARD;
-        default: return FE_TOWARDZERO;
-        }
-    }
-
-    void setSseRounding(int mode)
-    {
-        const unsigned bits = mode == FE_DOWNWARD ? 1u : mode == FE_UPWARD ? 2u : mode == FE_TOWARDZERO ? 3u : 0u;
-        _mm_setcsr((_mm_getcsr() & ~0x6000u) | (bits << 13));
-    }
+    // The rounding mode in MXCSR / FPCR alone (FE_* values): fegetround / fesetround also read and reprogram the
+    // x87 unit, unused on x64 - their calls around every native draw were ~3% of the render worker.
+    int sseRounding() { return ps2x::fpRounding(); }
+    void setSseRounding(int mode) { ps2x::setFpRounding(mode); }
 
     struct Vec4
     {
@@ -2371,16 +2361,30 @@ namespace
             ++g_nativeEnv.clipped;
             return true;
         }
-        if (!envKicks(vu, c.top, kicks) || !drawNativeRigid(c))
+        // Pass 1 goes out as the reproduction's own kick (tag 49), like pass 2: both from the same VU-exact XYZF2, so pass
+        // 2's depth test (GEQUAL) passes over pass 1 everywhere, as on the PS2. Pass 1 drawn natively (the GPU's own
+        // transform; PS2X_HLE_ENV_PASS1=native, as until 2026-11-06) puts some vertices a Z unit or 1/16 pixel off: the
+        // reflection failed its depth test in bands - diagonal stripes and moiré on car paint that crawled with the camera
+        // (game-internals.md 6g)
+        static const bool nativePass1 = [] {
+            const char *e = std::getenv("PS2X_HLE_ENV_PASS1");
+            return e && std::strcmp(e, "native") == 0;
+        }();
+        if (!envKicks(vu, c.top, kicks) || (nativePass1 && !drawNativeRigid(c)))
         {
             ++g_nativeEnv.fallback;
             return false;
+        }
+        if (!nativePass1)
+        {
+            const int32_t variant = 698; // what drawNativeRigid leaves at 52.z for an unclipped packet (the VU's own write)
+            std::memcpy(vu + 52u * 16u + 8u, &variant, 4);
         }
         const int rounding = sseRounding();
         setSseRounding(g_callerRounding);
         gsSetPath1Producer(c.startPc, true); // draw sources: a C++ reproduction sends these
         gsSetCurrentGifPath(1u);
-        for (size_t i = 1; i < kicks.size(); ++i)
+        for (size_t i = nativePass1 ? 1 : 0; i < kicks.size(); ++i)
             sendKick(kicks[i]);
         gsSetCurrentGifPath(3u);
         setSseRounding(rounding);

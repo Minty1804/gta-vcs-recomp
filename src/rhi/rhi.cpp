@@ -2,6 +2,7 @@
 #include "rhi/rhi.h"
 
 #include <cctype>
+#include <initializer_list>
 #include <cstring>
 
 namespace rhi
@@ -13,6 +14,7 @@ namespace rhi
         case Backend::D3D11: return "D3D11";
         case Backend::Vulkan: return "Vulkan";
         case Backend::Null: return "null";
+        case Backend::Metal: return "Metal";
         }
         return "?";
     }
@@ -30,6 +32,8 @@ namespace rhi
             out = Backend::Vulkan;
         else if (std::strcmp(lower, "null") == 0)
             out = Backend::Null;
+        else if (std::strcmp(lower, "metal") == 0)
+            out = Backend::Metal;
         else
             return false;
         return true;
@@ -45,6 +49,9 @@ namespace rhi
 #if defined(VCS_HAVE_VULKAN)
         case Backend::Vulkan: return true;
 #endif
+#if defined(VCS_HAVE_METAL)
+        case Backend::Metal: return true;
+#endif
         case Backend::Null: return true;
         default: return false;
         }
@@ -54,10 +61,50 @@ namespace rhi
     {
 #if defined(VCS_HAVE_D3D11)
         return Backend::D3D11;
+#elif defined(VCS_HAVE_METAL)
+        return Backend::Metal;
 #elif defined(VCS_HAVE_VULKAN)
         return Backend::Vulkan;
 #else
         return Backend::Null;
+#endif
+    }
+
+    int gpuId(uint32_t vendorId, uint32_t deviceId, int ordinal)
+    {
+        // FNV-1a over the three numbers: stable across starts, builds and backends; positive (a settings choice value)
+        uint32_t h = 2166136261u;
+        for (uint32_t v : {vendorId, deviceId, static_cast<uint32_t>(ordinal)})
+            for (int i = 0; i < 4; ++i)
+                h = (h ^ ((v >> (8 * i)) & 0xffu)) * 16777619u;
+        const int id = static_cast<int>(h & 0x7fffffffu);
+        return id ? id : 1;
+    }
+
+    void numberGpus(std::vector<Gpu> &gpus)
+    {
+        for (size_t i = 0; i < gpus.size(); ++i)
+        {
+            int ordinal = 0;
+            for (size_t j = 0; j < i; ++j)
+                if (gpus[j].vendorId == gpus[i].vendorId && gpus[j].deviceId == gpus[i].deviceId)
+                    ++ordinal;
+            gpus[i].id = gpuId(gpus[i].vendorId, gpus[i].deviceId, ordinal);
+            if (ordinal)
+                gpus[i].name += " #" + std::to_string(ordinal + 1);
+        }
+    }
+
+    std::vector<Gpu> listGpus()
+    {
+#if defined(VCS_HAVE_D3D11)
+        return listD3D11Gpus();
+#elif defined(VCS_HAVE_METAL)
+        return listMetalGpus();
+#elif defined(VCS_HAVE_VULKAN)
+        return listVulkanGpus();
+#else
+        return {};
 #endif
     }
 
@@ -70,6 +117,9 @@ namespace rhi
 #endif
 #if defined(VCS_HAVE_VULKAN)
         case Backend::Vulkan: return createVulkanDevice(desc, error);
+#endif
+#if defined(VCS_HAVE_METAL)
+        case Backend::Metal: return createMetalDevice(desc, error);
 #endif
         case Backend::Null: return createNullDevice(desc, error);
         default: break;

@@ -1114,6 +1114,400 @@ named with "꞉". The launcher sets `PYTHONIOENCODING` / `PYTHONUTF8`, but runs 
 ignores every PYTHON* variable: stdout to the launcher's pipe was cp1252. `toolchain` now sets stdout / stderr to UTF-8
 (errors replaced) itself; `report.py` reads `doctor.py`'s output as UTF-8.
 
+## 2026-11-05 - The game's pause menu: Escape is Start, Enter selects, the mouse points and clicks (the user's request)
+The user asked for the in-game menu on Escape, Enter as select in it, the cursor shown and the menu usable with the
+mouse, the gamepad unchanged. "The in-game menu" is the game's own pause menu (the F2 settings menu already had the
+mouse, Escape and Enter): Start was Enter and the menu took only the pad's buttons, with the cursor captured.
+- **Start's default key is Escape** (Keyboard page, rebindable as before). Players who never changed Start get it with
+  the update (vcs.ini keeps changed keys only). Enter outside the menu is nothing now.
+- **In the menu, Enter = Cross and Escape = Triangle** (while held, pressed in the menu): Escape goes back a level and
+  closes the menu from the tab bar - the game's own Triangle does exactly that (FUN_003b5138), and it is a PC game's
+  Escape. Start (any page) would close it at once from deep in a save dialog; the gamepad's Start still does.
+- **The mouse plays the pad** rather than changing the menu's state: pointing walks the D-pad to the item (a search over
+  the items' own focus moves), a click is Cross / D-pad right / slider steps, the right button Triangle, the wheel L1 /
+  R1 on the map. So the game's sounds, page previews, wrap-arounds and save flow are its own, and nothing it keeps can
+  be left inconsistent. The cost: a step every other game frame (~70 ms at 30 fps for a far item). The map's pan is the
+  one direct write (+0xE4 / +0xE8, clamped to the range the D-pad reaches - past it the game draws the map wrong).
+- **Where items are** comes from their drawing (each item class's draw hooked; its Im2D primitives make its box), not
+  from their layout rects: those are wider than the text and overlap (the tabs' are 100 units wide, 53 apart). The
+  boxes are in the menu's 640x448 drawing, which fills the 4:3 area the frame shows the menu in; the cursor is mapped
+  there through the presenter's `fitRect`. (A 480x360 "shrink" applied on top of that at first pulled the hit areas
+  towards the middle of the screen - the player had to point a little off an item; game-internals.md 6m. The menu
+  check now moves the cursor in window pixels, through the same mapping as the real cursor.)
+- Would change: a menu page whose items can't be reached by focus moves (none seen) would need its own handling.
+
+## 2026-11-06 - Car reflections: Smooth above 1x by default, the PS2's sampling at 1x (the user's request)
+
+Players reported flickering car reflections (GitHub). The user thought this was the PS2's own behaviour made worse by
+the resolution, and asked for a fix that keeps the PS2's behaviour at its resolution. Found (game-internals.md 6g): the
+flicker is the PS2's. A flat panel shows one texel of a 128x128 map that the game samples from the frame with four
+bilinear taps per ~5 x 3.5 pixels, and the renderer reproduces that exactly at every resolution. Above 1x the rest of
+the picture is clean, so the panels' jumps stand out.
+
+- **The fix filters the map's source, not the effect's strength.** Toning the reflection down at high resolutions would
+  make the flashes fainter but no rarer, and the paint duller than the PS2's even when nothing moves. A tent over each
+  map texel's footprint keeps the reflection's average colour (the same strength, the same picture in a still frame)
+  and takes away the jumps: a texel's swing under sub-pixel motion falls ~2.7x.
+- **Always Auto, no setting** (the user's choice, the same day: a first build had "Car reflections: Auto / Original /
+  Smooth" on the Graphics page; the user asked to remove it and keep Auto). Original at 1x internal resolution - the
+  authentic picture - and Smooth above it, where the player has already chosen a cleaner picture than the PS2's. "1x"
+  goes by the frame's height: widescreen's 1x is wider, not finer. The internal resolution is the switch: 1x gives the
+  PS2's reflections. `VCS_REFLECTIONS=0|1|2` (Original / Smooth / Auto) picks for one run, for comparisons; an old
+  `graphics.reflections` line in vcs.ini is left alone and ignored.
+- **Not done:** a blend over time (the PS2 has none: the map is overwritten every frame). It would also lag reflections
+  behind the camera. Worth trying only if Smooth is not enough.
+- Would change: if players find Smooth too soft compared with the original's crispness, a narrower footprint (a box of
+  one texel instead of the tent over two) is the middle ground.
+
+## 2026-11-06 - The game's own widescreen option off for good; the cutscene bars a setting (the user's decision)
+
+The user noticed that the pause menu's Display > Widescreen (the PS2's own option) removes the cutscene black bars,
+and that it "runs counter to" F2's widescreen. They asked for everything it does to be found (game-internals.md 5a),
+and suggested keeping only F2's widescreen, with what is worth keeping as separate options.
+
+- **What it is**: the PS2's mode for a 16:9 TV that stretches the 640-wide picture. Vert- 16:9 3D (the same horizontal
+  view, the vertical cut), the HUD, text, pause map and radar blips 3/4 wide, the `_WIDE` menu layouts, wider scope
+  masks - and no cutscene letterbox. On a PC the picture is not stretched by the screen. F2's Hor+ view and the
+  renderer's HUD squeeze do the same job at any ratio, so with both on, everything is squeezed twice.
+- **Kept off, not offered**: only the bars are a real choice (a 4:3 TV had them, a widescreen TV didn't). The
+  preference is held at 0 at its setter (so a save that has it on can't turn it back on, the way the volume levels
+  are kept, 9c) and at the frame kick. The menu row is hidden rather than left locked: a row that shows Off and
+  ignores the D-pad looks broken (the user's choice between the two).
+- **Cutscene black bars: On / Off, default On** (the user's choice; offered with an Auto that followed the aspect
+  ratio): the PS2's 4:3 look in every ratio. At 16:9, On frames cutscenes at about 2.37:1; Off shows the whole
+  picture, as the PS2's widescreen mode did. It is in the Authentic preset's reset (On); Enhanced and Light leave it.
+- **Locked On at 4:3** (the user's request, same day): at 4:3 the bars are the original picture and Off has nothing
+  to show beyond it, so the setting is greyed out showing On, with "Always on at 4:3..." in its help. In widescreen
+  (16:10 and up; Match window when the window is wider than 4:3) it is the player's choice again. The saved value is
+  not changed by the lock: a player who chose Off at 16:9, went to 4:3 and back gets Off again. The registry got a
+  general `Spec::locked` / `lockedValue` / `lockedNote` for it (settings.h) - a setting another one decides.
+- The reference stays reachable (rule 1): `VCS_WIDESCREEN=game` is the game's own handling, `VCS_WIDESCREEN=1` forces
+  the PS2's mode, `VCS_HIDE_WIDESCREEN=0` keeps the row.
+- Would change: if a 4:3-display player wanted the anamorphic HUD for a TV that stretches (unlikely on a PC), the
+  preference could come back as an Advanced setting. The code is a switch away.
+
+## 2026-11-07 - Button prompts by device; an Enhancements page (the user's request)
+
+The user asked for a new F2 page, **Enhancements**, for settings that change how the game works rather than how it
+looks or is controlled, starting with button prompts for keyboard / mouse and Xbox pads that follow the device in use,
+built so that more glyph sets can be added. They asked for the investigation and a proposal first (game-internals.md
+6n), then approved it as proposed.
+
+- **Default Original** (authentic by default): the PS2's text, the game's own code; the hooks stay in but pass
+  through. Automatic is one choice away; PlayStation / Xbox / Keyboard & mouse fix a set.
+- **Glyphs follow the bindings, not fixed pictures**: the keyboard set shows the keys bound (the mouse button where one
+  is bound - attack, target -, the Driving keys for a vehicle's actions, Enter / Escape in the pause menu, the mouse
+  for the right stick while the mouse camera is on); the pad sets show the physical button the Gamepad page maps the
+  PS2 button to. A Nintendo or unknown pad shows Xbox glyphs until a set of its own is made (one glyph table in
+  vcs_glyph_art.cpp, one case in `specFor`).
+- **Drawn by code, no image files** (as the launcher's icons): no Sony / Microsoft artwork is shipped; the shapes are
+  generic (a dark disc with a coloured symbol or letter, pills for shoulders and triggers, keycaps, a mouse). The atlas
+  is made at the window's size, so glyphs stay sharp.
+- **The game lays them out**: the font's own glyph table is extended (tokens per control), so centring and line breaks
+  are the game's; only what the renderer samples changes. The tokens name a control, not a device, so a help box that
+  is already up changes with the device.
+- **The PSP's "L button" / "R button"** in the PS2's text are taken as L1 / R1 (where another configuration of the same
+  action says R1). Not checked against the pad code; a wrong one shows L1 where the game meant another shoulder.
+- Not yet: the Controls page's controller picture (a keyboard list there would be a page of its own); the loading
+  screen's "Press ~X~" shows the on-foot Cross key (Enter only works inside the menu).
+
+## 2026-11-07 - Traffic / pedestrian density and draw distance (the user's request)
+
+The user asked for two enhancements, more cars and peds and objects drawn further away, keeping performance and the
+original game at the defaults, with engine changes allowed. Investigated first (game-internals.md 6o, 12d); the user
+chose two density sliders and, for draw distance, the LOD scale with the far plane tested before it is offered.
+
+- **Three sliders on Enhancements > World**, 100% (the original) to 300%: Traffic density, Pedestrian density, Draw
+  distance. 100% writes the game's own values; `VCS_WORLD_DETAIL_HOOKS=0` writes nothing (rule 1).
+- **The scripts' multipliers are left alone**: missions set them to 0 to clear the streets and saves carry them, so
+  the setting scales the spawners' own constants (0.7 / 0.4) instead - a mission's 0 stays 0.
+- **The caps grow with headroom**: cars at most 28 (the game stops at 30 random cars itself), peds 45, and only while
+  16 slots stay free in each pool (set right before each spawner runs), so a mission's CREATE_CHAR / CREATE_CAR never
+  meets a full pool and the game never deletes the closest car or ped to make room (it does below 8 free, visible or
+  not - the first version stopped spawning only there, too late).
+- **Cars in view are never removed** (the user's report: cars vanished ahead while driving, 2026-11-07): the game
+  removes on-screen cars 160 m out, which a longer draw distance shows. With any World setting above 100% that
+  removal waits until the car is out of view or beyond the distance cars are drawn at. `VCS_WORLD_KEEP=0` is the
+  behaviour before, to compare; the module counts and logs any car that vanishes in view.
+- **Traffic stays modest**: the density limit rarely binds for cars - the spawn spots 110 m ahead do. The spawn chance
+  per road class is scaled too (class 0, next to no traffic, kept), which helps while driving; more would mean
+  changing where cars spawn, a deeper change than an option should make. Release notes should call it a modest change.
+- **Draw distance is the LOD scale only**: the game's own unused `0x4887F8` (VC's ms_lodDistScale), so the same
+  mechanism as the PC versions' slider. No automatic step back (the user's call, 2026-11-07: this is a PC, the setting
+  is what it says): the first version lowered it near the packet buffer's limit, where the game drops sectors, but
+  300% used at most 220 KB of the 921 KB, so the setting is applied as it is.
+- **The far plane stays 2000**: moving it (and so the fog) showed the far water and land as dark patches the fog hid
+  on the PS2, and thinned Vice City's haze. Kept as a test switch, `VCS_FAR_CLIP=<metres>`; it would need its own
+  work on the distant LOD's colours to be an option.
+
+## 2026-11-08 - The NPC drive-by's fire rate (the user's request)
+
+The user saw NPCs in cars fire SMGs far too fast, faster at high frame rates, and asked whether it was frame timing or
+the original game. Both (game-internals.md 12c): the NPC drive-by fires a shot every frame - 30 a second on the PS2,
+2.7x the SMG's own 90 ms, and 144 a second at 144 fps. The user chose a PS2-rate fix and the gun's rate as an option,
+on the Enhancements page.
+
+- **One setting, Enhancements > Combat: Drive-by fire rate.** *As on the PS2* (default) is the original game as it
+  played on the PS2, at any frame rate: a shot per 1/30 s. *The gun's own rate* fixes the original bug: the weapon's
+  firing rate, as the player's own drive-bys use. No choice keeps "a shot every frame" - that is a frame-rate bug of
+  this port, like the others fixed without an option; `VCS_DRIVEBY_HOOKS=0` brings it back for comparison (rule 1).
+- **Hooked at CWeapon::Fire, only for the two NPC drive-by calls** (by return address), not at the drive-by update:
+  skipping the whole update would also hold back its burst gate and animation, so bursts would end late.
+- **The next shot is due one interval after the last was due**, not after it came, with 2 ms tolerance: the rate is
+  exact whatever the frame length, and at 30 fps every frame (33 / 34 ms) still fires - identical to the original.
+
+## 2026-11-10 - A round of GitHub issues: 41, 89, 90, 91, 93, 102, 112 (the user's request; the choices below are Claude's)
+
+The user asked for the most common GitHub issues to be gathered and the first two steps of the plan done: a triage
+sweep and the small fixes with clear causes. No choice below was put to the user first; they are for review.
+
+- **Purple Haze (41): the softlock is fixed at every frame rate, the cutscene only above 30 fps.** The main script's
+  wait for an audio line that never ends once the line's slot is freed is a hang on a PS2 too, whenever a speaker dies
+  between "load" and "loaded"; ending it changes nothing else, so it has no option and applies at 30 fps as well
+  (`VCS_SCRIPT_FIXES=0` is the reference, rule 1). The truck is parked early only while the frame is not the PS2's:
+  at 30 fps the original plays as it always did. Parking it - with the mission's own commands, behind the fade, half a
+  second before the mission does - was chosen over making the thugs unhurtable (they would still be knocked down and
+  the scene would fade in on a man getting up) and over chasing the collision itself (the hit differs with the step
+  inside the engine's collision response; noted as open in game-internals.md 13).
+- **Rotor blades (102) count once per 1/30 s rather than being scaled.** The blade test hands a damage impulse to
+  VehicleDamage, which has a threshold: an impulse scaled by the step would fall under it at high frame rates and do
+  nothing at all. Letting it through on one frame per PS2 frame keeps each hit what it was and the rate what it was on
+  the PS2; the sparks and the push off the wall stay every frame. Under `VCS_PHYSICS_TIMESTEP`, with the other
+  per-frame vehicle physics.
+- **The haze (93) is a screen effect in every HUD mode**: stretched across the picture with the HUD at Keep 4:3 too,
+  as fades and the scope's mask are. `VCS_HAZE_FILL=0` is the old behaviour.
+- **The radio on the mouse wheel (90) is part of Keyboard > Mouse wheel**, not a setting of its own: the wheel did
+  nothing in a vehicle, the option is on by default and a wheel bound to a control still wins. Down is next, as for
+  weapons. The step back goes through the game's own retune (its click, the station's name, its 30-frame wait) rather
+  than a stream switched behind its back: one byte written, and written back when the game did not take the press.
+  Nine quick presses of L1 would also land one station back, but click nine times.
+- **F12 (89) needs `PS2X_HW_DUMP_KEY=1`** rather than a setting or another key: the frame dump is a developer's tool
+  (hundreds of lines on stderr, the render targets as files next to the game), and every free F key is somebody's
+  screenshot key. `PS2X_HW_DUMP=<frame>` works as before.
+- **The graphics card (112): Fastest by default, a setting to change it.** A game should start on the dedicated card;
+  Graphics > Graphics card offers Power saving (the integrated one) and System default (what it was: Windows' default
+  adapter, which follows Windows' own Graphics settings and the driver's panel). Chosen through DXGI
+  (`EnumAdapterByGpuPreference`, Windows 10 1803+) with the default adapter as the fall-back, not through the
+  `NvOptimusEnablement` / `AmdPowerXpressRequestHighPerformance` exports: those cannot be turned off by a setting. The
+  launcher stays on the default adapter (it idles; no reason to wake the big card). Not checked on a PC with two cards -
+  the dev machine has one; the log's `[rhi] graphics cards` line is there for the reporter's answer.
+- **vcs.exe's icon and details (91)** are the launcher's icon and the release's VERSION. The version reaches the
+  resource file through a generated header, not compile definitions: a definition on the target would be on every
+  generated file's command line and rebuild the whole game at each release.
+
+## 2026-11-10 - The issues round checked on Linux (the user's request; the choices below are Claude's)
+
+The user asked for the latest changes to be reviewed and made sure of on Linux. The laptop's desktop was locked while
+this ran. No choice below was put to the user first; they are for review.
+
+- **The lock is not worked around.** Locked, the user's session has neither the graphics card (logind hands
+  `/dev/dri/*` to the greeter) nor a window manager that maps windows. No VT switch, no unlock, no change to the
+  device's permissions: the checks that read the game's memory or its log ran on the null renderer (the game at full
+  speed, no picture), one picture came from llvmpipe, and what needs the card is listed as not checked (PROGRESS.md
+  milestone 9, LINUX.md "A locked desktop").
+- **Hidden runs, against the laptop's rule of shown test windows** (2026-10-30): a locked desktop shows none - a shown
+  window never leaves `SDL_ShowWindow`. The rule stands for an unlocked desktop.
+- **The Vulkan backend prints `[rhi] graphics cards` too**, as D3D11 does since issue 112: the setting's comment,
+  PROGRESS.md and the entry above name that line as the answer to "which card did it take?", and on Linux there was
+  none. Each device comes with its kind (Vulkan's device type: dedicated, integrated, virtual, software) and, when it
+  cannot be used, what it lacks. A second line says when only Mesa's software renderer is left: found here by
+  accident (the locked desktop), it is also what a player without a Vulkan driver gets - a few frames a second, and
+  until now nothing in the log to say why. (2026-11-12: made one line with the one the cards-by-name change brought;
+  that entry's last point.)
+- **No window icon for the game on Linux - left to the user.** Issue 91 was Explorer's blank vcs.exe; its fix (the
+  exe's resources) also gives the Windows window its icon, and Linux has no counterpart: the game's window shows the
+  desktop's generic one. `SDL_SetWindowIcon` with the pixels `launcher/make_icon.py --header` already makes for the
+  launcher would do it on X11 (and on Wayland where the compositor has xdg-toplevel-icon). Not asked for, so not added.
+- **0.2.5's draft notes**: the graphics card bullet says what Linux gets (it already took the dedicated card; Fastest
+  and Power saving), and the vcs.exe bullet is prefixed `Windows:`, as AGENTS.md asks of one-platform bullets.
+
+## 2026-11-10 - The RSL recordings get a memory limit (GitHub issue 115; the user's go-ahead, the choices are Claude's)
+
+The user asked for issue 115 (vcs.exe at 5.3 GB) to be looked into and, shown the cause and a plan, said: implement
+the recording cap "as long as it doesn't reduce your ability or prevent you from working on the game". The numbers
+are in PERFORMANCE.md 31; the choices:
+
+- **A limit in bytes, least recently used first** - not a count (recordings run from a few hundred bytes to hundreds
+  of KB), not an age (standing still for an hour must cost nothing), and not recordings keyed by what the block holds
+  instead of where it is. That last one would remove the cause - the same model at a new address would find its
+  recording - but every block would have to be hashed to be looked up, which is the work step 4's skip was made to
+  avoid, and it changes what the verify tools compare. The limit changes nothing about a recording while it lives.
+- **256 MB by default.** One place needs 12-36 MB of recordings, so 256 MB is several districts: driving back and
+  forth across town replays what it replayed before (on the check's route about as many blocks are recorded as with
+  no limit at all). The game then levels off at 650-700 MB on the dev machine at 3x, against 300-350 MB with no
+  recordings and 842 MB and rising after 15 minutes without the limit. With 64 MB it levels off at ~470 MB and
+  records about twice as many world blocks. At a 60 fps cap that costs nothing that shows (the stutter rig at 24
+  MB against no limit: the same); above 100 fps, where the render worker is the limit and a replay is what saves its
+  time, it was not measured - so the default is the size at which hardly more is recorded than before, and about
+  200 MB is what a smaller one could still give back.
+- **Not a setting in the menu**: nothing a player should have to choose. `VCS_RSL_RECORDINGS_MB` for a run (0: no
+  limit - the behaviour before, rule 1's switch back).
+- **A recording is dropped in two steps** (its confirmation withdrawn first, freed when the game thread has applied
+  that) rather than leaving it to the worker's existing fall-back, which reads the block from guest RAM: that
+  fall-back was written for a case that never happens (0 of 12 million skipped blocks) and reads memory the game
+  thread may be writing by then. With the two steps it still never happens, and `VCS_RSL_SKIP_VERIFY` keeps meaning
+  what it meant: a skip decided for a block whose recording is gone would be reported as wrong.
+- **The condition - nothing taken from the tools.** Recordings, replays and both verify modes work as before; a
+  recording that is gone is one that was never made. `VCS_RSL_WORLD_LOG=1` gained a `memory:` line (held, dropped,
+  recorded again, the slowest sweep) and `tools/memcheck.py` is the check that it stays fixed. Tests that pin
+  `VCS_TIMING=0 VCS_FPS=30` are untouched; none of the rig's runs reaches 256 MB of recordings.
+- **Not done**: an `Op` is 104 bytes for every UNPACK because each carries a mesh and a raster name it does not use;
+  a leaner layout would hold more per MB (not measured). Left, as the limit makes it a question of tuning.
+
+## 2026-11-11 - A mouse camera of its own on foot: built in three rounds, then taken out (the user's decision)
+
+The user asked for the on-foot mouse controls to be upgraded as the vehicle camera had been: the camera free of the
+player, back behind him while he moves, the gamepad as before, the camera no longer stopping at a building, and all
+of it feeling like PC controls rather than a pretend gamepad. Three builds the same day, each played by the user:
+
+1. The movement keys kept the direction they were pressed at whatever the camera did (the user's own choice among
+   three); the mouse only looked. Verdict: "it would be better for the player character to always be moving in the
+   general direction of the camera. Being disconnected feels bad."
+2. The keys followed the camera again; the camera held still after the mouse or a change of keys, then turned behind
+   him slowly. Verdict: a good direction, but the camera should follow where he travels more actively, "a bit closer
+   to the gamepad camera" - travelling east or south it stayed where it was.
+3. The camera came round behind where he travels at once, the keys keeping their heading through that turn only.
+   Then: "revert all changes that have been made today related to the camera while walking."
+
+So all of it is out again - the module, its setting (Walking camera return), its checks, the notes - by one revert of
+the three commits (6948b7a, 993d670, ea5628e stay in the history). On foot the mouse turns the game's own camera at
+the pad read and steers the player, as since 2026-10-29. **The wall stop is back with it** (the mouse's camera
+standing at a building's edge): its fix was part of the module. Kept, as the rules of this repository ask: what was
+found out about the game (game-internals.md 12b "On foot: the stick, the camera on its string, walls"), the open item
+in PROGRESS.md, and this entry. Not kept: the `--only` option of `tools/controls_check.py` and the gamepad-driven
+`framerate_audit.py` footcam scenario, which came with those commits.
+
+For another attempt: every build was exact to its specification in the checks and still wrong in the hand - the
+question was never the mechanism. Worth settling by playing, before anything is built to completion: whether the
+camera should turn by itself at all on the keyboard and mouse, and what a key should mean once it has.
+
+## 2026-11-11 - The wall fix alone, on the mouse look as it was (the user's go-ahead)
+
+After the revert above the user was asked whether the wall fix should come back by itself and said: "Yes, wall fix
+only." So it is the smallest thing that does it, in the pad read where the mouse already turns the camera - no hook,
+no camera of its own: while the mouse turns the on-foot camera the update is told to take the path it takes for a
+turned stick (the pull-in toward the player), through the game's own switch for it (`0x487E58`). Claude's choices:
+
+- **A tail of 300 ms after the mouse's last turn.** A slow hand, or a high frame rate, leaves frames without a count
+  between frames with one; on those the game's own turn away from a wall he walks along would have worked against
+  the mouse. Standing, where the user saw the fault, it makes no difference.
+- **Nothing else of the on-foot camera changes**: the game's swing behind him, its string, the keys following the
+  camera are as they were. With the mouse at rest the game's own handling of walls is back.
+- `VCS_FOOT_WALL=0` is the switch back (rule 1); not a setting - there is nothing to choose.
+
+## 2026-11-12 - Graphics > Graphics card lists the cards by name (the user's request)
+
+- **The cards, not "Fastest / Power saving / System default"**: the user asked for the list of cards the game can see,
+  with "(integrated)" after the CPU's own chip. The first is the fastest (DXGI's high-performance ranking; Vulkan:
+  discrete before integrated) and the default, so nothing changes for a player who never opens the setting. "System
+  default" (Windows' default adapter) went with the old choices; Windows' own Graphics settings no longer steer vcs.exe.
+- **vcs.ini keeps a card id, not a place in the list**: settings are ints, and a list's order changes when a card is
+  added, removed or ranked differently. The id is a hash of the PCI vendor and device ids and which of several identical
+  cards it is (`rhi::gpuId`): the same every start and under D3D11 and Vulkan (the list comes from D3D11 where it is
+  built - its names are Windows' -, the Vulkan backend matches the id against its own cards). A card no longer there is
+  an id no choice has: the setting falls back to the fastest. The old values 0 / 1 / 2 are ignored the same way (never in a
+  release).
+- **"(integrated)" from DXCore** (`dxcore.dll`, Windows 10 2004+, `IsIntegrated` looked up by the DXGI adapter's LUID):
+  DXGI has no such flag, and a guess from the dedicated memory size fails on AMD APUs with a large carve-out. DXCore's
+  header isn't in llvm-mingw, so the two interfaces' first methods are declared in rhi_d3d11.cpp; checked on the dev
+  machine with a scratch program: IsHardware 1 for the GTX 1080 Ti, 0 for Microsoft Basic Render Driver, IsIntegrated 0.
+  An integrated chip itself is not checked (none here). Vulkan: the device type. Older Windows: no mark.
+- Software renderers stay out of the list (Microsoft Basic Render Driver, llvmpipe), as do Vulkan cards older than 1.3.
+- **Merged with the Linux check of 2026-11-10** (2026-11-12, on the laptop; these choices are Claude's and were not put
+  to the user - for review): that check had given the Vulkan backend a `[rhi] graphics cards` line of its own (every
+  device with its kind, "(choice: fastest / power saving)"), and this change gave it another. One line is kept, in
+  D3D11's form - the menu's list with the ids, "; using <card>" - plus what only the Linux one said: what a listed card
+  that cannot be used lacks, and after "; not in the list:" the devices the menu leaves out (llvmpipe, Vulkan older
+  than 1.3), so a log still shows that only the software renderer was there. "(VCS_VK_DEVICE)" follows the card's name
+  when that switch chose it. The software renderer's warning line stays as it was.
+  Seen on the laptop's HD 520 (PROGRESS.md milestone 9): the "(integrated)" mark in the log and in the menu - where the
+  closed row cuts it to "(integr", Mesa's name being longer than the box; left as it is, for the user to decide.
+  0.2.5's draft notes: the graphics card bullet describes the list by name, for both systems (it still said Fastest /
+  Power saving / System default, which no release ever had).
+
+## 2026-11-12 - macOS: Apple Silicon, Metal, nothing to install but Apple's tools (the user's decisions; the rest Claude's)
+
+- **The user's three**: Apple Silicon only (Intel Macs are left out: no machine to test them, and their GPUs would be a
+  second set to check); a **self-contained build** - Apple's Command Line Tools are the only prerequisite, everything
+  else is downloaded or built from pinned sources, never Homebrew; the release's launcher **signed ad-hoc** for now
+  (players allow it once in System Settings > Privacy & Security), Developer ID and notarization later.
+- **Metal, not Vulkan through MoltenVK**: the user asked for Metal for both programs. A Metal RHI backend
+  (`src/rhi/metal/rhi_metal.mm`, Objective-C++ with ARC, no metal-cpp) keeps D3D11's behaviour as the Vulkan backend
+  does, with the same tricks: an upload ring for write-discard buffers, passes that start at their first draw and are
+  suspended around copies, a dummy texture for unbound slots.
+- **Shaders: the one HLSL source through glslang and SPIRV-Cross, as MSL text compiled at run time.** The Command Line
+  Tools have no Metal compiler (`xcrun metal` needs Xcode and a separate download); the OS's Metal framework compiles
+  MSL. Fast math off (`MTLMathModeSafe`). glslang and SPIRV-Cross are built from the Vulkan SDK 1.4.350.1 tags, the same
+  pins as the Vulkan headers. Bindings without the Vulkan shifts (Metal has 16 sampler slots and a table per kind).
+- **Apple clang and ld64**, not Homebrew's LLVM: Homebrew's bitcode can't go through Apple's linker for ThinLTO, and
+  lld isn't part of the Command Line Tools. `preserve_none` exists from Apple clang 17 (LLVM 19), checked by CMake.
+- **sse2neon with its precise options** for the generated code's SSE (already wired upstream for ARM): VU0 / HLE verify
+  agree with the Windows reference. FPCR through `ps2x::fpControl` rather than sse2neon's emulated `_mm_getcsr`.
+- **macOS 13 or newer** (Metal 3 on every Apple Silicon Mac).
+- **FFmpeg from source**: only the MPEG-2 decoder, its parser and swscale, static, LGPL - about a minute, no package.
+- **16 MB thread stacks** for the game thread, the render worker and the GS stage (`ps2x::Thread`): macOS gives a
+  `std::thread` 512 KB.
+- **The launcher keeps macOS' window buttons** (traffic lights over the UI's title bar, a full-size content view)
+  instead of drawing Windows' on the right; Command counts as Ctrl for its shortcuts.
+
+## 2026-11-13 - macOS: vertical sync on by default (the user's decision)
+
+- Display > **Vertical sync** defaults to On on macOS only (`kVsyncDefault`, `src/main.cpp`); Windows and Linux keep
+  Off. The Enhanced and Light presets set it to that default too, so choosing one doesn't turn it off on a Mac, and
+  Authentic resets to it. A vcs.ini that names the setting keeps its value. The Metal backend logs the mode it presents
+  with (`[rhi] metal: vertical sync on|off`) at the first frame and at every change.
+
+## 2026-11-13 - Full screen by default (the user's decision)
+
+- Display > Screen > **Window mode** defaults to Full screen (borderless, on the monitor the window was last on) on
+  every platform; it was Windowed. A vcs.ini that names the setting keeps its value, so a player who chose Windowed
+  stays windowed. Shown test runs keep a window (`toolchain.test_window` sets `VCS_FULLSCREEN=0` unless given).
+
+## 2026-11-14 - Effects as on the PS2 at any frame rate; "Reduce Post Processing Effects" turns it back (the user's decisions)
+
+- The light trails (the motion blur read a PS2 frame back), the particles, lightning, clouds, camera shake, explosions
+  and the other effects that counted frames run at the PS2's 30 a second at any frame rate (PROGRESS.md milestone 4):
+  the user found them authentic.
+- Above 30 fps or 1x the motion blur is a quarter weaker (`PS2X_HW_BLUR_STRENGTH`, 0.75): at speed in a car its ghost
+  stood out a little more than on the PS2 (the user's request, "only slightly").
+- Enhancements > Effects > **Reduce Post Processing Effects** (off by default, live; `enhance.reduce_postfx`,
+  `VCS_REDUCE_POSTFX`): one toggle that puts all of it back as the port drew it before - the motion blur from the last
+  frame at the game's strength, particles and the effects once a frame. The environment switches of each part
+  (`PS2X_HW_BLUR_HISTORY`, `VCS_PARTICLE_TIMING`, `VCS_EFFECTS_TIMING`) stay for testing.
+- The settings menu's label column widens per page (45% up to 60%) when a label needs it, so the setting's full name
+  shows; pages whose labels fit keep 45%.
+
+## 2026-11-14 - No Enhanced preset; Widescreen, light becomes Balanced at 2x (the user's decisions)
+
+- Display > Presets loses **Enhanced** (Match window aspect and resolution, HUD at the edges, 4x MSAA, 16x AF, timing
+  at the display's refresh): the user asked for it to be removed entirely. Authentic (PS2) and Widescreen, light stay;
+  every setting Enhanced set is still on its own row. `presets.enhanced` was an action, never written to vcs.ini, so
+  nothing in a player's settings refers to it. `tools/controls_check.py` checks the other preset in its place.
+- "Widescreen, light" is now **Balanced** (`presets.balanced`, was `presets.light`; also an action, never stored) and
+  sets the internal resolution to 2x instead of 1x; the rest as before (Match window, HUD at the edges, no MSAA, 4x AF,
+  independent timing at 60). The user's request.
+
+## 2026-11-14 - macOS releases are a disk image with an Applications link (the user's request; the rest Claude's)
+
+The user asked for an image that lets players move the launcher into Applications. The macOS release is now
+`VCS-Recomp-<v>-macos-arm64.dmg` instead of a zip: a Finder window with the app and a link to /Applications side by
+side. The zip goes - no macOS release had been published, so no installed launcher looks for it (`update.py` still
+takes a zip given by hand). Choices:
+
+- **The layout without dmgbuild**: Finder reads the window (icon view, size, no bars) and the icon positions from the
+  image's `.DS_Store`. The tools are standard library only (AGENTS.md), so `tools/dmg.py` writes that file itself (one
+  B-tree leaf; checked by reading Finder's own files back with the same code), instead of `dmgbuild` / `create-dmg`.
+  AppleScript to Finder (create-dmg's way) was left out: it needs a logged-in Finder, which CI's Macs don't
+  reliably give.
+- **No background picture** (an arrow): Finder finds it through an alias / bookmark to a file in the image, tied to
+  the mounted volume - much more than the layout for little gain; the two icons side by side say it. Possible later.
+- **HFS+, ULMO**: HFS+ as dmgbuild uses; ULMO (LZMA) needs macOS 10.15, the launcher needs 13 anyway.
+- **The volume icon** is set with `SetFile` (the Command Line Tools'); without it the image keeps the plain disk icon
+  and the release goes on.
+- **`python -B` for the bundle's own scripts**: the first start's `update.py install` runs from inside the app and
+  wrote `__pycache__` there, breaking the app's signature (found when the image's check refused the app). The launcher
+  passes `-B` when the script is the release's own copy (macOS bundle or AppImage).
+
 ## 2026-11-05 - The keyboard: PC actions as in Vice City / San Andreas on PC (the user's request)
 
 The user asked for the PC games' control scheme (CPad / CControllerConfigManager: an action per key, by situation)
@@ -1128,8 +1522,13 @@ gta_sa.exe 1.0): Vice City's keypad Enter / Delete are not separate keys here (K
 pause menu, fixed as in the PC games (it can't be a binding: it cancels one in the menu). A key held from a menu into
 play (Enter choosing Resume) does nothing on the other side until let go.
 
+Ported onto 0.3.0 (2026-11-14), after the game's pause menu got its own keys and mouse (2026-11-05 above, game/vcs_frontend.h):
+the PS2 scheme's Start stays on Escape (that entry's choice; the PR was written when it was Enter), and the PC scheme's fixed
+Escape goes through the same filter as the bindings, so while the pause menu is up Escape is the menu's back (Triangle) and
+Enter its select, as with the PS2 scheme. The mouse wheel's radio while driving (issue 90) applies to both schemes.
+
 The old scheme stays as **PS2 buttons** (its bindings on the PS2 keys page, unchanged); the gamepad is the same with
-either. The test tools drive the game with the PS2-button keys (Shift is Cross in the menus, Return is Start), so
+either. The test tools drive the game with the PS2-button keys (Shift is Cross in the menus, Escape is Start), so
 `toolchain.test_keys` sets `VCS_KEYS=0` for test runs and `run.py --control`; `VCS_KEYS=1` tests the PC scheme.
 
 Then (the user's request): **Walk** is on Alt, as in San Andreas (Alt + Enter stays the full-screen switch: Enter does

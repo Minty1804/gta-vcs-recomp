@@ -155,6 +155,9 @@ namespace platform
 
     bool windowHidden(); // made with WindowDesc::hidden
 
+    // For the Metal renderer (macOS): the window's CAMetalLayer, made on the first call. Null elsewhere. Main thread.
+    void *metalLayer();
+
     // For the Vulkan renderer (rhi::VulkanWindow), on a window made with WindowDesc::vulkan. Main thread.
     const char *const *vulkanInstanceExtensions(uint32_t *count); // the instance extensions the surface needs
     bool vulkanCreateSurface(void *instance, uint64_t *surface);  // VkInstance -> VkSurfaceKHR
@@ -194,10 +197,23 @@ namespace platform
     bool keyDown(int key);
     bool keyPressed(int key); // main thread: went down at the last pumpEvents
     bool mouseDown(MouseButton button);
+    // The cursor in drawable pixels from the window's top-left (windowSize's units); false while it is not over the
+    // window, the mouse is captured or the window is hidden.
+    bool mousePosition(float &x, float &y);
     bool gamepadConnected();
     bool gamepadButton(GamepadButton button);
     float gamepadAxis(GamepadAxis axis);
     const char *gamepadName(); // "" without a gamepad (main thread)
+    // What kind of gamepad it is, from its maker's layout (any thread; None without one): the button prompts' glyphs.
+    enum class GamepadFamily : int
+    {
+        None,
+        Xbox,
+        PlayStation,
+        Nintendo,
+        Other,
+    };
+    GamepadFamily gamepadFamily();
     // Vibration, motors 0..1 (low = the large, slow motor; high = the small, fast one). Any thread; applied at the next
     // pumpEvents and held until changed (0, 0 stops).
     void gamepadRumble(float low, float high);
@@ -208,6 +224,14 @@ namespace platform
     bool mouseCaptured();
     // Mouse motion since the last call, in mouse counts (any thread; one consumer).
     void takeMouseMotion(float &dx, float &dy);
+    // Drops the wheel notches not played out yet (any thread; done at the next event pump): the notch being pressed
+    // finishes, the ones queued behind it are gone. For a wheel whose meaning just changed (out of a scope: its zoom
+    // notches must not become weapon changes).
+    void discardWheelNotches();
+    // The wheel's notches since the last call as they came, not played out as presses (up +, down -; any thread, one
+    // consumer): for a use that takes any number at once (a scope's zoom). A notch the other way also drops the
+    // presses still queued the old way.
+    int takeWheelSteps();
 
     // A key's name for menus ("A", "F2", "Left Shift", "Mouse 4", "Wheel up"); "?" for codes without one.
     const char *keyName(int key);

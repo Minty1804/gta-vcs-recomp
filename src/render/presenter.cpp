@@ -45,6 +45,7 @@ namespace present
 
         std::atomic<float> g_displayAspect{4.0f / 3.0f};
         int g_backendSetting = -1; // rhi::Backend; -1: the default
+        int g_gpuSetting = 0;      // an rhi::Gpu id (0: the fastest card)
 
         rhi::Backend chooseBackend()
         {
@@ -53,7 +54,7 @@ namespace present
             if (env && *env)
             {
                 if (!rhi::backendFromName(env, b))
-                    std::fprintf(stderr, "[present] VCS_RHI=%s not understood (d3d11, vulkan or null)\n", env);
+                    std::fprintf(stderr, "[present] VCS_RHI=%s not understood (d3d11, vulkan, metal or null)\n", env);
             }
             else if (g_backendSetting >= 0)
                 b = static_cast<rhi::Backend>(g_backendSetting);
@@ -92,6 +93,8 @@ namespace present
 
     void setBackend(int backend) { g_backendSetting = backend; }
 
+    void setGpu(int id) { g_gpuSetting = id; }
+
     int backend() { return static_cast<int>(g_device ? g_device->backend() : chooseBackend()); }
 
     bool backendNeedsVulkanWindow() { return chooseBackend() == rhi::Backend::Vulkan; }
@@ -100,10 +103,13 @@ namespace present
     {
         rhi::DeviceDesc desc;
         desc.backend = chooseBackend();
+        desc.gpu = g_gpuSetting;
         desc.nativeWindow = platform::nativeWindow();
         desc.vulkan.instanceExtensions = platform::vulkanInstanceExtensions;
         desc.vulkan.createSurface = platform::vulkanCreateSurface;
         desc.offscreen = platform::windowHidden();
+        if (desc.backend == rhi::Backend::Metal && !desc.offscreen)
+            desc.metalLayer = platform::metalLayer();
         desc.width = static_cast<uint32_t>(std::max(width, 1));
         desc.height = static_cast<uint32_t>(std::max(height, 1));
         // the API's validation layer: D3D11 debug layer (Graphics Tools), Vulkan's Khronos layer

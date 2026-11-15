@@ -20,7 +20,21 @@ set(PS2X_BUILD_STUDIO OFF CACHE BOOL "" FORCE)
 
 # Linux (docs/LINUX.md) and Windows' llvm-mingw (DECISIONS.md 2026-11-03): clang 19+ only - the same compiler as
 # clang-cl, and PS2_GUEST_CC needs its preserve_none. Linked with lld (ThinLTO).
-if(NOT MSVC)
+# macOS (docs/MACOS.md): Apple's clang (AppleClang 17+ is LLVM 19) and Apple's linker (ld64; Xcode has no lld).
+if(APPLE)
+    enable_language(OBJC OBJCXX) # the Metal backend (src/rhi/metal)
+    if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang" OR CMAKE_CXX_COMPILER_VERSION VERSION_LESS 17)
+        message(FATAL_ERROR "The game needs Apple clang 17 or newer (found ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}): "
+                            "the Xcode Command Line Tools (xcode-select --install); python3 tools/build.py picks it up")
+    endif()
+    include(CheckCXXSourceCompiles)
+    set(CMAKE_REQUIRED_FLAGS "-Werror")
+    check_cxx_source_compiles("__attribute__((preserve_none)) void f(); int main() { return 0; }" VCS_HAVE_PRESERVE_NONE)
+    unset(CMAKE_REQUIRED_FLAGS)
+    if(NOT VCS_HAVE_PRESERVE_NONE)
+        message(FATAL_ERROR "This clang has no preserve_none calling convention (PS2_GUEST_CC): update the Command Line Tools")
+    endif()
+elseif(NOT MSVC)
     if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR CMAKE_CXX_COMPILER_VERSION VERSION_LESS 19)
         message(FATAL_ERROR "The game needs clang 19 or newer (found ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}). "
                             "python tools/build.py picks it up (docs/LINUX.md; Windows: llvm-mingw, downloaded)")
@@ -33,7 +47,7 @@ if(MINGW)
     add_compile_definitions(_WIN32_WINNT=0x0A00 WINVER=0x0A00)
     add_link_options(-static)
 endif()
-# Linux: compile and ThinLTO jobs follow the memory - a unity batch of generated code takes up to ~2 GB to compile.
+# Linux and macOS: compile and ThinLTO jobs follow the memory - a unity batch of generated code takes up to ~2 GB to compile.
 if(NOT WIN32)
     cmake_host_system_information(RESULT _vcs_mem_mb QUERY TOTAL_PHYSICAL_MEMORY)
     cmake_host_system_information(RESULT _vcs_cores QUERY NUMBER_OF_LOGICAL_CORES)
@@ -48,7 +62,7 @@ if(NOT WIN32)
     set(PS2X_LTO_JOBS ${_vcs_jobs} CACHE STRING "Parallel ThinLTO backend jobs at the game's link")
     set_property(GLOBAL APPEND PROPERTY JOB_POOLS vcs_compile=${VCS_COMPILE_JOBS})
     set(CMAKE_JOB_POOL_COMPILE vcs_compile)
-    message(STATUS "Linux build: ${VCS_COMPILE_JOBS} compile jobs, ${PS2X_LTO_JOBS} ThinLTO jobs (${_vcs_mem_mb} MB memory)")
+    message(STATUS "${CMAKE_SYSTEM_NAME} build: ${VCS_COMPILE_JOBS} compile jobs, ${PS2X_LTO_JOBS} ThinLTO jobs (${_vcs_mem_mb} MB memory)")
 endif()
 
 set(VCS_HAVE_GENERATED OFF)
@@ -99,10 +113,25 @@ if(VCS_HAVE_GENERATED)
     target_include_directories(ps2EntryRunner PRIVATE "${CMAKE_SOURCE_DIR}/src")
     target_link_libraries(ps2EntryRunner PRIVATE vcs_host) # main.cpp: settings menu (Dear ImGui), presenter aspect
     # Windows: our manifest in place of the linker's, for the UTF-8 code page (non-ASCII folders; src/vcs.manifest)
+    # ... and the exe's icon and version information (src/vcs.rc): VERSION in the repository root, as a header only
+    # the resource file sees - a compile definition would rebuild every generated file at each new version
     if(WIN32)
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/VERSION")
+        file(STRINGS "${CMAKE_SOURCE_DIR}/VERSION" VCS_VERSION LIMIT_COUNT 1)
+        string(REGEX MATCH "^([0-9]+)\\.([0-9]+)\\.([0-9]+)" _vcs_version_numbers "${VCS_VERSION}")
+        if(NOT _vcs_version_numbers)
+            message(FATAL_ERROR "VERSION must start with major.minor.patch (it holds '${VCS_VERSION}')")
+        endif()
+        file(CONFIGURE OUTPUT "${CMAKE_BINARY_DIR}/vcs_version/vcs_version.h" CONTENT "#define VCS_VERSION_MAJOR ${CMAKE_MATCH_1}
+#define VCS_VERSION_MINOR ${CMAKE_MATCH_2}
+#define VCS_VERSION_PATCH ${CMAKE_MATCH_3}
+#define VCS_VERSION_TEXT \"${VCS_VERSION}\"
+")
         target_sources(ps2EntryRunner PRIVATE "${CMAKE_SOURCE_DIR}/src/vcs.rc")
+        # the resource compiler doesn't report the files it embeds
         set_source_files_properties("${CMAKE_SOURCE_DIR}/src/vcs.rc" TARGET_DIRECTORY ps2EntryRunner
-            PROPERTIES OBJECT_DEPENDS "${CMAKE_SOURCE_DIR}/src/vcs.manifest")
+            PROPERTIES OBJECT_DEPENDS "${CMAKE_SOURCE_DIR}/src/vcs.manifest;${CMAKE_SOURCE_DIR}/src/vcs.ico;${CMAKE_BINARY_DIR}/vcs_version/vcs_version.h"
+                       INCLUDE_DIRECTORIES "${CMAKE_BINARY_DIR}/vcs_version")
         if(MSVC)
             target_link_options(ps2EntryRunner PRIVATE /MANIFEST:NO)  # lld in mingw mode makes none of its own
         endif()

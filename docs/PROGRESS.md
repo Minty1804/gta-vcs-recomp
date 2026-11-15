@@ -277,6 +277,13 @@ dropped on uploads (lazy render-target patching).
         the glow / warp no longer a third wider than at 4:3. `PS2X_HW_POSTFX=0` = as recorded.
   - [x] Frame copy and motion blur as native passes (texture copy / one full-screen quad); the self-copy over the
         sky stays a GS draw (depth-tested, read at full resolution).
+  - [x] **Light trails above 30 fps** (2026-11-13, a user report: the trails behind lights at night an emulator shows
+        were missing at 144 fps). The motion blur is a once-a-frame blend of the last picture (12.5%), so its ghost was
+        one frame behind: 7 ms at 144 fps, inside the object's edge. It now reads the picture finished one PS2 frame
+        (33 ms) earlier, from a history of the finished pictures (NATIVE_RENDERER.md "Post effects"). Measured on a
+        night flight downtown (the `[gs-hw] motion blur` line): ghost 33.3-34.9 ms behind at 30, 60 and 144 fps; 4 / 7
+        pictures kept at 60 / 144 fps; at a 30 fps cap ~1% of blends (frames early after a hitch) read the history.
+        `PS2X_HW_BLUR_HISTORY=0` = before.
 - [ ] **Step 4: native frame** (started 2026-10-23; NATIVE_RENDERER.md "Native frame").
   - [x] Per-target scales; "Internal resolution: Match window" draws the picture's targets at the window's size
         (1920x1080 at 16:9 1080p), the effect buffers at 1x. Default stays 1x (the original).
@@ -459,9 +466,103 @@ dropped on uploads (lazy render-target patching).
       Then the same `max(step, 0.5)` in vehicles and bikes in water and a boat's rudder, patched: at 144 fps a car kept
       1.6 m/s one second into the sea (0.6 at 30), a bike sank to the bottom; after, 0.76 m/s and the bike settles 2.95 m
       deep (2.75 at 30). `framerate_audit.py` carwater, bikewater. Left: the ped ones (CPed::ProcessControl).
+- [x] **Rotor blades against walls at high frame rates** (2026-11-10, GitHub issue 102; game-internals.md 4): the
+      blade test sets a damage impulse on every frame a blade touches something and the helicopter loses the same
+      health for it each frame - 12.75 for a Maverick: 375 a second at 30 fps, 1840 at 144, on fire within a second.
+      The blades now count once per 1/30 s (`src/game/vcs_physics_timing.cpp` 4., `VCS_PHYSICS_TIMESTEP=0` off).
+      `framerate_audit.py --only rotor` (new: a Maverick in an alley narrower than its rotor): 375 / 391 / 377 / 389 /
+      395 a second at 1/30 / 60 / 100 / 144 / 240. Seen on the way: the health that falls is the vehicle's +0x27C, not
+      the +0x278 the trainer's vehicle invincibility / repair and the F3 panel use - to look at.
+- [x] **Hose the Hoes above 30 fps** (2026-11-14, GitHub issues 144 and 54; game-internals.md 4 and 11f): the fire
+      truck's water cannon is a trail of 16 points that moved on one place every frame, so the water lived 16 frames
+      and reached 26.8 m at 30 fps, 14.3 at 60 and 7.0 at 144 - the brothel's fires were out of reach, and the girls'
+      bar ran down at its fastest rate (it drains faster while fewer fires are out). The trail now moves on once per
+      1/30 s of game time (`src/game/vcs_physics_timing.cpp` 5., `VCS_PHYSICS_TIMESTEP=0` off) and the steam from water
+      on a fire is throttled with the other emitters. `framerate_audit.py --only hose` (new: a fire truck, its reach,
+      then a fire 18 m ahead hosed until it is out): 26.8 m at 1/30 / 60 / 100 / 144 / 240, the fire out in 2.34 - 2.5 s
+      at all of them (2.40 - 2.50 between runs at 1/30; before: 14.3 / 7.0 m at 60 / 144, the fire never out). The mission also added TIMERA to a sum every frame that sets the two
+      parked burning cars' health to 1 (they blow up and can light the rooms again): scaled like the meters
+      (`vcs_script_timing.cpp`, timers as operands now), with the fire truck help's TIMERB sum. `tools/hose_check.py`
+      (new; the mission at a simulated frame rate): girls' bar 1.20 a second, the cars at 10.00 / 14.15 s at 1/144 and
+      1.20, 10.00 / 14.20 at 1/30 (before at 1/144: 5.76 without the 2026-10-27 fix, 4.58 / 6.48 s). `--sites --only
+      59`: 5 of 5. Not checked here: hosing the brothel's own fires in the mission (the rig can't aim the turret), and
+      issue 54's fire that isn't drawn (an AMD integrated GPU; a separate problem).
+- [x] The same timer sum a frame in two more missions (2026-11-14; game-internals.md 11f): Snitch Hitch (LAN_B5) and
+      Kill Phil (REN_C3) each give "You are getting too far away from the jet / limo" 2.6 s before failing the mission -
+      1.2 s at 144 fps - and time a dialogue line the same way (4.5 s, 2.0 at 144). The four sums are scaled
+      (`vcs_script_timing.cpp`); `--sites --only 64,80`: all found. Kill Phil's line after the limo's blip: 4.47 / 4.46 s
+      at 1/30 / 1/144, 2.03 before. The two fails weren't reached with the rig (late in their missions).
+- [x] **Purple Haze stuck on "Loading..." above 30 fps** (2026-11-10, GitHub issue 41; game-internals.md 11h): at 60
+      fps the truck that rams the van in GON_C3's cutscene turns the van instead of pushing it, rolls on and runs over
+      the first thug as he is created behind the faded-out screen; the audio monitor script frees his line's slot and the
+      mission waits for the line to load for ever. Reproduced every time with original timing at 60 fps (independent
+      timing got through by luck: the thug knocked down, health 64). Two fixes in `src/game/vcs_script_fixes.cpp`
+      (`VCS_SCRIPT_FIXES=0` off): the main script's wait for a line to load also ends when the slot was freed (the
+      loop that held Shakedown too), and Purple Haze's truck is parked by the mission's own commands before the thugs
+      are created (frames other than the PS2's only). `tools/haze_check.py`: state 60 reached, both thugs at health
+      100, the truck parked; the whole mission passes at original 60 and independent 144 fps; with the fixes off it
+      sticks as before. Open: why the hit differs with the step (game-internals.md 13).
+- [x] **The radio skipped ahead when getting back into a car above 30 fps** (2026-11-14, GitHub issue 117; game-internals.md
+      9): the music manager counts, per station, the frames it has been off the air and resumes it 1/30 s per frame
+      further on, so at 60 fps time on foot counted double. Measured with the station counts in guest RAM: 30.0 counts a
+      second at 30 fps, 59.5 at 60; out of the car for 3.2 s between two 12 s drives, the station resumed 13.0 / 17.8 s
+      on at 30 fps against 19.3 / 24.2 at 60. The count function (FUN_0018B668) now adds the frame's step / (50/30)
+      (`src/game/vcs_music_timing.cpp`, `VCS_MUSIC_TIMESTEP=0` off): 30.0 counts a second at 30 (original timing, the
+      game's path), 60 and 120 fps; resumed 12.9 / 18.0 s on at 60 and 13.2 / 17.9 at 120.
+- [x] **Particles on the time step** (2026-11-14, from the effects survey; game-internals.md 4 "Effects that run per
+      frame"): CParticle::Update faded, grew, turned and animated each particle once a frame, and the continuous emitters
+      spawned once a frame, so at 144 fps smoke and spray lived 1/4.8 as long (with 4.8x as many made) and fires, which
+      spawn on a timer, showed 1/4.8 as many flames. `src/game/vcs_particle_timing.cpp` (`VCS_PARTICLE_TIMING=0` off):
+      the per-particle rates are set to step / (50/30) of the game's before each Update (integers dithered per particle),
+      the type's animation period stretched, and 185 emitter call sites (by return address, only those that ignore the
+      result) pass at the PS2's rate per (site, entity, call of the frame). `tools/framerate_audit.py --only particles`
+      (an idling car in the rain): exhaust 267 / 272 / 271 ms at 1/30 / 60 / 144 (56 ms at 1/144 before), made 36 / 36 /
+      35 a second (174 before); rain on the body 1080 a second at all three (5180 before), on the screen 180 (865).
+      Fires (explosions at night, `VCS_PARTICLE_LOG=1`): flames 1.77 / 1.80 s at 30 / 144 (0.68 before), their smoke
+      2.02 / 2.01 s (0.46). Left: an explosion's opening burst counts frames (CExplosion::Update's step byte, `0x51E544`
+      in each 0x50-byte record from `0x51E510`), so the fireball forms in 70 ms instead of 0.33 s - the same particles,
+      lasting as long; it also drives coronas, lights and damage, so it needs its own fix.
+- [x] **Effects at the PS2's 30 a second** (2026-11-14, the rest of the effects survey; game-internals.md 4):
+      lightning, sun glare, clouds, camera shake, the video-cam overlay, the photo flash, the HUD bar flash's count, peds
+      fading in / out, melee swing streaks, rubbish and steam after rain stepped or re-rolled once a frame.
+      `src/game/vcs_effects_timing.cpp` (`VCS_EFFECTS_TIMING=0` off): a PS2 frame tick on the real-time clock gates what
+      is stepped or re-rolled; the game's rand is replaced by the same generator, which holds or vetoes values for those
+      callers. Measured with `VCS_EFFECTS_LOG=1` (30 / 144 fps / 144 before): PS2 frames counted 28-30 / 29-30 / -;
+      lightning in a 2-minute storm 4-8 / 4-10 / 12-26 bursts a minute, 166-772 / 150-273 / 32-59 ms each; cloud spin
+      908-1285 / 900-1349 / 2703-3601 a second, turn the same at 30 and 144 (-0.022 / s in the storm, -0.088..-0.100
+      before); camera shake rolls 28-30 / 29-30 / 130-155 a second (explosions 25 m away); the video overlay's flips
+      and noise, ped fade steps, rubbish picks and steam steps the same at 30 and 144, 4-5x before. Not seen in a run:
+      the photo flash, the HUD bar flash (no trigger at hand) and melee streaks - the same mechanism, read in the code.
+      `tools/framerate_audit.py --only effects`.
+- [x] **Explosions and the banknote spray at the PS2's 30 a second** (2026-11-14, phase 3 of the effects survey;
+      game-internals.md 4): CExplosion::Update's step byte (+1 a frame) drives a molotov's flame bursts, its second fire
+      at step 7 and the big explosions' bursts, and wrapped past 255 - the explosion's end - so at 144 fps explosions
+      lasted 1.1 s instead of 1.55 (157 steps against 46); its coronas and light alternate on `frame & 1` (72 Hz
+      instead of 15). `vcs_effects_timing.cpp` 11: each explosion's step advances at 30 a second from its start, its
+      bursts pass on fresh steps only (matched by position), and the parity is the PS2 frames'. Measured
+      (`VCS_EFFECTS_LOG=1`, molotov / grenade / large in turn, 30 / 144 / 144 before): 1546 / 1508-1531 / 1112-1148 ms,
+      46 / 45.6 / 157 steps, 217 burst calls each at all three; car-splash and flame-smoke particles 633 / 625 / 132 ms
+      and 2030 / 2007 / 450 ms. The banknote spray (FUN_0032FD78, a script command's flying notes) runs on PS2 frames
+      only with their steps summed - not triggered in a run. Checked harmless: FUN_002ED8E8 (the player's nearby
+      lists), the hit-scan shot's `frame & 3`; no light counts frames (only the explosion's).
+- [x] **Rain pulsing and vanishing above 30 fps** (2026-11-14, the user's report; game-internals.md 4 "Rain"): the 35
+      rain streaks of CWeather::RenderRainStreaks (FUN_003E52C8) each restart on a 1-in-16 roll per frame and live 4 s,
+      so at 144 fps they all started within ~0.1 s and fell past the camera together: ~1.5 s of rain, ~3 s of none,
+      for minutes. `vcs_effects_timing.cpp` 13: the roll only counts on PS2 frames. Measured standing in the rain
+      (`build/analysis/rain_probe.py`, streaks at the camera's height every 0.12 s for 30 s; mean / sd / share of
+      samples with almost none, first 15 s then the next 15): 30 fps 10.0 / 7.9 / 28%, 11.0 / 3.7 / 0%; 144 fps before
+      11.6 / 14.0 / 52%, 11.2 / 13.1 / 48%; 144 fps now 9.8 / 6.7 / 21%, 10.6 / 4.7 / 3%. The short pulse when rain
+      starts and the camera-facing sheets are the PS2's own.
+- [x] **Reduce Post Processing Effects** (2026-11-14, the user's request; DECISIONS.md): one toggle in Enhancements >
+      Effects (off by default, applied at once) that puts the motion blur, particles and effects back as before these
+      fixes. Checked at 144 fps in a rainy drive, switched off / on / off through the rig: exhaust 274 / 69-75 / 271-274
+      ms, rain on cars 1069-1076 / 3810-4190 / 1069-1087 a second, the blur FIX 12 from the history / 16 from the last
+      frame; the particles' own rates are put back when it is switched on. The menu's label column widens per page for
+      the name.
 - [ ] Fixes for what changes at the shorter step (physics, animations, script waits, particles, camera), each behind
       the switch; frame pacing. Left from the script survey (game-internals.md 11f): per-frame object / camera /
-      text animations in missions (looks only).
+      text animations in missions (looks only). Effects survey (2026-11-14, game-internals.md 4 "Effects that run per
+      frame"): all found fixed (above). Open: the rocket trail (AddParticlesAlongLine, one a frame at least).
 ## Milestone 5 - movies (2026-10-24) - done
 - [x] STINGS.PSS (the Rockstar logos) and INTRO.PSS play natively at boot (`src/game/vcs_movie.cpp`): own PSS
       demuxer, MPEG-2 video through FFmpeg, shown by the presenter at 4:3 (pillarboxed in widescreen), 48 kHz PCM
@@ -541,6 +642,17 @@ dropped on uploads (lazy render-target patching).
       it after the points before it, in every configuration; a fresh teleport there from Fort Baxter lands (z 14.5).
       Collision streaming order / timing at that spot needs a look.
 ## Phase 5 - stability
+- [x] **Memory growing for as long as the player moves about** (2026-11-10, GitHub issue 115: vcs.exe at 5.3 GB on a
+      PC with 8 GB; PERFORMANCE.md 31, DECISIONS.md 2026-11-10): the RSL replay's recordings, keyed by guest address
+      and length, were never dropped, and the game streams the same model in at ever new addresses. On a route across
+      the map (a move every 30 s) the process grew by 40 MB a minute - 245 -> 842 MB in 15 minutes, 2.3 GB an hour -
+      and stayed at ~300 MB with the recordings off. They now have a limit (`VCS_RSL_RECORDINGS_MB`, 256; 0 = none),
+      least recently used first; a recording's confirmation is withdrawn before it is freed, so the skip (FULLY_NATIVE
+      step 4b) never meets a missing one; the game thread's maps are trimmed with it. Same route: levels off at
+      650-700 MB (40 minutes: +1.45 MB a minute over the second half, +0.78 with no recordings at all; +0.02 with the
+      limit at 64 MB, where it stays at ~470 MB). Checked with the limit at 24 MB: `VCS_RSL_SKIP_VERIFY` 4.87M decisions 0 wrong,
+      `VCS_RSL_WORLD_VERIFY` 7.32M recordings 0 differ; no skipped block read from guest RAM in any run.
+      `tools/memcheck.py` (new) is the check: the route, memory every 10 s, fails when it still rises.
 - [ ] Fire, explosions and flame-thrower flames invisible on AMD GPUs (GitHub issue 4: RX 6600; a laptop's Radeon iGPU,
       while its NVIDIA GPU drew them) - **likely fixed 2026-11-04, waiting on the reporters**: hidden by everything but
       the sky, i.e. the fire's depth lost to every written one. D3D11 no longer writes the GS depth from the pixel shader
@@ -630,7 +742,7 @@ dropped on uploads (lazy render-target patching).
   deadzones, camera speed, trigger point, swapped sticks, inverted camera, a mouse camera (mouse speed as the right
   stick) with sensitivity / invert; the game's own vibration on the gamepad (it was dropped by the pad stub; 0-200%);
   master / movie volume and mono / swapped output; vertical sync (off / on / tearing for VRR); a frame-rate counter;
-  mute or pause in the background; presets (Authentic, Enhanced, Widescreen light) and Reset all settings
+  mute or pause in the background; presets (Authentic, Balanced; Enhanced removed and Widescreen light renamed Balanced at 2x, 2026-11-14) and Reset all settings
   (docs/CONTROLS.md, SETTINGS_MENU_WIDESCREEN.md "Player settings"). `tools/controls_check.py`: 21 checks, 0 failed;
   regress step "controls". Defaults unchanged (the old fixed mapping, mouse camera off, vibration as on the PS2).
 - **Mouse look and driving keys** (2026-10-29, asked for by the user): on foot the mouse turns the follow camera itself
@@ -649,6 +761,16 @@ dropped on uploads (lazy render-target patching).
   limits (src/game/vcs_input.cpp; why: game-internals.md 12b). The gamepad keeps the game's own speeds (pitch 0.6 x the
   heading's). `tools/controls_check.py`: "mouse pitch at once" (120 counts -> +0.300 two frames later, still +0.300
   after 22); 47 checks, 0 failed.
+- [x] **The mouse's camera stopped at a wall on foot** (reported by the user 2026-11-11, fixed the same day): turned
+  toward a building with the mouse, the camera stood still at the wall's edge while its heading turned on behind the
+  wall (at the Fort Baxter barracks door: 0.744 rad behind its heading after a radian of mouse, at 4.41 m; the
+  gamepad's stick is pulled in toward the player instead). The game pulls the camera in only for a turned stick;
+  while the mouse turns the on-foot camera, and 300 ms after, the pad read now sets `0x487E58`, the game's own switch
+  for that path (src/game/vcs_input.cpp; game-internals.md 12b "On foot: the stick, the camera on its string,
+  walls"). Measured at 30 / 60 / 144 fps: the camera 0.001 rad from its heading, pulled in to 3.19 m. First part of
+  an on-foot mouse camera that was built and taken out again that day (DECISIONS.md), then asked for on its own.
+  `VCS_FOOT_WALL=0`: as before. `tools/controls_check.py`: two new checks (the stick's camera at the wall as the
+  reference, then the mouse's); 77 checks, 0 failed.
 - **Free aim with the mouse and the gamepad** (2026-10-31, asked for by the user): Keyboard > Free aim / Gamepad > Free
   aim (off by default): with a gun, holding R1's button aims where the mouse / right stick points with the game's own
   circle, shots go through it, Vic moves as he does locked on with that gun; fists / melee / thrown / scoped weapons keep
@@ -686,6 +808,15 @@ dropped on uploads (lazy render-target patching).
   circle hit and one beside him not, the script's end ends it. (Starting the range from the trainer's mission list
   drops Vic through the floor: the range is an interior the door's script loads - the game's, with or without free
   aim.)
+- **The right button held while running** (2026-11-14, the user's report: the camera turned "incredibly choppy"): with
+  free aim on and a gun in hand, sprinting (Shift) the game never enters free aim, and vcs_aim.cpp had taken the mouse
+  from the follow camera at the first R1 + L3: the camera stood still while it tried (20 frames), turned in the 8
+  between tries, and so on (a per-frame log at 144 fps with a steady synthetic mouse: 21 frames still, 8 turning, over
+  and over). Now the mouse turns the follow camera until the game's free aim is there, and the aim starts where it then
+  looks (game-internals.md 12c). Measured the same way after: every frame turns, 1:1 with the mouse; aiming once the
+  sprint ends still works. controls_check "sprinting, right button held: the mouse turns the camera" (-0.61 rad for
+  300 counts; -0.19 with the old code); 78 checks, 0 failed (one earlier run failed two drive-by checks with the car's
+  camera in mode 32 before any input - not seen again).
 - **Aiming in Farewell To Arms** (2026-11-03, a player's report and the user's: the aim snapped to the left now and then;
   0.0.2, before free aim, was fine): the mission attaches Vic to its helicopter's door (ATTACH_CHAR_TO_CAR, 70 deg
   either side), whose camera (mode 45) keeps its heading signed, relative to the door; the scopes' mouse wrapped it into
@@ -748,6 +879,34 @@ dropped on uploads (lazy render-target patching).
   Sector culling was already right. Checked: plane edge = view window x at 16:9 (0.9336) and 16:10 (0.8402),
   regress step "widecull" (fails with `VCS_WIDE_CULL=0`: 0.7002); spheres passing the test at 16:9 +8-25% over the
   three bench spots; 4:3 untouched (the wrapper returns before reading memory).
+- **The game's own widescreen option retired; Cutscene black bars a setting** (2026-11-06, the user's report: with the
+  pause menu's Display > Widescreen on, cutscenes had no bars). Every effect of that option read from the code
+  (game-internals.md 5a): a Vert- 16:9 aspect, the HUD / text / pause map 3/4 wide and the `_WIDE` menu layouts - the
+  PS2's answer to a TV that stretches the picture, which double-squeezes everything next to F2's Hor+ and HUD squeeze -
+  and no cutscene letterbox. Now (`src/game/vcs_display.cpp`, `vcs_frontend.cpp`; DECISIONS.md): the preference kept
+  at 0 (its setter hooked: a save that has it on no longer turns it on), its pause-menu row hidden (the rows below move
+  up, up / down skip it), and Display > **Cutscene black bars** (default On; `VCS_CUTSCENE_BARS`). Checked: mission
+  50's cutscene with bars on / off at 4:3 and 16:9 (16:9 off: the whole 16:9 picture, on: the bars inside it); a save
+  made with the PS2's mode on loads with the preference 0 and the normal view (`VCS_WIDESCREEN=game`: Vert- as before);
+  `menu_check.py` 33 checks, 0 failed (5 new: no Widescreen row, up / down past it, no gap, the mouse on a moved row);
+  regress step "widepref" (passes). Later the same day (the user's request): the setting is locked On at 4:3 - greyed
+  out showing On, the saved choice kept for widescreen (`Spec::locked`, settings.h). Checked: the F2 Display page at
+  4:3 (greyed, On), 16:9 (the saved Off, changeable) and Match window in the 960x672 test window (changeable);
+  mission 50's cutscene with the setting Off while the aspect is switched live 16:9 -> 4:3 -> 16:9 (no bars, bars,
+  no bars); "widepref" now runs 16:9 On, 16:9 Off and 4:3 Off (bars) - passes.
+- **Scope and camera mask at the screen edges** (2026-11-06, checked at the user's request): at 16:9 the sniper rifle's
+  scope, the camera and binoculars had their black mask squeezed into the middle 4:3, the 3D world showing in the strips
+  beside it. The mask's two side bars now reach the screen edges, drawn unsqueezed (game-internals.md 6f "Scope mask",
+  `src/game/vcs_hud.cpp`, `VCS_SCOPE_FILL=0` = before). Checked: screenshots at 4:3 / 16:9 with HUD Keep 4:3 and Screen
+  edges (strips at most 2 of 255, as the PS2's own mask at 4:3); regress step "scopemask" (fails with
+  `VCS_SCOPE_FILL=0`: 253); `menu_check.py` 33 / 0 failed, `hud_check.py` passes.
+- **Purple Haze's haze across the whole picture** (2026-11-10, GitHub issue 93): the tunnel vision
+  (SET_TUNNEL_VISION_INTENSITY) is eight quarter-screen sprites drawn by CHud::Draw; in widescreen they were grouped
+  with the HUD into one element kept at 4:3 in the middle, so the sides of the picture stayed clear and the clock /
+  weapon moved in from the right edge. They are now a screen effect: unsqueezed, never grouped (game-internals.md 6f
+  "Tunnel vision", `src/game/vcs_hud.cpp`, `VCS_HAZE_FILL=0` = before). Checked: screenshots at 16:9 with HUD Keep 4:3
+  and Screen edges, 21:9, 4:3 (unchanged); `tools/haze_check.py` (every piece anchored "stretch" in 376 frames, the
+  HUD's right cluster at the right edge in all of them).
 
 - **Trainer** (2026-10-26, docs/TRAINER.md): an RDR2 Native Trainer style menu (F5 / Back + RB) - god mode, never
   wanted, wanted level, money, every weapon and loadouts, unlimited ammo, no reload, spawning all 110 vehicles,
@@ -763,6 +922,64 @@ dropped on uploads (lazy render-target patching).
   Same day: a mission launched under it hung on "Loading..." (the first version replaced the camera's update, which
   drives a cutscene's end); fixed, and a launch turns it off. `--freecam` 8 checks (Soldier's cutscene played out
   under it), 0 failed; the full check 41, 0 failed.
+- **The game's pause menu with the keyboard and the mouse** (2026-11-05, the user's request; CONTROLS.md, DECISIONS.md,
+  game-internals.md 6m, `src/game/vcs_frontend.cpp`): Start is Escape (was Enter); in the menu Enter = Cross, Escape =
+  Triangle (back; closes it from the tab bar); the cursor shows; pointing moves the game's highlight, a click selects,
+  sliders follow the cursor, the wheel turns choices / scrolls / zooms the map, the map drags, the right button goes
+  back - all as pad input, the gamepad unchanged. `tools/menu_check.py`: 27 checks, 0 failed; `saves.py` (Escape now
+  opens the menu) passes.
+- **Button prompts by device** (2026-11-07, the user's request; the new F2 page **Enhancements**, DECISIONS.md,
+  game-internals.md 6n, `src/game/vcs_prompts.cpp`, `vcs_glyph_art.cpp`): Enhancements > Button prompts - Original (PS2,
+  the default), Automatic, PlayStation, Xbox, Keyboard & mouse. The help text's controls (`~k~ ~ACTION~`, words such as
+  "R3 button" and the cross / circle / triangle / square glyphs) and the pause menu's help-bar buttons become glyphs of
+  the set: the keys / mouse buttons the player bound (on foot, or the Driving keys in a vehicle; Enter / Escape in the
+  menu), or the physical pad button bound on the Gamepad page, drawn by code into an atlas at the window's size (97
+  glyphs, 512x512 at 640x448, 13 ms on a helper thread). Automatic follows the device used last (a key, a click or the
+  mouse moved past a nudge vs a pad button or a stick / trigger past half way), and a help box already up switches with
+  it. Original runs the game's own code. `tools/prompts_check.py`: 5 checks (expand, sets, automatic, menu, original),
+  0 failed; screenshots at 4:3 and 16:9 with the HUD at the screen edges. Not done: the Controls page's controller
+  picture, a Nintendo set (a Nintendo pad shows Xbox glyphs for now).
+- **Traffic / pedestrian density and draw distance** (2026-11-07, the user's request; DECISIONS.md, game-internals.md
+  6o / 12d, `src/game/vcs_world_detail.cpp`): Enhancements > World - **Traffic density**, **Pedestrian density**,
+  **Draw distance**, 100% (the original) to 300%. Density scales the spawners' own constants (the scripts' multipliers
+  stay theirs: a mission's 0 still empties the streets), raises the caps (cars 16 -> 28, peds 25 / 30 -> 45) only
+  while 16 slots stay free in each pool (the game deletes the closest car / ped, visible or not, below 8), and
+  scales each spawner's chance per road class. Draw distance writes the game's own unused LOD scale `0x4887F8` as
+  set. Cars in view are not removed while any World setting is above 100% (the user saw them vanish ahead while
+  driving: the game's 160 m on-screen removal, inside the longer draw distance). Measured: peds at a Little Haiti spot 22-24 -> 34-36, random cars while
+  driving 7-9 -> 9-10 (the spawn spots limit cars, 12d); draw distance 300%: about +9% draws in an emptied street,
+  more with people about, the packet buffer at most 220 KB of 921 KB. The far plane was tried (`VCS_FAR_CLIP`) and
+  kept at 2000. `tools/world_check.py`: 10 checks (original, inview, peds, poolroom, script0, lod, packets, vanish,
+  back; traffic reported), 0 failed; scenes with the module on and off (`VCS_WORLD_DETAIL_HOOKS=0`) differ only as two
+  captures with it off do (the loading art, the flyover's timing) at the defaults. Cars vanishing in view, 16:9, all
+  three at 300%, 3 min AI drives: with `VCS_WORLD_KEEP=0` 6 at about 175 m (even at 100% traffic, draw distance 300%),
+  with the fix 0 in 30 min (three 10 min drives) and in every world_check since; two earlier fixed runs each lost one
+  car 4-6 m from the camera: the test drive's own CREATE_CAR clearing its spot (ClearSpaceForMissionEntity, the game's
+  behaviour at every setting; reproduced, game-internals.md 12d). Another 20 min of fixed driving: 0; with the fix off
+  13 cars lost at ~175 m in one 10 min drive. Shakedown and Last Stand's credits pass at 300% on all three.
+- **Drive-by fire rate** (2026-11-08, the user's report and request; DECISIONS.md, game-internals.md 12c,
+  `src/game/vcs_driveby.cpp`): NPCs in vehicles fired their SMGs once a frame - 30 shots/s on the PS2 (the SMG's own
+  rate is 11), 144/s at 144 fps. Enhancements > Combat - **Drive-by fire rate**: *As on the PS2* (default) / *The
+  gun's own rate*, through a hook on CWeapon::Fire for the NPC drive-by's two calls. Measured (a passenger with an
+  SMG in a parked car, threat on the player, 20 game seconds a run, per-frame trace of his clip), shots a second
+  within a burst / averaged with pauses and reloads: PS2 30.0 / 13.2 at 30 fps (identical to the original: nothing held
+  back), 30.0 / 13.4 at 60, 29.9 / 12.8 at 144; the gun's rate 10.8 / 6.3, 11.0 / 6.2, 11.1 / 6.5 (gap 90 ms at 144
+  fps); the original (`VCS_DRIVEBY_HOOKS=0`) 144 / 29.4 at 144. The setting changes live (rig `setting`, `driveby`).
+  No tool of its own yet: the measurement was a scratch script (`trace` of the weapon slot).
+- **The mouse wheel on the radio** (2026-11-10, GitHub issue 90; game-internals.md 12a "The radio",
+  `src/game/vcs_input.cpp`): while driving a notch down is the next station and a notch up the one before. The game has
+  one station button, L1, forwards only; a step back writes the vehicle's station two back and presses L1, and takes
+  the write back when the game did not take the press (an announcement on the radio, a vehicle without one). Part of
+  Keyboard > **Mouse wheel** (on by default). Checked with a scratch script (`press wheelup / wheeldown`, the vehicle's
+  station and `VCS_MUSIC_LOG`'s stream opens): down 1 -> 2 -> 3, up 3 -> 2 -> 1 -> 0, three notches up 0 -> 7, two
+  down 7 -> 9 (off), and no change while the announcement plays.
+- **GitHub issues round, 2026-11-10** (DECISIONS.md): the graphics card on a PC with two (issue 112: Graphics >
+  **Graphics card**, Fastest by default - D3D11 through DXGI's ranking, Vulkan by device type; `[rhi] graphics cards` in
+  the log; only one card here, so the choice between two is not checked; since 2026-11-12 the setting lists the cards
+  by name, "(integrated)" after the CPU's chip - DECISIONS.md 2026-11-12); F12's frame dump only with
+  `PS2X_HW_DUMP_KEY=1` (issue 89: Bandicam's and Steam's key; checked: 0 `[draw]` lines without, 893 with); vcs.exe's
+  icon and version information (issue 91: the launcher's icon - since 2026-11-11 its own, the same scene by day in lighter colours -, VERSION through a header only the resource file sees;
+  checked: Explorer's details read 0.2.4, "GTA: Vice City Stories PC port").
 
 ## Milestone 9 - Linux (started 2026-10-30)
 
@@ -842,6 +1059,54 @@ Python scripts still usable on their own. docs/LAUNCHER.md has the whole of it; 
       AppImage updates, `deps.py --platform linux`, apt.llvm.org for old Debian / Ubuntu (`linux_packages.py`), one
       `publish` job for both platforms. Checked end to end on the laptop: AppImage -> files -> game built in 18 min ->
       played; an update's rebuild 1.7 s. Not checked: CI's 22.04 build, an older distribution, apt.llvm.org for real.
+
+- [x] **The issues round of 2026-11-10 (0.2.5's changes) on Linux** (2026-11-10, the user's request): the five commits
+      after 0.2.4 build with clang 20 without a warning (quick build; CI never compiles the game, only the launcher).
+      Checked on the laptop, first **with its desktop locked**, so without the card (LINUX.md "A locked desktop"):
+      the null renderer for everything that reads the game's memory or the log, llvmpipe for one picture.
+      - rotor blades: `framerate_audit.py --only rotor`: 375 / 382 / 383 / 397 health a second at 1/30 / 60 / 144 /
+        240 (Windows: 375 / 391 / 389 / 395); with `VCS_PHYSICS_TIMESTEP=0` 382 at 1/30 and 1830 at 1/144;
+      - the radio wheel: `controls_check.py` 74 of 75, "wheel: radio stations" from 8: down took, up 8, up 7. The one
+        failure is "screenshot key" - the null renderer's PNG is black;
+      - Purple Haze: `haze_check.py` passes (state 60, both thugs at 100, the truck parked once, 2928 haze pieces all
+        "stretch" in 366 frames with the HUD's right cluster at the edge in each; one `[script-fix] mission audio`
+        line and no "slot was freed" one, so no line is dropped on the way); `hud_check.py` passes; `shakedown.py`
+        (the same wait loop): the shop entered, the shopkeeper there, no script left in the audio wait - its
+        brightness term fails on the null renderer's black picture;
+      - F12: 0 `[draw]` lines and no file without `PS2X_HW_DUMP_KEY=1`; 6643 lines and the `hw_*.ppm` dumps with it;
+      - the graphics card: F2 > Graphics has the row with Fastest and Power saving (no System default: D3D11's),
+        `VCS_GPU=2` is refused (`[settings] VCS_GPU: ignoring display.gpu=2`). **Fixed**: the Vulkan backend did not
+        print the `[rhi] graphics cards` line the docs and the setting promise. It does now - every device with its
+        kind and what an unusable one lacks -, and it says so when only Mesa's software renderer is left (a player
+        without a Vulkan driver got ~6 fps and not a word in the log).
+      **Then on the card** (the same day, the desktop unlocked; HD 520, Mesa 25.2.8 ANV, the window shown):
+      - the log names both devices: `[rhi] graphics cards: Intel(R) HD Graphics 520 (SKL GT2) (integrated), llvmpipe
+        (LLVM 20.1.2, 256 bits) (software) (choice: fastest)`; with `VCS_GPU=1` "(choice: power saving)" and still the
+        Intel card - the software renderer stays last either way;
+      - `haze_check.py` passes (2184 haze pieces, all "stretch", 273 frames) and its picture is right: the haze
+        reaches both sides of the 16:9 picture, the clock and money at the right edge, the radar at the left;
+      - `controls_check.py` 75 of 75 (the screenshot key's PNG is 1920x993, 700 KB); `shakedown.py` passes with its
+        picture (luma 73.8 / 73.9 / 73.9);
+      - frame rate, measured as PERFORMANCE.md 16 did (75 s flyover + intro from an empty card, independent timing, a
+        60 cap, no control channel) but in a 1920x993 window, not 960x672: game 57.5 fps (58-59 after the first 10 s),
+        p50 16.7 ms, p95 18.2 ms, host 60.2 fps - where it was. (With the control channel, in the city at 1920x1080,
+        `gamectl.py perf` reads 35-48: the brightness probe's readback every frame, as section 16 says.)
+      **2026-11-12, merged with the setting's new form** (the cards by name, DECISIONS.md 2026-11-12; what is above is
+      as it was on the 10th - Fastest / Power saving, `VCS_GPU=0|1` and that log line are gone). Both sides had given
+      Vulkan a `[rhi] graphics cards` line; they are one now: D3D11's form plus what the Linux check had added. The
+      merged tree builds with clang 20 without a warning (quick build). On the HD 520, the window shown:
+      - `[rhi] graphics cards, fastest first: Intel(R) HD Graphics 520 (SKL GT2) (integrated) [364574466]; not in the
+        list: llvmpipe (LLVM 20.1.2, 256 bits) (software); using Intel(R) HD Graphics 520 (SKL GT2)` - the first run of
+        the Vulkan list and its "(integrated)" mark (Windows had no such chip and only syntax-checked that file);
+      - F2 > Graphics > Graphics card has the one card by name. The closed row cuts the mark short - "Intel(R) HD
+        Graphics 520 (SKL GT2) (integr": Mesa's name is longer than the box. Not changed here;
+      - `VCS_GPU=364574466` takes it; `VCS_GPU=1` (an old value) is refused (`[settings] VCS_GPU: ignoring
+        display.gpu=1`), the card the same; `VCS_VK_DEVICE=llvmpipe` ends the line "using llvmpipe (LLVM 20.1.2, 256
+        bits) (VCS_VK_DEVICE)", and the software renderer's warning follows it.
+      Not run again after the merge: `haze_check.py`, `controls_check.py`, `shakedown.py`, `framerate_audit.py`.
+      Not checked: a ThinLTO build (the quick build was used), and - never checkable here - the choice between two
+      cards. Not done, for the user to decide: the game's window has no icon on Linux (issue 91 gave vcs.exe one
+      through its resources; DECISIONS.md).
 ## Useful switches
 | Env var | Effect |
 |---|---|
@@ -869,11 +1134,20 @@ Python scripts still usable on their own. docs/LAUNCHER.md has the whole of it; 
 | `VCS_TIMING_LOG=1` | independent timing: fps, host wait, EE clock vs real time, WaitVBlank callers every 2 s |
 | `VCS_GAME_VOLUME=0` | Audio > Music / Sound effects leave the game's own levels alone (no setter hooks, no sync; the reference) |
 | `VCS_CARCAM=0` | the hook on the camera behind a vehicle not installed: the mouse moves the right stick there, as before 2026-11-03; Car camera return does nothing |
+| `VCS_FOOT_WALL=0` | on foot the mouse's turn does not ask the camera's update for the pull-in at walls: the camera stands at a wall's edge while its heading turns on, as before 2026-11-11 |
 | `VCS_FREEAIM=0` | free aim's hooks not installed (CGame::Process, CCamera::Process, the weapons' line test): the game's aiming untouched, the setting does nothing |
 | `VCS_INPUT_MAP=0` | the runtime's fixed built-in key / gamepad mapping instead of the player's bindings (`ps2_pad.cpp`; the reference) |
 | `VCS_VSYNC=0\|1\|2` | Vertical sync for one run: off, on, off with tearing allowed |
+| `VCS_REFLECTIONS=0\|1\|2` | Car reflections for one run: Original, Smooth, Auto (Smooth above 1x; always used otherwise, no setting) - game-internals.md 6g |
 | `VCS_SCRIPT_TIMESTEP=0` | mission meters that count per frame stay on the frame rate (game-internals.md 11f; the reference) |
-| `VCS_PHYSICS_TIMESTEP=0` | the push of a body under a wheel, the rolling resistance and a bike's brake wobble stay per frame (game-internals.md 4; the reference) |
+| `VCS_SCRIPT_FIXES=0` | the mission script fixes off: the wait for an audio line never ends when its slot is freed, Purple Haze's truck is not parked early (game-internals.md 11h; the reference: sticks on "Loading..." at 60 fps) |
+| `VCS_PHYSICS_TIMESTEP=0` | the push of a body under a wheel, the rolling resistance, a bike's brake wobble, rotor blades against walls and the water cannon's reach stay per frame (game-internals.md 4; the reference) |
+| `VCS_MUSIC_TIMESTEP=0` | radio stations off the air advance a frame's worth per frame, as on the PS2 (game-internals.md 9; the reference) |
+| `VCS_PARTICLE_TIMING=0` | particles fade, grow and spawn once a frame (before 2026-11-14: smoke 1/4.8 as long at 144 fps, fires thin) |
+| `VCS_REDUCE_POSTFX=1` | Enhancements > Effects > Reduce Post Processing Effects for one run: the motion blur, particles and effects once a frame as before 2026-11-13 / 14 (live in the menu) |
+| `VCS_EFFECTS_TIMING=0` | lightning, sun glare, clouds, camera shake, the video overlay, the photo flash, the HUD bar flash, peds fading, streaks, rubbish, steam after rain, rain streaks starting, explosions (bursts, length, flicker) and the banknote spray step once a frame (before 2026-11-14) |
+| `VCS_EFFECTS_LOG=1` | every 30 s of real time: frames and PS2 frames a second, lightning bursts (count, length), cloud turn / spin a second, and each effect's steps / rolls that took effect a second (with `VCS_EFFECTS_TIMING=0`: the per-frame counts) |
+| `VCS_PARTICLE_LOG=1` | every 10 s of game clock: AddParticle calls / passed per second by return address (`*` = throttled), and particles died per second and their mean lifetime by type |
 | `VCS_TURN_LOG=<model>` | every ApplyTurnForce on vehicles of that model (212 = PCJ-600): caller, its change to the yaw / pitch rate (sum by caller to find a per-frame push) |
 | `VCS_WHEEL_LOG=1` | each bike wheel's ProcessWheel inputs per frame: brake, grip, the contact's forward / sideways speed, wheel state |
 | `VCS_COLL_LOG=1` | each ApplyCollisionAlt (FUN_0034D670) of the player's vehicle: the other entity, contact point, normal, speeds |
@@ -902,7 +1176,7 @@ Python scripts still usable on their own. docs/LAUNCHER.md has the whole of it; 
 | `PS2X_TRACE_RPC=n` | first n SIF RPC events |
 | `PS2X_LOG_MPG=1`, `PS2X_DUMP_MPG_DIR=d` | VU1 microcode uploads |
 | `VCS_GS_STATS=s` | GS state histogram |
-| `VCS_SELFTEST=1` | recompiled libgcc helpers vs native; RenderWare's clip flags (`VCLIPw`) on known vertices |
+| `VCS_SELFTEST=1` | recompiled libgcc helpers vs native; RenderWare's clip flags (`VCLIPw`) on known vertices; the MMI macros for PADDUH, PSUBUH, PABSW / H and PSxxVW against a scalar model (GitHub issue 80) |
 | `VCS_TRACE_IMMEDIATE=1` | callers of the Im2D / Im3D draw entries with their first arguments, counted every 5 s (which game code draws a primitive) |
 | `VCS_TRACE_DELAY=1`, `VCS_TRACE_SOUND=1` | DelayThread calls; EE sound driver commands |
 | `PS2X_TRACE_SPU=1`, `PS2X_TRACE_IOP_DMA=1` | IOP SPU2/DMA/interrupt tracing |
@@ -919,15 +1193,23 @@ Python scripts still usable on their own. docs/LAUNCHER.md has the whole of it; 
 | `PS2X_HLE_CLIPPED=1` | draw world packets that cross the clip planes with GPU clipping (wrong in places, game-internals.md 6h) |
 | `PS2X_HLE_CLIPPER=0` | clipped world packets on the VU1 instead of the C++ clipper |
 | `PS2X_HLE_ENV=0` | the environment-map pass (stage table 0x13) on the VU1 |
+| `PS2X_HLE_ENV_PASS1=native` | the env packets' pass 1 drawn natively as before 2026-11-06 (stripes on car paint: its depth is not pass 2's) |
 | `PS2X_HLE_REDRAW=0` | 0x02c0's re-draws / shine passes and the float-image prelit packets on the VU1 |
 | `VCS_HUD_RW=0` | no HUD context at the RenderWare level (the 16:9 weapon icon goes back to the screen edge; no native HUD, no anchoring) |
 | `VCS_HUD=0/2/1` | HUD in widescreen: keep 4:3 in the middle / screen edges / stretch (the menu's Display > HUD) |
 | `VCS_WIDE_CULL=0` | widescreen: entities culled by the game's 4:3 camera planes (models vanish at the screen edges, as before 2026-10-27) |
+| `VCS_CUTSCENE_BARS=0/1` | the cutscene letterbox off / on for one run (Display > Cutscene black bars; always on at 4:3) |
+| `VCS_WIDESCREEN=1` / `=game` | the game's own (PS2, anamorphic Vert-) widescreen preference forced on / left to the game and its saves (normally kept off); both show its pause-menu row again |
+| `VCS_SCOPE_FILL=0` | widescreen: the scope / camera mask's side bars squeezed into the middle 4:3 as before 2026-11-06 (the world shows beside the scope) |
+| `VCS_HAZE_FILL=0` | widescreen: the tunnel vision's quarters grouped with the HUD and kept at 4:3 in the middle as before 2026-11-10 (Purple Haze's haze leaves the sides clear) |
+| `VCS_HIDE_WIDESCREEN=0` | the pause menu's Display page keeps the game's Widescreen row (the preference still kept off) |
 | `VCS_TRACE_VISIBLE=1` | CCamera::IsSphereVisible: visible ratio every 5 s, samples with the camera-space point and the planes |
 | `VCS_HUD_NATIVE=0` | the HUD drawn into the PS2 frame buffer instead of the native layer at the window's size |
 | `PS2X_HW_PIXEL_CENTRE=0` | draws without the GS pixel-centre offset (softer copies, as before 2026-10-23) |
 | `PS2X_HW_RT_FULL=0` | render targets read once per PS2 texel everywhere (higher internal resolutions lost in the copies) |
 | `PS2X_HW_POSTFX=0` or letters `btc` | effects drawn as recorded / only these native: b bloom, t trails, c frame copy + motion blur |
+| `PS2X_HW_BLUR_STRENGTH=<k>` | the motion blur's strength above 30 fps or 1x, times the game's (default 0.75; 1 = the PS2's everywhere) |
+| `PS2X_HW_BLUR_HISTORY=0` | the motion blur reads the last picture at any frame rate (before 2026-11-13: no light trails above 30 fps), not the one a PS2 frame (33 ms) back |
 | `PS2X_HW_SCALE=0` | native frame: the picture's targets at the window's size (menu: Internal resolution > Match window) |
 | `python tools/rig.py burst DIR N` | the next N presented frames as DIR/burst_NNNN.png + DIR/burst.txt (shape, the renderer's batch) |
 | `PS2X_HW_MENU_SWITCH=0` | widescreen: the pause menu goes 4:3 only after 32 frames without 3D (as before 2026-10-27) |
@@ -942,6 +1224,16 @@ Python scripts still usable on their own. docs/LAUNCHER.md has the whole of it; 
 | `PS2X_HW_FRAME=WxH` | the native frame's size whatever the window (tests) |
 | `PS2X_HW_DUMP_ALLVERTS=1` | the F12 draw log prints every vertex of every draw |
 | `VCS_MENU_NATIVE=0` | menus drawn into the PS2 frame buffer instead of the native layer |
+| `VCS_MENU_MOUSE=0` | the game's pause menu without the mouse (Enter / Escape as Cross / Triangle stay; game/vcs_frontend.h) |
+| `VCS_PROMPTS=0..4` | Enhancements > Button prompts for this run: 0 Original, 1 Automatic, 2 PlayStation, 3 Xbox, 4 Keyboard & mouse (the menu shows it read-only) |
+| `VCS_PROMPTS_HOOKS=0` | none of the button prompts' hooks (the setting then does nothing; game/vcs_prompts.h) |
+| `VCS_PROMPTS_DUMP=<file.png>` | each glyph atlas made, written over grey (to look at the glyphs) |
+| `VCS_TRAFFIC=100..300`, `VCS_PEDS=100..300`, `VCS_DRAW_DISTANCE=100..300` | Enhancements > World for this run (percent; the menu shows them read-only) |
+| `VCS_WORLD_DETAIL_HOOKS=0` | density and draw distance write nothing (the settings then do nothing; game/vcs_world_detail.h) |
+| `VCS_WORLD_KEEP=0` | density without the pool reserve and cars in view not kept (the first version, to compare); the log still names each car that vanishes in view (`[world] car vanished in view`) |
+| `VCS_FAR_CLIP=<metres>` | a test: the far plane and so the fog end at this distance instead of 2000, outdoors (2000 < m <= 20000; game-internals.md 6o) |
+| `VCS_DRIVEBY_RATE=0\|1` | Enhancements > Combat > Drive-by fire rate for this run: 0 as on the PS2, 1 the gun's own rate (the menu shows it read-only) |
+| `VCS_DRIVEBY_HOOKS=0` | the NPC drive-by's fire rate left alone: a shot every frame, as the original game (the setting then does nothing; game/vcs_driveby.h) |
 | `VCS_LOADING_NATIVE=0` | loading screens drawn into the PS2 frame buffer instead of the native layer |
 | `PS2X_HW_PATH2_PACKED=0` | PATH2 draw packets (Im2D, effect strips) through the GS front end vertex by vertex instead of recorded whole |
 | `PS2X_TRACE_PATH2_TAGS=1` | PATH2 (VIF DIRECT) packets by the shape of their first GIFtag, and the register sequence of A+D packets that draw, every 5 s (`[path2]`) |
@@ -963,8 +1255,10 @@ Python scripts still usable on their own. docs/LAUNCHER.md has the whole of it; 
 | `VCS_RSL_CENSUS=1` | every 5 s: what the VIF1 chain still carries outside marked blocks and items - top-level tags by DMA id, first VIFcode and data region, per chain (FULLY_NATIVE.md step 5) |
 | `VCS_RSL_SKIP=0`, `VCS_RSL_SKIP_VERIFY=1`, `VCS_RSL_SKIP_KINDS=<mask>` | copy every marked block; decide skips but copy anyway and check each against the recording it would have replayed; which kinds may be skipped (bit 0 world, 1 model, 2 model-b, 3 other call; default all) |
 | `VCS_RSL_MEASURE=1` | with `VCS_RSL_WORLD_LOG`: per chain the bytes copied, the marked blocks and the distinct ones |
+| `VCS_RSL_RECORDINGS_MB=<n>` | the memory the RSL recordings may hold before the least recently used are dropped (256; 0: no limit, as before 2026-11-10 - GitHub issue 115). `VCS_RSL_WORLD_LOG`'s `memory:` line has what they hold, what was dropped and the game thread's map sizes |
 | `PS2X_HW_RT_LOG=1` | the render targets with their names (gsHwSetTargetRole), sizes and scales, every 5 s |
 | `PS2X_HW_REFLECTION_SCALE=0` | the reflection map stays 1x with "Match window" |
+| `PS2X_HW_DUMP_STEPS=1` with F12 | the target after every full-screen draw or render-target read, as `hw_stepN_fbpF.ppm` (the reflection map: the first `_fbp420` file - the end-of-frame dump of FBP 420 is the bloom) |
 | `VCS_RSL_RASTERS=0` | textures not named by raster (no upload REFs recorded) |
 | `PS2X_HW_DECODE_FROM_UPLOAD=0`, `PS2X_HW_DECODE_VERIFY=1` | textures decoded from emulated VRAM (writing the queued uploads there first) instead of the queued upload's data; both, compared (`[gs-hw] textures from upload`) |
 | `PS2X_HW_CLUT_FROM_UPLOAD=0`, `PS2X_HW_CLUT_VERIFY=1` | CLUT loads read emulated VRAM (writing the queued uploads there first) instead of the queued upload's data; both, compared (`[gs-hw] clut from upload`) |
@@ -1014,6 +1308,7 @@ Python scripts still usable on their own. docs/LAUNCHER.md has the whole of it; 
 | `VCS_COUNT_CALLS=addr,...` | calls per 5 s of guest functions |
 | `VCS_RWATCH=lo,hi` | which code reads a guest range |
 | `PS2X_HW_DUMP=<frame>` | dump HW render targets + display as PPM |
+| `PS2X_HW_DUMP_KEY=1` | F12 does the same for the next frame with draws (the draw log on stderr). Off by default since 2026-11-10: F12 is the screenshot / record key of Steam, Bandicam and others (GitHub issue 89) |
 | `python tools/run.py N name --hidden` + `python tools/gamectl.py ...` | hidden test run driven over the control channel |
 | `python tools/gamectl.py gameinfo` | the F3 game-state panel's lines: player (position, heading, state, health), vehicle, camera, clock / area / pauses, pools, scripts |
 | `python tools/scenes.py capture OUT` / `compare REF NEW` | reference scenes (screenshots + perf) from an empty card; diff two captures |
@@ -1037,6 +1332,7 @@ Python scripts still usable on their own. docs/LAUNCHER.md has the whole of it; 
 | `PS2X_HW_SPECIALISE=0` | the GS pixel shader's full version for every draw (not one per texture read; PERFORMANCE.md 18) |
 | `PS2X_HW_QUEUE=<n>`, `PS2X_HW_BATCH_MAX=<n>` | frames the game may queue ahead / frames rendered per host frame (0: all); defaults 1 / 1 with frame-rate independent timing, 3 / all with the original (PERFORMANCE.md 17) |
 | `VCS_VK_DEVICE=<n or name>` | Vulkan: which GPU |
+| `VCS_GPU=<id>` | Graphics > Graphics card for one run: the card with that id - the number after each name in the log's `[rhi] graphics cards` line (made from the card's PCI ids, the same every start and under D3D11 and Vulkan). An id no card has is ignored (the saved card, else the fastest) |
 | `PS2X_HLE=0` | draw the world through the VU1 program instead of natively (src/game/vcs_hle_world.cpp) |
 | `PS2X_HLE_VERIFY=1` | compare the C++ world pipeline with the VU1's output (bit-exact expected) |
 | `PS2X_HLE_SURVEY=1`, `PS2X_HLE_SURVEY_DUMP=n`, `PS2X_HLE_SURVEY_DUMP_EVERY=n` | VU1 program / layout survey, sample dumps |
@@ -1046,6 +1342,7 @@ Python scripts still usable on their own. docs/LAUNCHER.md has the whole of it; 
 | `display.window=0\|1` in vcs.ini, `VCS_FULLSCREEN=0\|1` for one run, Alt+Enter | windowed / full screen (borderless) |
 | **F8** (`controls.screenshot_key`), `VCS_SCREENSHOT_DIR=<dir>` | screenshot of the window as shown (its resolution, menus / overlays included) to `screenshots/` next to vcs.exe, or that folder (docs/CONTROLS.md) |
 | `PS2X_HIDDEN_WINDOW=WxH` | a hidden test run's window at that size instead of 640x448 (a player's window: the screenshot key at 2560x1440) |
+| `VCS_TEST_VISIBLE=1` (test tools), `VCS_KEEP_SETTINGS=1` | a test run with its window shown (the Mac's): still pinned to the tests' timing, and vcs.ini is never rewritten - `toolchain.test_window` sets `VCS_KEEP_SETTINGS`, which keeps settings changed in the run for that run only, as a hidden run does (before 2026-11-14 shown test runs wrote controls_check's values into the player's vcs.ini) |
 | `display.aspect=43\|1610\|169\|219\|329\|0` in vcs.ini, `VCS_ASPECT=...` for one run | aspect ratio (Hor+ widescreen; 0 = match the window) |
 | `display.hud=0\|1` | widescreen HUD: keep 4:3 in the middle / stretch |
 | `window.*` in vcs.ini | where the window was last (monitor, position, size, maximized); written by the game, delete the lines to reset (docs/SETTINGS_MENU_WIDESCREEN.md) |

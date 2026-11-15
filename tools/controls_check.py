@@ -7,11 +7,13 @@ report they make and in the game, plus the settings registry's presets and reset
 Loads the Fort Baxter rig save (a copy, hidden), then: every default key binding (both slots, either Shift / Ctrl,
 Keypad Enter, the mouse buttons) gives its PS2 button or stick direction, Alt+Enter is not Start; a rebound key moves
 Vic and the old one no longer does; the walk key holds the stick at walking speed; the mouse turns the on-foot camera
-by the amount asked (heading and pitch, inverted, off), right click locks on to a ped, the Driving keys (W / S / Space
+by the amount asked (heading and pitch, inverted, off) and is pulled in at a wall as the stick's camera is, right click
+locks on to a ped, the Driving keys (W / S / Space
 accelerate, brake, handbrake in a car, and nothing else there), the mouse on the vehicle camera (turned 1:1, held while
 the mouse moves, standing and driving, then back behind the car; the right stick takes it back at once), on foot again after
 leaving the car; free aim (src/game/vcs_aim.cpp: the right button enters the game's free aim, the mouse turns it, a shot
-hits a man on the aim line and not one beside it, Vic strafes while aiming, the camera stays where the aim looked, fists
+hits a man on the aim line and not one beside it, Vic strafes while aiming, the camera stays where the aim looked,
+sprinting with the button held the mouse still turns the camera every frame and the aim starts after the sprint, fists
 and free aim off still lock on, the gamepad's RB and right stick, the sniper scope turned 1:1 and zoomed by the wheel,
 the wheel changing weapons; in a car, the game's drive-by free aim as in Jive Drive: the left stick with free aim off,
 the mouse / right stick with it on, the height limits, a shot through the circle, leaving the car; on foot, the game's
@@ -27,6 +29,7 @@ import argparse
 import math
 import os
 import re
+import shutil
 import sys
 import time
 
@@ -49,8 +52,8 @@ DEFAULTS = [
     ("c", L3), ("v", R3), ("backspace", SELECT),
     ("up", UP), ("down", DOWN), ("left", LEFT), ("right", RIGHT),
 ]
-# Start opens the game's pause menu: checked last
-START_KEYS = [("return", START), ("kpenter", START)]
+# Start (Escape) opens the game's pause menu: checked last. Enter is Cross in the pause menu only (tools/menu_check.py)
+NOT_START_KEYS = ["return", "kpenter"]
 
 
 class Check:
@@ -122,14 +125,14 @@ class Check:
         self.ok("music / effects settings reach the game", s.get("music") == "32" and s.get("effects") == "64" and
                 prefs == "4000000020000000", "%s prefs %s" % (s, prefs))
         # loading the card's save (it holds the defaults) keeps the player's levels: pause menu > Game > Load, slot 1
-        self.keys("Return@3", "Right", "Right", "Shift@2", "Shift@3", "Down", "Shift@3", "Up", "Shift@25")
+        self.keys("Escape@3", "Right", "Right", "Shift@2", "Shift@3", "Down", "Shift@3", "Up", "Shift@25")
         s = self.sound()
         with open(g.log_path, encoding="utf-8", errors="replace") as f:
             loaded = "the game sets the music level 80 (ra=0x3add90): the player's 32" in f.read()
         self.ok("a save load keeps the player's levels", loaded and s.get("music") == "32" and s.get("effects") == "64",
                 "%s, load %s" % (s, "seen" if loaded else "not seen"))
         # the pause menu's Audio page shows them (2 and 4 bars) and its slider changes the setting
-        self.keys("Return@3", "Down@2", "Right@2")
+        self.keys("Escape@3", "Down@2", "Right@2")
         self.shot("game_audio_page")
         self.keys("Shift@2", "Left@2")
         s = self.sound()
@@ -162,8 +165,12 @@ class Check:
         Driving keys (W / S / Space as Cross / Square / R1 while driving only), checked in the camera and the car."""
         g = self.g
         S = rig.Scm
-        g.teleport(575.0, 175.0, -100.0, 0.0)  # a straight street (the camera starts at its lowest here)
+        g.teleport(575.0, 175.0, -100.0, 0.0)  # a straight street
         time.sleep(4.0)
+        # the camera at its lowest first: where the teleport leaves it depends on what came before (on the Mac it stayed
+        # up, and "mouse pitch at once" ran into the game's upper limit - +0.252 for +0.3, 2026-11-13)
+        g.cmd("mouse 0 1000")
+        g.wait_frames(10)
         g.cmd("mouse 0 -150")
         g.wait_frames(30)
         mode = self.cam()[0]
@@ -190,12 +197,12 @@ class Check:
         turn, up = self.mouse_moves(10, 20, 5)
         self.setting("mouse.camera", 1)
         self.ok("mouse camera off", abs(turn) < 0.005 and abs(up) < 0.005, "heading %+.3f pitch %+.3f" % (turn, up))
-        self.keys("Return@3")  # the game's pause menu: the camera stays
+        self.keys("Escape@3")  # the game's pause menu: the camera stays
         _, _, h0 = self.cam()
         g.cmd("mouse 400 0")
         time.sleep(1.0)
         _, _, h1 = self.cam()
-        self.keys("Return@3")
+        self.keys("Escape@3")
         self.ok("the mouse leaves the camera in the pause menu", abs(h1 - h0) < 0.001, "heading %.3f -> %.3f" % (h0, h1))
 
         # right click locks on to a ped next to Vic (the game's lock-on camera, mode 11), and the mouse does not break it
@@ -316,6 +323,26 @@ class Check:
                 abs(back) < 0.05, "heading %+.3f, 0.8 s %+.3f, 1.8 s %+.3f, 4.8 s %+.3f from behind" %
                 (angle(h0, h1), angle(h0, h2), angle(h0, h3), back))
 
+        # the mouse wheel on the radio (game-internals.md 12a "The radio"): a notch down is the next station, a notch up
+        # the one before (the vehicle's +0x2BA: 0..8 the stations, 9 off). The game drops L1 while the radio plays an
+        # announcement (15 - 40 s after getting in, in this save), so a step is waited for.
+        station = lambda: g.peek(car + 0x2BA, 1)[0]
+        s0, t0, took = station(), time.time(), False
+        while time.time() - t0 < 80 and not took:
+            g.cmd("press wheeldown 100")
+            time.sleep(2.0)
+            took = station() == (s0 + 1) % 10
+            if not took:
+                time.sleep(4.0)
+        g.cmd("press wheelup 100")
+        time.sleep(2.0)
+        s1 = station()
+        g.cmd("press wheelup 100")
+        time.sleep(2.0)
+        s2 = station()
+        self.ok("wheel: radio stations", took and s1 == s0 and s2 == (s0 + 9) % 10,
+                "from %d: down %s, up %d, up %d" % (s0, "took" if took else "not taken in 80 s", s1, s2))
+
         # out of the car: the on-foot keys and the mouse look again
         g.cmd("key space down")
         time.sleep(1.0)
@@ -329,6 +356,91 @@ class Check:
         p = self.held("w")
         self.ok("on foot again", self.cam()[0] == 4 and abs(turn + 0.75) < 0.03 and p["ly"] == 0 and p["buttons"] == 0,
                 "mode %d heading %+.3f, W %s" % (self.cam()[0], turn, p))
+
+    # ---- the mouse's turn at a wall on foot (src/game/vcs_input.cpp, game-internals.md 12b) ----
+    BARRACKS_DOOR = (-1648.87, -261.0)  # a wall right behind Vic here (rig.Game.BARRACKS_DOOR)
+
+    def foot_wall(self):
+        """At a wall the game pulls the on-foot camera in toward Vic only for a turned stick; the mouse's turn takes
+        that path too. Where the stick's camera is pulled in (the reference), the mouse's is, and it stands where its
+        heading says - not at the wall's edge while the heading turns on behind the wall (the user's report)."""
+        g = self.g
+
+        def angle(a, b):
+            return (b - a + math.pi) % (2 * math.pi) - math.pi
+
+        def beta():
+            return g.peekf(self.CAM + 0x7C, 1)[0]
+
+        def stands():
+            """(where the camera really stands seen from the point it looks at, how far from it)"""
+            s, t = g.peekf(self.CAM + 0x20, 3), g.peekf(self.CAM + 0x1A0, 3)
+            return math.atan2(s[1] - t[1], s[0] - t[0]), math.dist(s, t)
+
+        def level(x, y):
+            """Vic there, the camera level behind him: after a teleport from far away it looks straight down from above
+            him (L1 is the game's "camera behind him")."""
+            g.teleport(x, y, -100.0, 0.0)
+            time.sleep(3.0)
+            g.cmd("press q 1000")
+            time.sleep(2.0)
+
+        # god mode: Vic died in about 1 round in 5 here on Linux (2026-11-14) and respawned at a hospital, where the
+        # mouse's turns then measured nothing (the camera at 1.00 m, 2.4 rad off its heading)
+        g.cmd("trainer toggle god 1")
+        # the game's far view (Select steps through three; the near one, 2 m, does not reach this wall), taken on
+        # open ground where nothing pulls the camera in
+        level(575.0, 175.0)
+        zoom, steps = stands()[1], 0
+        while stands()[1] < 4.0 and steps < 3:
+            g.cmd("press backspace 150")
+            time.sleep(1.5)
+            steps += 1
+        level(*self.BARRACKS_DOOR)
+        path = os.path.join(self.out, "wall_orbit.txt").replace("\\", "/")
+        g.cmd("trace %s 0x%x 1 0x%x 3 0x%x 3" % (path, self.CAM + 0x7C, self.CAM + 0x20, self.CAM + 0x1A0))
+        g.cmd("gamepad on")
+        g.cmd("gamepad rx 1")
+        time.sleep(4.0)
+        g.cmd("gamepad rx 0")
+        g.cmd("gamepad off")
+        g.wait_frames(5)
+        g.cmd("trace off")
+        orbit = [[float(v) for v in line.split()][3:] for line in open(path)]
+        orbit = [(r[0], math.dist(r[1:4], r[4:7])) for r in orbit]
+        full = max(d for _, d in orbit)
+        near = [b for b, d in orbit if d < 0.8 * full]
+        found = self.ok("a wall pulls the stick's camera in", len(near) > 5,
+                        "%d of %d frames under %.2f m" % (len(near), len(orbit), 0.8 * full))
+        wall = math.atan2(sum(math.sin(b) for b in near), sum(math.cos(b) for b in near)) if found else 0.0
+        half = max(abs(angle(wall, b)) for b in near) if found else 0.0
+        got = []
+        for side in ((-1, 1) if found else ()):
+            want = wall + side * (half + 0.5)  # outside the arc, then a radian across it
+            for _ in range(6):
+                d = angle(beta(), want)
+                if abs(d) < 0.004:
+                    break
+                g.cmd("mouse %d 0" % max(-400, min(400, int(round(-d / 0.0025)))))
+                g.wait_frames(8)
+            time.sleep(0.6)
+            b0 = beta()
+            for _ in range(40):  # as a hand moves it: a few counts every game frame
+                g.cmd("mouse %d 0" % (side * 10))
+                g.wait_frames(1)
+            g.wait_frames(10)
+            at, dist = stands()
+            got.append((angle(b0, beta()) + side * 1.0, angle(beta(), at), dist))
+        self.ok("at a wall the camera follows the mouse and is pulled in",
+                found and all(abs(t) < 0.01 and abs(o) < 0.02 and d < 0.9 * full for t, o, d in got),
+                "; ".join("turn off by %+.3f, the camera %+.3f from its heading, %.2f of %.2f m" % (t, o, d, full)
+                          for t, o, d in got))
+        level(575.0, 175.0)
+        while abs(stands()[1] - zoom) > 0.2 and steps < 6:  # the view as it was
+            g.cmd("press backspace 150")
+            time.sleep(1.5)
+            steps += 1
+        g.cmd("trainer toggle god 0")
 
     # ---- free aim (src/game/vcs_aim.cpp, game-internals.md 12c) ----
     PED_POOL, PED_SIZE = 0x487A94, 0xD20
@@ -353,6 +465,33 @@ class Check:
         n = math.hypot(fx, fy) or 1.0
         fx, fy = fx / n, fy / n
         return self.ped_at(px + fx * ahead + fy * side, py + fy * ahead - fx * side)
+
+    def sprint_aim(self):
+        """Sprinting (W + Shift) the game never enters free aim: with a gun and the right button held the mouse still
+        turns the follow camera, every frame (it froze while free aim tried to start: 20 frames still, 8 turning - the
+        user's report, 2026-11-14), and free aim starts once Vic stops sprinting. Free aim on, a gun in hand."""
+        g = self.g
+        g.cmd("key w down")
+        g.cmd("key shift down")
+        time.sleep(1.0)
+        g.cmd("key mouseright down")
+        time.sleep(0.5)
+        _, _, b0 = self.cam()
+        for _ in range(30):  # 300 counts over 30 frames (a full try and its retry): -0.75 radians at 100%
+            g.cmd("mouse 10 0")
+            g.wait_frames(1)
+        g.wait_frames(10)
+        mode, _, b1 = self.cam()
+        turn = (b1 - b0 + math.pi) % (2 * math.pi) - math.pi
+        g.cmd("key shift up")
+        g.cmd("key w up")
+        time.sleep(1.5)
+        after = self.aim()[0]
+        g.cmd("key mouseright up")
+        time.sleep(1.0)
+        # -0.62 at 30 fps (the camera swinging after the running Vic takes back a little); -0.19 when it froze
+        self.ok("sprinting, right button held: the mouse turns the camera", mode == 4 and -1.2 < turn < -0.45 and after == 1,
+                "mode %d heading %+.3f, free aim after the sprint %d" % (mode, turn, after))
 
     def aim(self):
         """(active, shots) from aimstate; the dummy's heading from Vic (radians)."""
@@ -454,6 +593,7 @@ class Check:
         self.ok("released: the camera stays", mode == 4 and abs(dh) < 0.05 and self.aim()[0] == 0,
                 "mode %d heading %+.3f" % (mode, dh))
 
+        self.sprint_aim()
         self.setting("mouse.free_aim", 0)
 
         # the gamepad: Gamepad > Free aim, RB (R1) aims, the right stick turns it (2 radians a second at full tilt), the
@@ -914,7 +1054,9 @@ class Check:
                 "active %d attached %#x mode %d" % ended)
 
     def run(self):
-        g = self.g = rig.Game.start(save=os.path.join(ROOT, "build", "rig", "saves", "fortbaxter"), name="controls_check",
+        # the screenshot key's check counts the PNGs here: none left from an earlier run into the same OUT
+        shutil.rmtree(os.path.join(self.out, "screenshot_key"), ignore_errors=True)
+        g = self.g = rig.Game.start(save=rig.default_save(), name="controls_check",
                                     port=self.port, data_dir=os.path.join(ROOT, "build", "controls", "data"),
                                     env={"VCS_FPS": "30", "VCS_TIMING": "",  # timing unlocked: the presets set it
                                          "VCS_SCREENSHOT_DIR": os.path.join(self.out, "screenshot_key")})
@@ -978,9 +1120,11 @@ class Check:
             self.setting("keys.l12", 0)
 
             # settings: presets and reset
-            self.setting("presets.enhanced")
-            got = {k: self.setting(k) for k in ("display.aspect", "display.hud", "display.msaa", "display.timing")}
-            self.ok("Enhanced preset", got == {"display.aspect": "0", "display.hud": "2", "display.msaa": "4", "display.timing": "1"}, str(got))
+            self.setting("presets.balanced")
+            # (not display.fps: test runs pin VCS_FPS=30, and the environment wins)
+            got = {k: self.setting(k) for k in ("display.aspect", "display.hud", "display.timing", "display.aniso", "display.scale")}
+            self.ok("Balanced preset", got == {"display.aspect": "0", "display.hud": "2", "display.timing": "1",
+                                               "display.aniso": "4", "display.scale": "2"}, str(got))
             self.setting("presets.authentic")
             got = {k: self.setting(k) for k in ("display.aspect", "display.hud", "display.msaa", "display.timing", "display.fps")}
             self.ok("Authentic preset", got == {"display.aspect": "43", "display.hud": "0", "display.msaa": "1", "display.timing": "0",
@@ -1012,7 +1156,7 @@ class Check:
                     "%s, %s, pad %s" % (saved.group(0) if saved else "no [screenshot] line", pngs, p))
 
             # the settings menu's pages
-            for page in ("Display", "Graphics", "Audio", "Game", "Keyboard", "Gamepad", "Advanced"):
+            for page in ("Display", "Graphics", "Audio", "Game", "Keyboard", "Gamepad", "Enhancements", "Advanced"):
                 g.cmd("menu " + page)
                 g.wait_frames(4)
                 self.shot("menu_" + page.lower())
@@ -1023,6 +1167,11 @@ class Check:
             g.cmd("menu close")
             p = self.held("shift")
             self.ok("input back after the menu", p["buttons"] == CROSS, str(p))
+
+            # the mouse's camera at a wall. Here, after the weapon checks, not among them: it moves Vic across the map
+            # and back, the city around him loads anew, and with it before them the shot and wheel checks failed
+            # now and then (a 50 ms wheel press lost to a long frame, a shot that missed its man)
+            self.foot_wall()
 
             # vibration: an explosion next to Vic (the game shakes the pad; god mode so he lives)
             g.cmd("trainer toggle god 1")
@@ -1041,10 +1190,14 @@ class Check:
             # Start last (it opens the pause menu); Alt+Enter is full screen, not Start
             p = self.held("alt", "return")
             self.ok("Alt+Enter is not Start", not p["buttons"] & START, str(p))
-            for key, want in START_KEYS:
+            for key in NOT_START_KEYS:
                 p = self.held(key)
-                self.ok("%s is Start" % key, p["buttons"] == want, str(p))
-                time.sleep(1.0)
+                self.ok("%s presses nothing outside the pause menu" % key, p["buttons"] == 0, str(p))
+                time.sleep(0.5)
+            # Escape is Start: held, the menu opens and has the key from then on (the report shows nothing after)
+            self.held("escape")
+            time.sleep(1.0)
+            self.ok("escape is Start (the pause menu opens)", g.cmd("menustate").startswith("open=1"), g.cmd("menustate")[:40])
             self.ok("still running", g.alive())
         finally:
             g.quit()
