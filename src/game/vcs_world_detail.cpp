@@ -67,6 +67,14 @@ namespace vcs::world
         constexpr uint32_t kVehiclePool = 0x00487A98u;
         constexpr uint32_t kPackets = 0x00520F90u; // +0x14 half in use, +0x18 cursor up, +0x1C data down, halves from +0x20
         constexpr uint32_t kPacketHalf = 0xE6670u;
+        // CPopulation's distance factor (FUN_002B44C8, no arguments, f0): 1 on foot, 1 + |player vehicle velocity xy|
+        // - 0.1 clamped to [1, 1.5] in a vehicle (its +0x140 / +0x144). Every population distance is multiplied by it:
+        // the ped spawn rings FUN_002AFE80 passes FUN_002B17A8 (on screen 35..60 m, off screen 10..20 m, the first two x
+        // GenerationDistMultiplier) and the removal in FUN_002B0200 (65 m x GenerationDistMultiplier, 51 m with a ped
+        // flag, 20 m off screen after a while) - so scaling it moves spawning and removal together (game-internals 12d).
+        constexpr uint32_t kPopDistFactor = 0x002B44C8u;
+        constexpr uint32_t kPlayers = 0x004E4910u, kPlayerIndex = 0x004CD128u, kPlayerSize = 0x190u;
+        constexpr uint32_t kPedVehicle = 0x480u;
 
         constexpr int kMaxPercent = 300;
         constexpr int kCarCapMax = 28;       // FUN_00430148 stops at 30 random cars on its own
@@ -78,7 +86,9 @@ namespace vcs::world
 
         bool g_enabled = false;
         bool g_keep = true; // VCS_WORLD_KEEP=0: no pool reserve, no keeping cars in view
-        std::atomic<int> g_traffic{100}, g_peds{100}, g_draw{100};
+        std::atomic<int> g_traffic{100}, g_peds{100}, g_draw{100}, g_pedDistance{100};
+        constexpr int kPedDistanceMax = 200;
+        PS2Runtime::RecompiledFunction g_origPopDistFactor = nullptr;
 
         struct Original
         {
@@ -96,7 +106,8 @@ namespace vcs::world
         // published for the command
         std::atomic<int> g_stCarCap{0}, g_stPedCapOut{0}, g_stPedCapIn{0}, g_stPedFree{-1}, g_stVehicleFree{-1},
             g_stPedsUsed{-1}, g_stVehiclesUsed{-1}, g_stPlayerInView{-1};
-        std::atomic<float> g_stLod{1.0f};
+        std::atomic<float> g_stLod{1.0f}, g_stPedMean{0.0f}, g_stPedFar{0.0f};
+        std::atomic<int> g_stPedCount{0};
         std::atomic<uint32_t> g_stPacketUsed{0}, g_stPacketPeak{0}, g_stCarChance{0}, g_stPedChance{0};
         std::atomic<uint32_t> g_stMinVehicleFree{999}, g_stMinPedFree{999}; // since the last query
         std::atomic<uint64_t> g_stKeptInView{0}, g_stVanished{0};
@@ -188,6 +199,33 @@ namespace vcs::world
             if (scaled <= original || !g_keep)
                 return scaled;
             return std::max(original, std::min(scaled, count + std::max(room, 0)));
+        }
+
+        // the peds in the pool (0xD20 bytes each, vcs_driveby.cpp) other than the player: count, mean and farthest 2D
+        // distance from the camera - for the command (tests of the ped distance)
+        void pedDistances(const uint8_t *ram, int &count, float &mean, float &farthest)
+        {
+            count = 0;
+            mean = farthest = 0.0f;
+            const uint32_t pool = rd32(ram, kPedPool) & 0x01FFFFFFu;
+            if (!pool)
+                return;
+            const uint32_t entries = rd32(ram, pool) & 0x01FFFFFFu, flags = rd32(ram, pool + 4) & 0x01FFFFFFu;
+            const int size = std::min(static_cast<int>(rd32(ram, pool + 8)), 256);
+            const uint32_t player = rd32(ram, kPlayers) & 0x01FFFFFFu;
+            const float cx = rdf(ram, kCamera + 0x30), cy = rdf(ram, kCamera + 0x34);
+            for (int i = 0; i < size && entries && flags; ++i)
+            {
+                const uint32_t ped = entries + static_cast<uint32_t>(i) * 0xD20u;
+                if ((ram[flags + i] & 0x80) || ped == player)
+                    continue;
+                const float d = std::hypot(rdf(ram, ped + 0x30) - cx, rdf(ram, ped + 0x34) - cy);
+                ++count;
+                mean += d;
+                farthest = std::max(farthest, d);
+            }
+            if (count)
+                mean /= static_cast<float>(count);
         }
 
         int carCount(const uint8_t *ram)
@@ -324,6 +362,30 @@ namespace vcs::world
             g_origRemoveVehicle(rdram, ctx, runtime);
         }
 
+        // FUN_002B44C8 (see kPopDistFactor): at 100% the game's own; above it the same value, worked out here from the
+        // player's vehicle (FindPlayerVehicle FUN_0024A2D0: CWorld::Players[index].ped's +0x480 when it is in it; a ped
+        // getting in or out has a vehicle standing still, so the speed term is 0 either way), times the setting. All
+        // in host code: no guest call, so no unwind can skip the scaling.
+        PS2_GUEST_CC void popDistFactor(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            const int percent = std::clamp(g_pedDistance.load(std::memory_order_relaxed), 100, kPedDistanceMax);
+            if (percent == 100 || !g_orig.valid)
+            {
+                g_origPopDistFactor(rdram, ctx, runtime);
+                return;
+            }
+            float k = 1.0f;
+            const uint32_t index = rdram[kPlayerIndex & 0x01FFFFFFu];
+            const uint32_t ped = rd32(rdram, kPlayers + index * kPlayerSize) & 0x01FFFFFFu;
+            if (const uint32_t vehicle = ped ? rd32(rdram, ped + kPedVehicle) & 0x01FFFFFFu : 0u)
+            {
+                const float vx = rdf(rdram, vehicle + 0x140), vy = rdf(rdram, vehicle + 0x144);
+                k = std::min(std::max(std::sqrt(vx * vx + vy * vy) - 0.1f + 1.0f, 1.0f), 1.5f);
+            }
+            ctx->f[0] = k * (percent / 100.0f);
+            ctx->pc = GPR_U32(ctx, 31);
+        }
+
         // bytes used in the packet buffer's current half (FUN_00476770): the frame being kicked (reported only)
         uint32_t packetUse(const uint8_t *ram)
         {
@@ -389,6 +451,13 @@ namespace vcs::world
                                   "How far away people, cars, props and detailed models still show. 100% is the original "
                                   "game. Costs GPU time.",
                                   "VCS_DRAW_DISTANCE", g_draw));
+        settings::Spec s = percentSpec("enhance.ped_distance", "Pedestrian distance",
+                                       "How far away people appear and are removed. 100% is the original game (they "
+                                       "appear 35-60 m away). Raise the draw distance with it so they are drawn that far; "
+                                       "the same number of people spreads over a wider area.",
+                                       "VCS_PED_DISTANCE", g_pedDistance);
+        s.max = kPedDistanceMax;
+        settings::add(s);
     }
 
     void install(PS2Runtime &runtime)
@@ -415,6 +484,8 @@ namespace vcs::world
                 runtime.replaceFunction(kPossiblyRemoveVehicle, &possiblyRemoveVehicle);
                 if ((g_origWorldRemove = runtime.lookupFunction(0x0018FA50u)))
                     runtime.replaceFunction(0x0018FA50u, &worldRemove);
+                if ((g_origPopDistFactor = runtime.lookupFunction(kPopDistFactor)))
+                    runtime.replaceFunction(kPopDistFactor, &popDistFactor);
             }
             else
             {
@@ -443,7 +514,7 @@ namespace vcs::world
         //   minpedfree minvehfree (since the last query) kept (cars kept in view, total) playerinview packets peak far
         //   carchance pedchance
         ps2control::addCommand("worlddetail", [](const std::string &, ps2control::Reply reply) {
-            char text[512];
+            char text[640];
             std::snprintf(text, sizeof(text),
                           "ok enabled=%d valid=%d traffic=%d peds=%d draw=%d carcap=%d pedcap=%d/%d lod=%.3f pedfree=%d "
                           "vehfree=%d pedsused=%d vehused=%d minpedfree=%u minvehfree=%u kept=%llu vanished=%llu playerinview=%d "
@@ -454,6 +525,9 @@ namespace vcs::world
                           g_stMinVehicleFree.exchange(999), (unsigned long long)g_stKeptInView.load(),
                           (unsigned long long)g_stVanished.load(),                          g_stPlayerInView.load(), g_stPacketUsed.load(), g_stPacketPeak.exchange(0),
                           g_farClip > 0 ? g_farClip : 2000.0f, g_stCarChance.load(), g_stPedChance.load());
+            const size_t n = std::strlen(text);
+            std::snprintf(text + n, sizeof(text) - n, " peddist=%d peds=%d pedmean=%.1f pedfar=%.1f",
+                          g_pedDistance.load(), g_stPedCount.load(), g_stPedMean.load(), g_stPedFar.load());
             reply(text);
         });
     }
@@ -492,6 +566,14 @@ namespace vcs::world
         g_stCarChance.store(g_carChance, std::memory_order_relaxed);
         g_stPedChance.store(g_pedChance, std::memory_order_relaxed);
         g_stLod.store(lod, std::memory_order_relaxed);
+        {
+            int count;
+            float mean, farthest;
+            pedDistances(rdram, count, mean, farthest);
+            g_stPedCount.store(count, std::memory_order_relaxed);
+            g_stPedMean.store(mean, std::memory_order_relaxed);
+            g_stPedFar.store(farthest, std::memory_order_relaxed);
+        }
         if (const uint32_t player = rd32(rdram, 0x004E4910u) & 0x01FFFFFFu)
         {
             const float p[3] = {rdf(rdram, player + 0x30), rdf(rdram, player + 0x34), rdf(rdram, player + 0x38)};

@@ -24,6 +24,8 @@ namespace vcs::aim
 {
     // Before runtime.run(): the hooks (applyVcs).
     void install(PS2Runtime &runtime);
+    // Enhancements > Combat: Instant first shot (the walking SMGs' first bullet without the firing animation's start).
+    void registerSettings();
 
     // What the pad read hands over, once per game frame (game thread).
     struct Input
@@ -32,6 +34,8 @@ namespace vcs::aim
         bool on = false;          // free aim is on for either device (the game's own free aim a script starts is taken over)
         float turn = 0, tilt = 0; // radians this frame: left +, up + (the mouse)
         float turnRate = 0, tiltRate = 0; // -1..1: left +, up + (the right stick)
+        bool fire = false;        // the fire button (Circle) is held - for VCS_AIM_LOG only
+        bool target = false;      // the target button (R1) is held - for VCS_AIM_LOG only
     };
     // What the pad report gets.
     struct Output
@@ -44,6 +48,8 @@ namespace vcs::aim
         bool r1 = false, l3 = false;
     };
     Output update(const Input &in);
+    // VCS_AIM_LOG=1: the frame's line when free aim is not running (update logs its own)
+    void logFrame(const Input &in, const Output &out);
 
     // The player's current weapon is one free aim works with (the guns: not melee, thrown, scopes, the camera).
     bool gunInHand();

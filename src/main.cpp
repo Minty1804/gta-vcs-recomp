@@ -23,6 +23,7 @@
 #include "disc/vcs_disc_id.h"
 #include "game/vcs_display.h"
 #include "game/vcs_driveby.h"
+#include "game/vcs_aim.h"
 #include "game/vcs_effects_timing.h"
 #include "game/vcs_framerate.h"
 #include "game/vcs_movie.h"
@@ -733,6 +734,7 @@ namespace
         vcs::world::registerSettings();   // Enhancements > World: density, draw distance (game/vcs_world_detail.h)
         vcs::texpack::registerSettings(); // Graphics > Texture packs (game/vcs_texture_pack.h)
         vcs::driveby::registerSettings(); // Enhancements > Combat: drive-by fire rate (game/vcs_driveby.h)
+        vcs::aim::registerSettings();     // Enhancements > Combat: instant first shot (game/vcs_aim.h)
         vcs::registerEffectsSettings();   // Enhancements > Effects: Reduce Post Processing Effects (game/vcs_effects_timing.h)
 
         s = {};

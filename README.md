@@ -24,6 +24,9 @@ option or can be switched off, and everything else is the same as upstream.
 | **Reload in a vehicle** | The clip refills only while you are not firing | The reload key fills the clip at once, even during a drive-by |
 | **Walk on a diagonal** | *Walk* + two direction keys (Alt + W + D) left Vic standing still | He walks diagonally, as he does in one direction |
 | **On-foot camera** | Swings back behind Vic against your mouse as soon as he moves | Stays where the mouse put it for a while (2 s by default) |
+| **Palms at a distance** | With a texture pack or anisotropic filtering, far palms (and other leaves) look see-through | They stay as solid as up close |
+| **First shot of the Mac 10 / Micro SMG** | About half a second after you press fire, even with the gun raised | At once (option, off by default) |
+| **Pedestrian distance** | People appear 35-60 m away | Up to twice as far (option, 100% by default) |
 
 **Texture packs.** Put the pack's `SLUS-21590` folder into a `textures` folder next to the game, so its images end up
 in `build\textures\SLUS-21590\replacements\` (sub-folders are fine). That is the same layout as PCSX2's own `textures`
@@ -37,6 +40,16 @@ frame rate.
   frame rate.
 - Not supported yet: PCSX2's region (`-r<w>x<h>-`) and separate mip-level (`-mip<n>`) file names. Such files are
   skipped and counted in the log.
+
+**Combat and world.**
+- **Instant first shot**: Settings (F2) > Enhancements > Combat, off by default. The Micro SMG and the Mac 10 fire as
+  soon as you press fire. In the original game Vic first plays the start of the firing animation, so the first bullet
+  came about half a second late (467 ms measured for the Mac 10; now 84 ms, as fast as the other guns).
+- **Pedestrian distance**: Settings (F2) > Enhancements > World, 100-200% (100% is the original game). Raise the draw
+  distance with it so the people far away are drawn.
+- **Palms**: no setting. Far fronds used to blend with the sky because the smaller copies of their texture (used at a
+  distance) averaged the leaves with the gaps between them. Now each smaller copy keeps the full texture's share of
+  solid leaf.
 
 **Controls.**
 - **Reload weapon**: Settings (F2) > Keyboard, **R** by default. On the gamepad, Settings > Gamepad (no button by

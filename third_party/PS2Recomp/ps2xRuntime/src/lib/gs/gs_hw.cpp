@@ -385,6 +385,7 @@ namespace
     // rounded mean of the 2x2 texels above it (edge texels repeated where a level is 1 wide or high) - what
     // GenerateMips / linear blits made on the GPU before, built on the GS stage instead (PERFORMANCE.md 21: a burst of new
     // textures was a burst of render-target textures and mip passes on the main thread).
+    void keepAlphaCoverage(const std::vector<uint32_t> &base, uint32_t w, uint32_t h, std::vector<uint32_t> &mips);
     void buildMipChain(const std::vector<uint32_t> &base, uint32_t w, uint32_t h, std::vector<uint32_t> &out)
     {
         out.clear();
@@ -418,6 +419,92 @@ namespace
             src = dst;
             dst += size_t(dw) * dh;
             sw = dw, sh = dh;
+        }
+        keepAlphaCoverage(base, w, h, out);
+    }
+
+    // [gta-recomp] Cut-out textures (leaves, palm fronds, fences: texels either clear or solid) lose their alpha down a
+    // mip chain - each level averages the solid texels with the clear ones around them, so far away the fronds came out
+    // half transparent, the sky showing through whole palms (the user's report with a texture pack, whose large images
+    // go down many levels). Each level's alpha is remapped so its texels are clear, solid and in between in the same shares
+    // as the base image's (histogram matching; it keeps the coverage at every alpha, as alpha-to-coverage-preserving mips do
+    // at one). Textures with soft alpha (smoke, glows, shadows) are left as they were. PS2X_HW_MIP_COVERAGE=0: plain
+    // averages.
+    void keepAlphaCoverage(const std::vector<uint32_t> &base, uint32_t w, uint32_t h, std::vector<uint32_t> &mips)
+    {
+        static const bool enabled = [] {
+            const char *e = std::getenv("PS2X_HW_MIP_COVERAGE");
+            return !(e && *e == '0');
+        }();
+        if (!enabled || base.size() < size_t(w) * h || mips.empty())
+            return;
+        uint32_t hist[256] = {};
+        for (size_t i = 0, n = size_t(w) * h; i < n; ++i)
+            ++hist[base[i] >> 24];
+        uint32_t top = 255;
+        while (top > 0 && !hist[top])
+            --top;
+        if (top < 16)
+            return;
+        // cut-out: at least half the texels clear (under a tenth of the top) or solid (over nine tenths), some of each (the
+        // texture packs' fronds have wide soft edges)
+        const uint32_t n = w * h, lowEnd = top / 10, highStart = top - top / 10, ref = (top + 1) / 2;
+        uint64_t clear = 0, solid = 0, covered = 0;
+        for (uint32_t a = 0; a <= top; ++a)
+        {
+            clear += a <= lowEnd ? hist[a] : 0;
+            solid += a >= highStart ? hist[a] : 0;
+            covered += a >= ref ? hist[a] : 0;
+        }
+        static const bool log = [] {
+            const char *e = std::getenv("PS2X_HW_MIP_COVERAGE_LOG");
+            return e && *e == '1';
+        }();
+        if (log)
+            std::fprintf(stderr, "[mip-coverage] %ux%u top=%u clear=%.0f%% solid=%.0f%% covered=%.0f%%\n", w, h, top,
+                         100.0 * clear / n, 100.0 * solid / n, 100.0 * covered / n);
+        if (clear < n / 20 || solid < n / 20 || (clear + solid) * 100 < uint64_t(n) * 50)
+            return;
+        // the base's cumulative alpha counts: baseBelow[a] texels have an alpha under a
+        uint64_t baseBelow[257] = {};
+        for (uint32_t a = 0; a < 256; ++a)
+            baseBelow[a + 1] = baseBelow[a] + hist[a];
+        uint32_t *level = mips.data();
+        for (uint32_t lw = w, lh = h; lw > 1u || lh > 1u;)
+        {
+            lw = std::max(1u, lw >> 1), lh = std::max(1u, lh >> 1);
+            const uint32_t count = lw * lh;
+            uint32_t levelHist[256] = {};
+            for (uint32_t i = 0; i < count; ++i)
+                ++levelHist[level[i] >> 24];
+            // histogram matching: an alpha whose texels sit at a share s of the level (the middle of their run, in
+            // order of alpha) becomes the alpha at the same share of the base
+            uint8_t map[256];
+            uint64_t below = 0;
+            uint32_t b = 0;
+            for (uint32_t a = 0; a < 256; ++a)
+            {
+                // share (below + levelHist[a] / 2) / count, compared on the base's scale (x n, x 2 to stay integral)
+                const uint64_t at = (2 * below + levelHist[a]) * n;
+                while (b < 255 && 2 * baseBelow[b + 1] * count <= at)
+                    ++b;
+                map[a] = static_cast<uint8_t>(levelHist[a] ? b : a);
+                below += levelHist[a];
+            }
+            if (log)
+            {
+                uint64_t mid = 0, midAfter = 0;
+                for (uint32_t a = 0; a < 256; ++a)
+                {
+                    mid += a > lowEnd && a < highStart ? levelHist[a] : 0;
+                    midAfter += map[a] > lowEnd && map[a] < highStart ? levelHist[a] : 0;
+                }
+                std::fprintf(stderr, "[mip-coverage]   %ux%u between clear and solid %.0f%% -> %.0f%%\n", lw, lh,
+                             100.0 * mid / count, 100.0 * midAfter / count);
+            }
+            for (uint32_t i = 0; i < count; ++i)
+                level[i] = (level[i] & 0x00FFFFFFu) | (uint32_t(map[level[i] >> 24]) << 24);
+            level += count;
         }
     }
 

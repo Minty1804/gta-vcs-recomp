@@ -1792,6 +1792,15 @@ PaletteKeyHash, TextureName) and another VCS port that loads PCSX2 packs (its gs
   there first), not per draw; every textured draw - the native world, lit models, 2D - goes through that one place.
   The same texture hashes to the same name in every session (a test pack made from one run's dump: 825 of 825 made
   textures replaced in the next).
+- **Palms see-through at a distance** (2026-11-18, the player's screenshot at the airport): the fronds are blended, not
+  cut out, and their texture is mostly clear or solid - the game's 128x128 frond (`57b7e3bafb5f1991-...-00001dd4`,
+  the far palm `288caf79954eee6b-...`) ~60 % clear, ~20 % at 0x70+, the pack's 512x512 BC7 53 % clear, 21 % solid. A
+  plain mip chain averages the two: at 64x64 76 % of the pack frond's texels were half transparent (26 % in the base),
+  so far palms showed the sky and the buildings through them. Every mip chain (the pack's, and the game's with
+  anisotropic filtering on) now gets its levels' alpha histogram-matched to the base for textures that are at least
+  half clear-or-solid with 5 % of each (gs_hw.cpp `keepAlphaCoverage`; `PS2X_HW_MIP_COVERAGE=0` plain averages,
+  `PS2X_HW_MIP_COVERAGE_LOG=1` prints each texture's shares). Without the pack and with anisotropic filtering off
+  there are no mips: the picture is the same as before.
 
 ## 8. Data loaded at boot
 
@@ -3021,6 +3030,25 @@ hidden run (rig `peek` / `poke`, snapshots diffed).
     30.0 / 29.9 shots/s at 30 / 60 / 144 fps, the gun's rate 10.8 / 11.0 / 11.1 (PROGRESS.md).
   - Setting up a drive-by in a test: `SET_CHAR_OBJ_KILL_CHAR_ANY_MEANS` makes the passenger of a standing car get
     out and fire on foot (animation-paced: a few shots a second); the threat search keeps him seated.
+- **The first shot** (2026-11-18, the player's report: "about a second between aiming and the shot" in free aim):
+  - Measured at 60 fps from fire down to the first clip drop (`VCS_AIM_LOG=1`, the aim's per-frame line): Mac 10 (26)
+    450-467 ms, Micro SMG (24) 483-500 ms, pistol (19) 133 ms, SMG (27) 84 ms - the same in the game's own lock-on on a
+    ped and in free aim, so it is the original game's.
+  - Weapon info (`*(*(0x712770) + 4) + type * 0x70`): +0 flags (0x80 = moves while aiming: 19, 24, 26), +8 range,
+    +0xC rate, +0x10 reload, +0x14 clip, +0x40 animation group, +0x44 loop start, +0x48 loop end, +0x4C fire point
+    (+0x50..+0x58 crouched, +0x5C breakout). 26: 0.3667 / 0.4667 / 0.4333; 24: loop end 0.5.
+  - The cause: for the guns that walk while aiming, CPed::SetAttack (FUN_001D0970) blends the attack animation
+    (group info +0x40, id 0xD6 / 0xD7) in afresh with `BlendAnimation` (FUN_00215868) and leaves it at time 0 (it only
+    rewinds a finished one); the bullet waits for the fire point. The others hold their animation in the aim pose and
+    fire from the loop. The association is then given its finish callback (FUN_0018ECE8, a0 association, a1 0x1D1BD0,
+    a2 the ped; returning to 0x1D1904; CPed::Attack FUN_001D26C8 has the same sequence returning to 0x1D3DAC).
+    Association: +0x28 current time, +0x20 its hierarchy (+0x20 duration), +0x30 animation id, +0x34 / +0x38 / +0x3C
+    callback kind / function / data. SetCurrentTime is FUN_0018EB70 (a0 association, f12 time; sets every node).
+  - Enhancements > Combat > **Instant first shot** (`enhance.quick_first_shot`, off by default, `VCS_QUICK_FIRST_SHOT`;
+    game/vcs_aim.cpp): that SetFinishCallback call is replaced for the player with a gun of flag 0x80 whose loop start
+    is before its fire point - the three stores, then SetCurrentTime(loop start) as a guest tail call returning where
+    it would have. Measured: Mac 10 84 ms, Micro SMG 133-184 ms (two to four times the bullets in a 0.6 s press);
+    the pistol and the SMG unchanged. `quickshot` on the control channel counts the attacks started so.
 
 ### 12d. Population: density, caps, spawn chance (2026-11-07, Enhancements > World)
 
@@ -3083,6 +3111,21 @@ probes in the game (rig, `worlddetail`).
   distance cars are drawn at (6o). Measured (world_check): peds at the Little Haiti spot about 25 -> 40 at 300%; random cars while driving
   about 9-10 -> 10-13 - the spawn spots stay the limit. With peds at 300% the random cars standing there fell to 0-5
   in one probe (cause not found; the heap was not it).
+- **How far away peds appear** (2026-11-18, Enhancements > World > Pedestrian distance, `enhance.ped_distance`
+  100-200 %, `VCS_PED_DISTANCE`):
+  - FUN_002B44C8 is the population's distance factor: f0 = 1 on foot; in a vehicle 1 + |its velocity xy (+0x140 /
+    +0x144)| - 0.1, clamped to 1..1.5 (FindPlayerVehicle FUN_0024A2D0: CWorld::Players 0x4E4910 + 0x190 x byte
+    0x4CD128, ped +0x480).
+  - Its callers are all the ped population's: AddPedsToPopulation's ring (FUN_002AFE80 at 0x2AFFE4..0x2B0040, the
+    spawner FUN_002B17A8: on screen GenDist x 35 x k .. GenDist x 60 x k, off screen 20 x k - 10 .. 20 x k; GenDist
+    TheCamera + 0x7D0), the initial fill (FUN_002B0070), the spawner's own checks (0x2B1A00, 0x2B1A10, 0x2B24D4),
+    the removal (FUN_002B0200: beyond 65 x GenDist x k; 51 x GenDist x k unless ped +0x1D0 bit 2; 20 x k off screen
+    after a while), and five group / scenario spawners (FUN_002B3020, 2B4680, 2B4BC0, 2B52E8, 2B5990: nothing nearer
+    than 35 x k).
+  - The setting replaces FUN_002B44C8 (vcs_world_detail.cpp) with the same computation times the percentage, so the
+    ring, the removal and the minimum distances move out together; 100 % calls the original. Measured at 200 %:
+    the peds' mean distance 38.5 -> 49.2 m, the farthest 124 m (`worlddetail` prints peddist / pedmean / pedfar).
+    The same number of peds spreads over a larger ring: raise the draw distance with it.
 
 ## 13. Open questions / next research targets
 

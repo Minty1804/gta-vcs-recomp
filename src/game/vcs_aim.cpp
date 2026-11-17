@@ -4,6 +4,7 @@
 #include "ps2_runtime.h"
 #include "ps2_runtime_macros.h"
 #include "runtime/ps2_control.h"
+#include "settings/settings.h"
 
 #include <algorithm>
 #include <atomic>
@@ -67,8 +68,20 @@ namespace vcs::aim
         constexpr float kFootPitchDown = -0.3490659f, kFootPitchUp = 0.6981317f, kFootYawLimit = 1.9198622f;
         constexpr uint32_t kWeaponInfo = 0x00712770u; // *(*(this) + 4) + type * 0x70: the weapon's info, +8 its range
 
+        // The first shot of the guns that walk while aiming (game-internals.md 12c "The first shot"): CPed::Attack
+        // (FUN_001D26C8) blends their attack animation in afresh and lets it run from 0, so the first bullet waits for
+        // the fire point (0.43 s for the Mac 10, 0.5 for the Micro SMG). Its SetFinishCallback call right after that
+        // blend (FUN_0018ECE8, returning to 0x1D3DAC) is replaced for the player: the callback is stored as the game
+        // does, then SetCurrentTime (FUN_0018EB70) runs as a guest tail call with the weapon's loop start (info +0x44),
+        // where the animation's held fire loop begins - the gun is already up, the first bullet leaves at once.
+        constexpr uint32_t kSetFinishCallback = 0x0018ECE8u, kSetCurrentTime = 0x0018EB70u;
+        constexpr uint32_t kAttackBlendReturns[2] = {0x001D1904u, 0x001D3DACu}; // SetAttack (FUN_001D0970), Attack
+        constexpr uint32_t kInfoWalksAiming = 0x80u, kInfoLoopStart = 0x44u, kInfoFirePoint = 0x4Cu;
+        std::atomic<int> g_quickShot{0};
+        std::atomic<uint32_t> g_quickShots{0};
+
         PS2Runtime::RecompiledFunction g_origGame = nullptr, g_origCamera = nullptr, g_origShotLine = nullptr,
-                                       g_origMovesAiming = nullptr;
+                                       g_origMovesAiming = nullptr, g_origFinishCallback = nullptr;
         uint8_t *g_rdram = nullptr;
 
         enum class State
@@ -295,11 +308,70 @@ namespace vcs::aim
             }
             g_origShotLine(rdram, ctx, runtime);
         }
+
+        // CAnimBlendAssociation::SetFinishCallback(a0 assoc, a1 callback, a2 data): see kSetFinishCallback.
+        PS2_GUEST_CC void finishCallback(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            const uint32_t assoc = GPR_U32(ctx, 4), ped = GPR_U32(ctx, 6);
+            static const bool log = [] { const char *e = std::getenv("VCS_AIM_LOG"); return e && e[0] == '1'; }();
+            if (log && ped && ped == rd32(kPlayerPed))
+                std::fprintf(stderr, "[aim-log] finish-callback ra=0x%x cb=0x%x assoc=0x%x anim=%d time=%.4f\n",
+                             GPR_U32(ctx, 31), GPR_U32(ctx, 5), assoc, assoc ? (int)(int16_t)rd32(assoc + 0x30) : -1,
+                             assoc ? rdf(assoc + 0x28) : 0.0f);
+            if (g_quickShot.load(std::memory_order_relaxed) && (GPR_U32(ctx, 31) == kAttackBlendReturns[0] || GPR_U32(ctx, 31) == kAttackBlendReturns[1]) && assoc &&
+                ped && ped == rd32(kPlayerPed))
+            {
+                const int8_t slot = static_cast<int8_t>(g_rdram[(ped + kPedSlot) & kRamMask]);
+                const uint32_t type = slot >= 0 && slot < 10 ? rd32(ped + kPedWeapons + slot * 0x1Cu) : 0;
+                const uint32_t table = rd32(rd32(kWeaponInfo) + 4);
+                const uint32_t info = isGun(type) && table ? table + type * 0x70u : 0;
+                const float start = info ? rdf(info + kInfoLoopStart) : 0.0f;
+                if (info && (rd32(info) & kInfoWalksAiming) && start > 0.0f && start < rdf(info + kInfoFirePoint) &&
+                    rdf(assoc + 0x28) < start)
+                {
+                    // FUN_0018ECE8's body: data, the callback kind, the callback
+                    wr32(assoc + 0x3C, ped);
+                    wr32(assoc + 0x34, 1);
+                    wr32(assoc + 0x38, GPR_U32(ctx, 5));
+                    // SetCurrentTime(assoc, start), returning where SetFinishCallback would have
+                    ctx->f[12] = start;
+                    ctx->pc = kSetCurrentTime;
+                    g_quickShots.fetch_add(1, std::memory_order_relaxed);
+                    return;
+                }
+            }
+            g_origFinishCallback(rdram, ctx, runtime);
+        }
+    }
+
+    void registerSettings()
+    {
+        settings::Spec s;
+        s.key = "enhance.quick_first_shot";
+        s.page = "Enhancements";
+        s.section = "Combat";
+        s.label = "Instant first shot";
+        s.help = "The Micro SMG and the Mac 10 fire as soon as you press fire. In the original game Vic first plays "
+                 "the start of the firing animation, so the first bullet comes about half a second late even with the "
+                 "gun already raised.";
+        s.type = settings::Type::Toggle;
+        s.defaultValue = 0;
+        s.env = "VCS_QUICK_FIRST_SHOT";
+        s.onChange = [](int v) { g_quickShot.store(v, std::memory_order_relaxed); };
+        settings::add(s);
     }
 
     void install(PS2Runtime &runtime)
     {
         g_rdram = runtime.memory().getRDRAM();
+        if ((g_origFinishCallback = runtime.lookupFunction(kSetFinishCallback)))
+            runtime.replaceFunction(kSetFinishCallback, &finishCallback);
+        // quickshot -> ok on=<0|1> shots=<attacks started at the loop start so far>
+        ps2control::addCommand("quickshot", [](const std::string &, ps2control::Reply reply) {
+            char text[64];
+            std::snprintf(text, sizeof(text), "ok on=%d shots=%u", g_quickShot.load(), g_quickShots.load());
+            reply(text);
+        });
         if (const char *e = std::getenv("VCS_FREEAIM"); e && e[0] == '0')
         {
             std::fprintf(stderr, "[aim] free aim off (VCS_FREEAIM=0)\n");
@@ -437,7 +509,48 @@ namespace vcs::aim
         }
     }
 
+    Output updateInner(const Input &in);
+
+    bool logOn()
+    {
+        static const bool log = [] {
+            const char *e = std::getenv("VCS_AIM_LOG");
+            return e && e[0] == '1';
+        }();
+        return log;
+    }
+
+    // VCS_AIM_LOG=1: one line a pad read while a button is held or free aim runs (state, the ped's state / +0x35C /
+    // target kind, the clip, the buttons sent) - for timing the entry and the first shot (game-internals.md 12c)
+    void logFrame(const Input &in, const Output &out)
+    {
+        if (logOn() && g_rdram && (in.want || in.fire || in.target || g_state != State::Idle))
+        {
+            const uint32_t ped = rd32(kPlayerPed);
+            const uint32_t target = ped ? rd32(ped + kPedTarget) : 0;
+            int clip = -1;
+            if (ped)
+            {
+                const int8_t slot = static_cast<int8_t>(g_rdram[(ped + kPedSlot) & kRamMask]);
+                if (slot >= 0 && slot < 10)
+                    clip = static_cast<int>(rd32(ped + kPedWeapons + slot * 0x1Cu + 8u));
+            }
+            std::fprintf(stderr, "[aim-log] t=%u fire=%d clip=%d want=%d state=%d wait=%d ped=0x%02x 35c=%02x tgt=%u bit51=%d r1=%d l3=%d own=%d\n",
+                         rd32(0x004CD104u), in.fire ? 1 : 0, clip, in.want ? 1 : 0, static_cast<int>(g_state), g_wait,
+                         ped ? rd32(ped + kPedState) : 0u, ped ? rd32(ped + 0x35Cu) & 0xFFu : 0u,
+                         target ? (rd32(target + kEntityFlags) & 0xEu) : 0u, ped && freeAimBit(ped) ? 1 : 0, out.r1 ? 1 : 0,
+                         out.l3 ? 1 : 0, out.own ? 1 : 0);
+        }
+    }
+
     Output update(const Input &in)
+    {
+        const Output out = updateInner(in);
+        logFrame(in, out);
+        return out;
+    }
+
+    Output updateInner(const Input &in)
     {
         Output out;
         const uint32_t ped = g_rdram && g_origGame ? rd32(kPlayerPed) : 0;

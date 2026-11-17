@@ -699,6 +699,8 @@ namespace vcs::input
                     aim::Input in;
                     in.want = !blocked && (mouseWant || padWant);
                     in.on = m.freeAimMouse || m.freeAimPad;
+                    in.fire = keyCircle;
+                    in.target = keyR1;
                     if (!blocked)
                     {
                         // zoomed views turn slower for the same hand movement
@@ -710,6 +712,13 @@ namespace vcs::input
                         in.tiltRate = -padRy * std::fabs(padRy);
                     }
                     g_mouse.aim = aim::update(in);
+                }
+                else
+                {
+                    aim::Input in;
+                    in.fire = keyCircle;
+                    in.target = keyR1;
+                    aim::logFrame(in, {});
                 }
 
                 if (g_mouse.aim.camera)

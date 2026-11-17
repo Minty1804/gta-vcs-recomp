@@ -1240,6 +1240,11 @@ Python scripts still usable on their own. docs/LAUNCHER.md has the whole of it; 
 | `VCS_FAR_CLIP=<metres>` | a test: the far plane and so the fog end at this distance instead of 2000, outdoors (2000 < m <= 20000; game-internals.md 6o) |
 | `VCS_DRIVEBY_RATE=0\|1` | Enhancements > Combat > Drive-by fire rate for this run: 0 as on the PS2, 1 the gun's own rate (the menu shows it read-only) |
 | `VCS_DRIVEBY_HOOKS=0` | the NPC drive-by's fire rate left alone: a shot every frame, as the original game (the setting then does nothing; game/vcs_driveby.h) |
+| `VCS_PED_DISTANCE=100..200` | Enhancements > World > Pedestrian distance for this run (percent of the game's spawn / removal distances; game-internals.md 12d) |
+| `VCS_QUICK_FIRST_SHOT=0\|1` | Enhancements > Combat > Instant first shot for this run (the Mac 10's and Micro SMG's attack started at the loop start; game-internals.md 12c) |
+| `VCS_AIM_LOG=1` | a line per frame while aiming or firing (`[aim-log]`: fire, clip, state, target) and the player's SetFinishCallback calls - for timing the first shot |
+| `PS2X_HW_MIP_COVERAGE=0` | mip chains as plain averages: cut-out textures' alpha not histogram-matched to the base (far palms see-through again; game-internals.md 7b) |
+| `PS2X_HW_MIP_COVERAGE_LOG=1` | each mip chain's alpha shares (clear / solid / covered) and per level the half-transparent share before and after |
 | `VCS_LOADING_NATIVE=0` | loading screens drawn into the PS2 frame buffer instead of the native layer |
 | `PS2X_HW_PATH2_PACKED=0` | PATH2 draw packets (Im2D, effect strips) through the GS front end vertex by vertex instead of recorded whole |
 | `PS2X_TRACE_PATH2_TAGS=1` | PATH2 (VIF DIRECT) packets by the shape of their first GIFtag, and the register sequence of A+D packets that draw, every 5 s (`[path2]`) |

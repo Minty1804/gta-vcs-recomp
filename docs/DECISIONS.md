@@ -1557,3 +1557,21 @@ choices:
 - **build/textures is protected from tools/clean.py**: the player's packs and dumps live there.
 - **On by default**: with no pack in the folder it changes nothing (the original game), so a player only has to copy
   the pack. Dumping is off by default.
+
+## 2026-11-18 - Solid palms, an instant first shot, peds farther away (the player's requests)
+
+- **Palms: mip levels histogram-matched, always on** (game-internals.md 7b): the see-through palms came from the mip
+  chain averaging the fronds' clear and solid texels - an artefact of our mips (the pack, anisotropic filtering), never
+  on the PS2, which samples the base image. So it is a fix, not an option; `PS2X_HW_MIP_COVERAGE=0` keeps the plain
+  averages for comparison. Coverage at one threshold (alpha-to-coverage mips) changed little - the fronds are blended,
+  so what shows is how many texels are half transparent; matching the whole histogram keeps that share. Only
+  textures that are mostly clear-or-solid are touched, so smoke and glows keep their soft mips.
+- **Instant first shot: an option, off by default** (game-internals.md 12c): the half-second wait before the Mac 10's
+  and Micro SMG's first bullet is the original game's (the same with its own lock-on), so authentic stays the default;
+  the player's own vcs.ini has it on. It starts the attack animation at the weapon's loop start for the player only,
+  through the SetFinishCallback call that follows the blend (a replacement that does the three stores and tail-calls
+  SetCurrentTime - nothing runs after a guest call).
+- **Pedestrian distance: one factor for the whole ped population** (game-internals.md 12d): scaling the game's own
+  distance factor moves the spawn ring, the removal distances and the minimum distances together, so peds are never
+  made where they would be removed at once. Capped at 200 %: beyond that they would spawn past the draw distance most
+  of the time. The player's vcs.ini has 175 %.
