@@ -1785,7 +1785,9 @@ PaletteKeyHash, TextureName) and another VCS port that loads PCSX2 packs (its gs
 - VCS's textures are nearly all T4 / T8 (a dump in the barracks and at the airport: 453 textures, the most common bits
   `00001554` = T4 32x32, `00001994` = T4 64x64, `00001dd4` = T4 128x128; then T8 16x16). The font sheet dumps as
   `3ece7b57667e958b-f663bcea3bca5023-00002213` (T8 256x256), the same name the other port's dump gives - both hashes.
-  The other port's owner saw a real PCSX2 HD pack hit; here no pack for the PS2 game was at hand to check T4 against.
+  A real PCSX2 HD pack (6279 BC7 .dds, 2026-11-18) hits: 2074 of 2090 textures made in a city run replaced, T4 and T8
+  alike. Its names carry the old TCC bit (the font sheet is `...-00006213.dds`), so clearing bit 14 is needed. A
+  2048x2048 BC7 image decodes in ~40 ms on a loader thread, 1024x1024 in ~10 ms; ~1.2 ms on average over a run.
 - In the renderer (gs_hw.cpp bindTextureUncached) the hash is taken when a texture is made from VRAM (its uploads written
   there first), not per draw; every textured draw - the native world, lit models, 2D - goes through that one place.
   The same texture hashes to the same name in every session (a test pack made from one run's dump: 825 of 825 made

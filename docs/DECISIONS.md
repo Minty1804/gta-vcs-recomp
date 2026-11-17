@@ -1549,7 +1549,11 @@ choices:
 - **Drawn through the hardware sampler** (gs_draw.hlsl's mode 4: normalised coordinates, trilinear over a mip chain,
   anisotropic up to the setting but at most 4 - `PS2X_HW_PACK_ANISO`), so an image of any size fits; the GS's exact
   bilinear stays for every other texture. No shader change.
-- **PNG only for now**: DDS (BC1-BC7) would need compressed formats in three RHI backends; the index counts and names
-  the DDS files it skips. Region-clamped and mip-level names are skipped too.
+- **DDS decoded on the loader threads, not uploaded compressed** (2026-11-18, the player's pack was all BC7): a
+  compressed upload would need BC formats in three RHI backends and the runtime's texture path; decoding the top level
+  to RGBA with bcdec (third_party/bcdec, MIT, one header, vendored at 80859ed - it has no tags for deps.py) keeps it in
+  vcs_texture_pack.cpp. The cost is memory (RGBA in the cache and on the GPU), not frame rate. Compressed upload is the
+  next step if memory becomes a problem. Region-clamped and mip-level names are skipped.
+- **build/textures is protected from tools/clean.py**: the player's packs and dumps live there.
 - **On by default**: with no pack in the folder it changes nothing (the original game), so a player only has to copy
   the pack. Dumping is off by default.

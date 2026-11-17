@@ -25,6 +25,7 @@ import toolchain as tc  # noqa: E402
 PROTECTED = [
     "release", "tools", "build-tools", "analyzer", "iop_tests", "elf", "vu1", "analysis",
     "rig/saves", "regress/baseline", "scenes/reference", "pgo/vcs.profdata", "msvc_env.json",
+    "textures",  # the player's texture packs and dumps next to vcs.exe (game/vcs_texture_pack.cpp)
 ]
 
 

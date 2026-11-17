@@ -11,8 +11,10 @@
 // on two worker threads; the renderer draws the original until its image is ready, then swaps it in. Decoded images are
 // kept up to VCS_TEXPACK_CACHE_MB (1024) for a texture that is made again; the GPU keeps its own copy while in use.
 //
-// Not supported (yet): DDS images (PCSX2 packs may hold BC1-BC7 .dds; convert them to PNG), region-clamped textures'
-// "-r<w>x<h>-" names and "-mip<n>" levels (counted at start). VCS_TEXPACK=0: nothing hashed or replaced (the original).
+// Images are PNG or DDS (BC1 / BC2 / BC3 / BC7, or uncompressed RGBA8): a DDS's top level is decoded to RGBA on the
+// loader thread and the renderer makes the mip chain from it, as for a PNG.
+// Not supported (yet): region-clamped textures' "-r<w>x<h>-" names and "-mip<n>" levels (counted at start).
+// VCS_TEXPACK=0: nothing hashed or replaced (the original).
 #include "game/vcs_texture_pack.h"
 
 #include "platform/platform.h"
@@ -23,8 +25,14 @@
 #define XXH_INLINE_ALL
 #include "xxhash.h"
 
+#define BCDEC_STATIC
+#define BCDEC_IMPLEMENTATION
+#include "bcdec.h" // third_party/bcdec (MIT / public domain): BC1-BC7 blocks to RGBA
+
+#include <algorithm>
 #include <atomic>
 #include <cctype>
+#include <chrono>
 #include <cinttypes>
 #include <condition_variable>
 #include <cstdio>
@@ -117,6 +125,139 @@ namespace vcs::texpack
             else
                 std::snprintf(text, sizeof(text), "%" PRIx64 "-%08x.png", k.tex0, k.bits);
             return text;
+        }
+
+        // A DDS file's top mip level as RGBA8 (bytes R, G, B, A in memory, as readPng gives). BC1 / BC2 / BC3 / BC7 by
+        // their DX10 DXGI format or legacy FourCC, and 32-bit uncompressed RGBA / BGRA; anything else fails (logged).
+        bool readDds(const std::string &path, uint32_t &width, uint32_t &height, std::vector<uint32_t> &pixels,
+                     std::string &why)
+        {
+            FILE *f = nullptr;
+#ifdef _WIN32
+            const std::u8string u(path.begin(), path.end());
+            f = _wfopen(fs::path(u).c_str(), L"rb");
+#else
+            f = std::fopen(path.c_str(), "rb");
+#endif
+            if (!f)
+            {
+                why = "can't open";
+                return false;
+            }
+            std::vector<uint8_t> file;
+            std::fseek(f, 0, SEEK_END);
+            const long size = std::ftell(f);
+            std::fseek(f, 0, SEEK_SET);
+            if (size > 0)
+            {
+                file.resize(static_cast<size_t>(size));
+                if (std::fread(file.data(), 1, file.size(), f) != file.size())
+                    file.clear();
+            }
+            std::fclose(f);
+            auto u32 = [&](size_t off) {
+                uint32_t v;
+                std::memcpy(&v, file.data() + off, 4);
+                return v;
+            };
+            if (file.size() < 128 || std::memcmp(file.data(), "DDS ", 4) != 0 || u32(4) != 124u)
+            {
+                why = "not a DDS file";
+                return false;
+            }
+            height = u32(12);
+            width = u32(16);
+            const uint32_t pfFlags = u32(80), fourcc = u32(84), rgbBits = u32(88), rMask = u32(92), aMask = u32(104);
+            size_t offset = 128;
+            enum class Kind { None, BC1, BC2, BC3, BC7, RGBA, BGRA } kind = Kind::None;
+            auto cc = [](const char *s) { return uint32_t(s[0]) | uint32_t(s[1]) << 8 | uint32_t(s[2]) << 16 | uint32_t(s[3]) << 24; };
+            if ((pfFlags & 4u) && fourcc == cc("DX10"))
+            {
+                if (file.size() < 148)
+                {
+                    why = "truncated DX10 header";
+                    return false;
+                }
+                offset = 148;
+                switch (u32(128)) // DXGI_FORMAT
+                {
+                case 70: case 71: case 72: kind = Kind::BC1; break;
+                case 73: case 74: case 75: kind = Kind::BC2; break;
+                case 76: case 77: case 78: kind = Kind::BC3; break;
+                case 97: case 98: case 99: kind = Kind::BC7; break;
+                case 27: case 28: case 29: kind = Kind::RGBA; break;
+                case 87: case 90: case 91: kind = Kind::BGRA; break;
+                default: break;
+                }
+                if (kind == Kind::None)
+                    why = "DXGI format " + std::to_string(u32(128)) + " not supported";
+            }
+            else if (pfFlags & 4u)
+            {
+                if (fourcc == cc("DXT1"))
+                    kind = Kind::BC1;
+                else if (fourcc == cc("DXT2") || fourcc == cc("DXT3"))
+                    kind = Kind::BC2;
+                else if (fourcc == cc("DXT4") || fourcc == cc("DXT5"))
+                    kind = Kind::BC3;
+                else
+                    why = "FourCC not supported";
+            }
+            else if (rgbBits == 32u)
+                kind = rMask == 0x000000FFu ? Kind::RGBA : Kind::BGRA;
+            else
+                why = "uncompressed format with " + std::to_string(rgbBits) + " bits not supported";
+            if (kind == Kind::None)
+                return false;
+            if (!width || !height || width > 8192u || height > 8192u)
+            {
+                why = "bad size";
+                return false;
+            }
+            pixels.assign(size_t(width) * height, 0u);
+            if (kind == Kind::RGBA || kind == Kind::BGRA)
+            {
+                const size_t need = size_t(width) * height * 4u;
+                if (file.size() - offset < need)
+                {
+                    why = "truncated";
+                    return false;
+                }
+                std::memcpy(pixels.data(), file.data() + offset, need);
+                const bool hasAlpha = ((pfFlags & 1u) && aMask) || offset == 148; // without: opaque on the GS scale
+                for (uint32_t &p : pixels)
+                {
+                    if (kind == Kind::BGRA)
+                        p = (p & 0xFF00FF00u) | ((p & 0xFFu) << 16) | ((p >> 16) & 0xFFu);
+                    if (!hasAlpha)
+                        p = (p & 0x00FFFFFFu) | 0x80000000u;
+                }
+                return true;
+            }
+            const size_t blockBytes = (kind == Kind::BC1) ? 8u : 16u;
+            const uint32_t bw = (width + 3u) / 4u, bh = (height + 3u) / 4u;
+            if (file.size() - offset < size_t(bw) * bh * blockBytes)
+            {
+                why = "truncated";
+                return false;
+            }
+            const uint8_t *src = file.data() + offset;
+            uint32_t block[16];
+            for (uint32_t by = 0; by < bh; ++by)
+                for (uint32_t bx = 0; bx < bw; ++bx, src += blockBytes)
+                {
+                    switch (kind)
+                    {
+                    case Kind::BC1: bcdec_bc1(src, block, 16); break;
+                    case Kind::BC2: bcdec_bc2(src, block, 16); break;
+                    case Kind::BC3: bcdec_bc3(src, block, 16); break;
+                    default: bcdec_bc7(src, block, 16); break;
+                    }
+                    const uint32_t w = std::min(4u, width - bx * 4u), h = std::min(4u, height - by * 4u);
+                    for (uint32_t y = 0; y < h; ++y)
+                        std::memcpy(&pixels[size_t(by * 4u + y) * width + bx * 4u], &block[y * 4u], w * 4u);
+                }
+            return true;
         }
 
         class Pack final : public GSHwTexturePack
@@ -245,11 +386,12 @@ namespace vcs::texpack
                 gsHwTexturePackStats(hashed, replaced);
                 char text[256];
                 std::snprintf(text, sizeof(text),
-                              "ok indexed=%zu hashed=%llu/%llu replaced=%llu loaded=%llu failed=%llu dumped=%llu cache_mb=%zu",
+                              "ok indexed=%zu hashed=%llu/%llu replaced=%llu loaded=%llu failed=%llu dumped=%llu cache_mb=%zu "
+                              "load_ms_avg=%.1f",
                               m_entries.size(), (unsigned long long)m_hashed.load(), (unsigned long long)hashed,
                               (unsigned long long)replaced,
                               (unsigned long long)m_loaded, (unsigned long long)m_failed, (unsigned long long)m_written.load(),
-                              m_cacheBytes >> 20);
+                              m_cacheBytes >> 20, m_loaded ? m_loadUs / 1000.0 / double(m_loaded) : 0.0);
                 return text;
             }
 
@@ -259,7 +401,7 @@ namespace vcs::texpack
                 std::string path; // UTF-8
                 std::shared_ptr<const GSHwReplacement> image;
                 uint64_t lastUse = 0;
-                bool queued = false, failed = false;
+                bool queued = false, failed = false, dds = false;
             };
             struct WriteJob
             {
@@ -284,9 +426,8 @@ namespace vcs::texpack
                         continue;
                     const std::string name = utf8(it->path().filename());
                     Key k;
-                    if (endsWith(name, ".dds"))
-                        ++dds;
-                    else if (!endsWith(name, ".png"))
+                    const bool isDds = endsWith(name, ".dds");
+                    if (!isDds && !endsWith(name, ".png"))
                         continue;
                     else if (parseName(name, k))
                     {
@@ -297,17 +438,19 @@ namespace vcs::texpack
                         }
                         m_byKey.emplace(k, m_entries.size());
                         m_entries.push_back({utf8(it->path())});
+                        m_entries.back().dds = isDds;
+                        dds += isDds;
                     }
                     else if (name.find("-r") != std::string::npos || name.find("-mip") != std::string::npos)
                         ++region;
                     else
                         ++other;
                 }
-                std::fprintf(stderr, "[texpack] %zu replacement textures in %s", m_entries.size(), utf8(dir).c_str());
-                if (dds || region || other || dupes)
-                    std::fprintf(stderr, " (skipped: %zu DDS - convert them to PNG, %zu region / mip level names, %zu other, %zu "
-                                         "duplicates)",
-                                 dds, region, other, dupes);
+                std::fprintf(stderr, "[texpack] %zu replacement textures in %s (%zu DDS)", m_entries.size(),
+                             utf8(dir).c_str(), dds);
+                if (region || other || dupes)
+                    std::fprintf(stderr, " (skipped: %zu region / mip level names, %zu other, %zu duplicates)", region,
+                                 other, dupes);
                 std::fprintf(stderr, "\n");
             }
 
@@ -317,6 +460,7 @@ namespace vcs::texpack
                 {
                     size_t index;
                     std::string path;
+                    bool dds;
                     {
                         std::unique_lock<std::mutex> lock(m_mutex);
                         m_cv.wait(lock, [&] { return m_stop || !m_loads.empty(); });
@@ -325,10 +469,16 @@ namespace vcs::texpack
                         index = m_loads.front();
                         m_loads.pop_front();
                         path = m_entries[index].path;
+                        dds = m_entries[index].dds;
                     }
                     auto image = std::make_shared<GSHwReplacement>();
-                    const bool ok = platform::readPng(path.c_str(), image->width, image->height, image->pixels) &&
+                    const auto start = std::chrono::steady_clock::now();
+                    std::string why;
+                    const bool ok = (dds ? readDds(path, image->width, image->height, image->pixels, why)
+                                         : platform::readPng(path.c_str(), image->width, image->height, image->pixels)) &&
                                     image->width <= 8192u && image->height <= 8192u;
+                    const auto us = std::chrono::duration_cast<std::chrono::microseconds>(
+                                        std::chrono::steady_clock::now() - start).count();
                     std::lock_guard<std::mutex> lock(m_mutex);
                     Entry &e = m_entries[index];
                     e.queued = false;
@@ -336,13 +486,15 @@ namespace vcs::texpack
                     {
                         e.failed = true;
                         ++m_failed;
-                        std::fprintf(stderr, "[texpack] can't read %s\n", path.c_str());
+                        std::fprintf(stderr, "[texpack] can't read %s%s%s\n", path.c_str(), why.empty() ? "" : ": ",
+                                     why.c_str());
                         continue;
                     }
                     ++m_loaded;
+                    m_loadUs += static_cast<uint64_t>(us);
                     if (m_loaded <= 5u)
-                        std::fprintf(stderr, "[texpack] loaded %s (%ux%u)\n", utf8(fs::u8path(path).filename()).c_str(),
-                                     image->width, image->height);
+                        std::fprintf(stderr, "[texpack] loaded %s (%ux%u, %.1f ms)\n",
+                                     utf8(fs::u8path(path).filename()).c_str(), image->width, image->height, us / 1000.0);
                     m_cacheBytes += image->pixels.size() * 4u;
                     e.image = std::move(image);
                     trimCache();
@@ -397,7 +549,7 @@ namespace vcs::texpack
             std::deque<WriteJob> m_writes;
             std::vector<std::thread> m_loaders;
             std::thread m_writer;
-            uint64_t m_useClock = 0, m_loaded = 0, m_failed = 0;
+            uint64_t m_useClock = 0, m_loaded = 0, m_failed = 0, m_loadUs = 0;
             size_t m_cacheBytes = 0, m_cacheLimit = size_t(1024) << 20;
             std::atomic<uint64_t> m_hashed{0}, m_written{0};
         };
@@ -413,7 +565,7 @@ namespace vcs::texpack
         s.section = "Texture packs";
         s.label = "Texture packs";
         s.help = "High-resolution textures made for the PS2 game under PCSX2: put the pack's folder into "
-                 "textures/SLUS-21590/replacements next to vcs.exe. PNG files only (convert DDS packs). With no pack "
+                 "textures/SLUS-21590/replacements next to vcs.exe. PNG or DDS files. With no pack "
                  "there it changes nothing.";
         s.type = settings::Type::Toggle;
         s.defaultValue = 1;

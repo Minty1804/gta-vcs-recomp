@@ -110,7 +110,8 @@ if(VCS_HAVE_GENERATED)
     elseif(_vcs_binary_dir STREQUAL _vcs_main_tree)
         set_target_properties(ps2EntryRunner PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/build")
     endif()
-    target_include_directories(ps2EntryRunner PRIVATE "${CMAKE_SOURCE_DIR}/src" "${VCS_XXHASH_DIR}")
+    target_include_directories(ps2EntryRunner PRIVATE "${CMAKE_SOURCE_DIR}/src" "${VCS_XXHASH_DIR}"
+                               "${CMAKE_SOURCE_DIR}/third_party/bcdec") # texture packs' DDS (BC1-BC7)
     target_link_libraries(ps2EntryRunner PRIVATE vcs_host) # main.cpp: settings menu (Dear ImGui), presenter aspect
     # Windows: our manifest in place of the linker's, for the UTF-8 code page (non-ASCII folders; src/vcs.manifest)
     # ... and the exe's icon and version information (src/vcs.rc): VERSION in the repository root, as a header only

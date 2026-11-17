@@ -10,6 +10,55 @@ The build reads the executable from your disc, and the finished game reads every
 Status: in development. See [docs/PROGRESS.md](docs/PROGRESS.md) for what works, and [docs/LINUX.md](docs/LINUX.md)
 for the Linux build in detail.
 
+## What this fork adds
+
+This is a fork of [gothamor/gta-vcs-recomp](https://github.com/gothamor/gta-vcs-recomp). It is the original port plus
+the changes below, on the branch
+[`mod-reload-walk-camera`](https://github.com/Minty1804/gta-vcs-recomp/tree/mod-reload-walk-camera). Each change is an
+option or can be switched off, and everything else is the same as upstream.
+
+| | Upstream | This fork |
+|---|---|---|
+| **Texture packs** | Not supported | HD texture packs made for PCSX2 work as they are: PNG or DDS (BC1 / BC3 / BC7) |
+| **Reload key** | None: the gun reloads only when the clip runs out | **R** reloads the gun in hand, with the game's own reload animation |
+| **Reload in a vehicle** | The clip refills only while you are not firing | The reload key fills the clip at once, even during a drive-by |
+| **Walk on a diagonal** | *Walk* + two direction keys (Alt + W + D) left Vic standing still | He walks diagonally, as he does in one direction |
+| **On-foot camera** | Swings back behind Vic against your mouse as soon as he moves | Stays where the mouse put it for a while (2 s by default) |
+
+**Texture packs.** Put the pack's `SLUS-21590` folder into a `textures` folder next to the game, so its images end up
+in `build\textures\SLUS-21590\replacements\` (sub-folders are fine). That is the same layout as PCSX2's own `textures`
+folder. The game finds the textures by the names PCSX2 gives them, so packs need no conversion. It loads the images in
+the background: a texture looks original for a moment, then switches to the HD one. The cost is a little memory, not
+frame rate.
+- Settings (F2) > Graphics > Texture packs: **Texture packs** (on by default; does nothing with no pack) and **Dump
+  textures** (off by default). Dumping writes every texture the game draws to `textures\SLUS-21590\dumps\`, under its
+  pack name, for making your own pack.
+- Tested with a 6,279-file BC7 pack: 99% of the textures the game drew in the city were replaced, with no change in
+  frame rate.
+- Not supported yet: PCSX2's region (`-r<w>x<h>-`) and separate mip-level (`-mip<n>`) file names. Such files are
+  skipped and counted in the log.
+
+**Controls.**
+- **Reload weapon**: Settings (F2) > Keyboard, **R** by default. On the gamepad, Settings > Gamepad (no button by
+  default). It does nothing when the clip is already full.
+- **Walk on a diagonal**: works by itself, with no setting.
+- **On-foot camera hold**: Settings (F2) > Keyboard > Mouse: **Off**, **1-5 s** (2 s by default) or **Always**. The
+  hold applies only after a mouse turn; the gamepad's stick and the game's own camera moves are as before.
+
+**Getting it.** Build this branch as in *Install by hand* below. In step 2, clone it with:
+```bash
+git clone -b mod-reload-walk-camera https://github.com/Minty1804/gta-vcs-recomp.git vcs-recomp
+```
+The launcher's **Update** button installs upstream's release, which doesn't have these changes. Update with git
+instead:
+```bash
+git fetch upstream && git rebase upstream/main
+```
+Then `python tools/build.py`. `upstream` is `https://github.com/gothamor/gta-vcs-recomp.git`; add it once with
+`git remote add upstream <URL>`. The changes are kept small and separate (mostly their own files under `src/game/`)
+so that they move to new upstream versions easily. The details are in [docs/game-internals.md](docs/game-internals.md)
+(sections 7b and 12a-12c) and [docs/DECISIONS.md](docs/DECISIONS.md).
+
 ## Install on Windows: the launcher (easiest)
 
 1. Download the newest `VCS-Recomp-<version>-windows.zip` from the [Releases](../../releases) page and extract it
