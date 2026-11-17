@@ -31,6 +31,7 @@
 #include "game/vcs_prompts.h"
 #include "game/vcs_volume.h"
 #include "game/vcs_world_detail.h"
+#include "game/vcs_texture_pack.h"
 #include "platform/platform.h"
 #include "render/presenter.h"
 #include "rhi/rhi.h"
@@ -730,6 +731,7 @@ namespace
         vcs::input::registerSettings(); // the Keyboard & mouse and Gamepad pages (game/vcs_input.h)
         vcs::prompts::registerSettings(); // the Enhancements page: button prompts by device (game/vcs_prompts.h)
         vcs::world::registerSettings();   // Enhancements > World: density, draw distance (game/vcs_world_detail.h)
+        vcs::texpack::registerSettings(); // Graphics > Texture packs (game/vcs_texture_pack.h)
         vcs::driveby::registerSettings(); // Enhancements > Combat: drive-by fire rate (game/vcs_driveby.h)
         vcs::registerEffectsSettings();   // Enhancements > Effects: Reduce Post Processing Effects (game/vcs_effects_timing.h)
 
@@ -956,6 +958,7 @@ int main(int argc, char *argv[])
         vcs::input::install(runtime);   // the player's bindings feed the pad (game/vcs_input.h)
         vcs::volume::install(runtime);  // the game's music / effects levels follow the settings (game/vcs_volume.h)
         vcs::gameinfo::install(runtime); // the F3 overlay's game-state panel, the `gameinfo` command (debug/game_info.h)
+        vcs::texpack::install(runtime, exeDirectory()); // texture packs for the renderer (game/vcs_texture_pack.h)
         // setting <key> [value] -> ok <value>: a setting read or changed (a hidden run never writes vcs.ini)
         ps2control::addCommand("setting", [](const std::string &args, ps2control::Reply reply) {
             const size_t space = args.find(' ');

@@ -101,6 +101,19 @@ namespace
 {
     thread_local uint32_t t_uploadSourceAddress = 0, t_uploadSourceBytes = 0; // [gta-recomp] gsHwSetUploadSource
     std::unordered_map<uint32_t, uint64_t> g_rasterTextures;                // [gta-recomp] raster address -> texture key
+    std::atomic<GSHwTexturePack *> g_texturePack{nullptr};                   // [gta-recomp] gsHwSetTexturePack
+    std::atomic<uint64_t> g_packHashed{0}, g_packReplaced{0};
+}
+
+void gsHwSetTexturePack(GSHwTexturePack *pack)
+{
+    g_texturePack.store(pack, std::memory_order_release);
+}
+
+void gsHwTexturePackStats(uint64_t &hashed, uint64_t &replaced)
+{
+    hashed = g_packHashed.load(std::memory_order_relaxed);
+    replaced = g_packReplaced.load(std::memory_order_relaxed);
 }
 
 void gsHwSetUploadSource(uint32_t address, uint32_t bytes)
@@ -349,6 +362,7 @@ namespace
         std::vector<uint32_t> pixels;
         std::vector<uint32_t> mips; // [gta-recomp] anisotropic filtering: levels 1.. after each other (buildMipChain)
         std::shared_ptr<EarlyTexture> early; // [gta-recomp] being made on a helper thread (pixels moved there)
+        bool replaced = false;               // [gta-recomp] a texture pack's image (GSHwTexturePack): any size, sampled normalised
     };
 
     // [gta-recomp] The levels of a texture: level 0 (pixels) then its mips, as createTextureLevels takes them.
@@ -878,6 +892,17 @@ namespace
                     for (int v = 0; v < 2; ++v)
                         m_anisoSampler[u][v] = m_dev.createSampler({rhi::Filter::Linear, u ? rhi::Wrap::Repeat : rhi::Wrap::Clamp,
                                                                     v ? rhi::Wrap::Repeat : rhi::Wrap::Clamp, m_anisotropy});
+            // [gta-recomp] texture packs' images (TexCreate::replaced): trilinear, anisotropic up to the game's setting but at
+            // most PS2X_HW_PACK_ANISO (4: high-resolution images at 16x sampled the GPU down in the other port's tests)
+            {
+                const char *e = std::getenv("PS2X_HW_PACK_ANISO");
+                const uint32_t cap = e && *e ? static_cast<uint32_t>(std::strtoul(e, nullptr, 10)) : 4u;
+                const uint32_t aniso = std::min(m_anisotropy, cap);
+                for (int u = 0; u < 2; ++u)
+                    for (int v = 0; v < 2; ++v)
+                        m_packSampler[u][v] = m_dev.createSampler({rhi::Filter::Linear, u ? rhi::Wrap::Repeat : rhi::Wrap::Clamp,
+                                                                   v ? rhi::Wrap::Repeat : rhi::Wrap::Clamp, aniso > 1u ? aniso : 0u});
+            }
             rhi::PipelineDesc q;
             q.vertex = sh.quadVS;
             q.topology = rhi::Topology::TriangleStrip;
@@ -970,6 +995,10 @@ namespace
                     }
                     else
                         m_textures[t.key] = m_dev.createTexture(d, t.pixels.data(), t.w * 4u);
+                    if (t.replaced) // [gta-recomp] texture packs: sampled by normalised coordinates (draw)
+                        m_packTextures.insert(t.key);
+                    else
+                        m_packTextures.erase(t.key);
                     ps2perf::add(ps2perf::Counter::TexCreateUs, static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
                                                                     ps2x::hostNow() - createStart).count()));
                     ps2perf::add(ps2perf::Counter::TexKBytes,
@@ -993,6 +1022,7 @@ namespace
                 {
                     const auto deleteStart = ps2x::hostNow(); // [gta-recomp] tex_create_us: releases too
                     m_textures.erase(f.texDeletes[c.index]);
+                    m_packTextures.erase(f.texDeletes[c.index]); // [gta-recomp]
                     ps2perf::add(ps2perf::Counter::TexCreateUs, static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
                                                                     ps2x::hostNow() - deleteStart).count()));
                     break;
@@ -2532,7 +2562,15 @@ namespace
             // repeat / clamp wrapping is sampled by the hardware - trilinear over a mip chain, anisotropic - instead of
             // the GS's own bilinear; region wraps, render targets and nearest filtering keep the exact GS path
             rhi::Sampler *hwSampler = nullptr;
-            if (m_anisotropy && s.tme && s.linear && !s.texIsRt && !plainTexture && tex && s.wms <= 1u && s.wmt <= 1u &&
+            // [gta-recomp] a texture pack's image: by normalised coordinates through the hardware sampler (gs_draw.hlsl mode 4),
+            // nearest-filtered draws too; region wraps are clamped (PCSX2 names region textures apart: not replaced there)
+            if (s.tme && !s.texIsRt && !plainTexture && tex && !m_packTextures.empty() && m_packTextures.count(s.texKey))
+            {
+                hwSampler = m_packSampler[s.wms == 0u ? 1 : 0][s.wmt == 0u ? 1 : 0].get();
+                if (hwSampler)
+                    c.linearIipFgeAte[0] = 2;
+            }
+            if (!hwSampler && m_anisotropy && s.tme && s.linear && !s.texIsRt && !plainTexture && tex && s.wms <= 1u && s.wmt <= 1u &&
                 tex->desc().mipLevels != 1u)
             {
                 hwSampler = m_anisoSampler[s.wms == 0u ? 1 : 0][s.wmt == 0u ? 1 : 0].get();
@@ -2682,6 +2720,8 @@ namespace
         uint32_t m_msaa = 1, m_anisotropy = 0;           // [gta-recomp] GSHwOptions
         std::unique_ptr<rhi::Sampler> m_anisoSampler[2][2]; // [gta-recomp] [U repeat][V repeat]
         std::unique_ptr<rhi::Sampler> m_gatherSampler[2][2]; // [gta-recomp] nearest, [U repeat][V repeat]: gs_draw.hlsl mode 3
+        std::unique_ptr<rhi::Sampler> m_packSampler[2][2];   // [gta-recomp] texture packs' images, [U repeat][V repeat]
+        std::unordered_set<uint64_t> m_packTextures;         // [gta-recomp] the texture keys holding a pack's image
         std::unique_ptr<rhi::Pipeline> m_blit, m_fillColor, m_fillDepth;
         std::unordered_map<uint32_t, std::unique_ptr<rhi::Pipeline>> m_drawPipelines;
         std::unordered_map<uint32_t, Rt> m_rts;
@@ -4353,6 +4393,7 @@ namespace
             }
             ps2perf::add(ps2perf::Counter::Draws, f.draws.size() + f.nativeDraws.size()); // [gta-recomp] once per frame
             ps2perf::add(ps2perf::Counter::Vertices, f.vertices.size() + f.nativeVertices);
+            pollTexturePack(f); // [gta-recomp] texture packs: images loaded since
             ps2perf::add(ps2perf::Counter::TexUploads, f.textures.size());
             ++m_frameIndex;
             shrinkTargets(); // [gta-recomp]
@@ -4976,11 +5017,74 @@ namespace
             tc.w = d.textureWidth;
             tc.h = d.textureHeight;
             const auto decodeStart = ps2x::hostNow(); // [gta-recomp] tex_decode_us
-            if (!decodeFromQueuedUpload(d, tc.pixels)) // [gta-recomp] step 3c
+            // [gta-recomp] texture packs: named as PCSX2 names it (hashed from VRAM), its image when the pack has one
+            bool decoded = false;
+            if (GSHwTexturePack *pack = g_texturePack.load(std::memory_order_acquire); pack && pack->wantsTextures() &&
+                                                                                       (t.psm & 0x30u) != 0x30u /* not a Z format */)
+            {
+                materializeRectKeepTransfer(t.psm, t.tbp0, t.tbw, 0u, 0u, d.textureWidth, d.textureHeight);
+                GSHwTextureInfo info;
+                m_cpu.TexturePackInput(d, m_packData, m_packClut, info.clutEntries);
+                g_packHashed.fetch_add(1u, std::memory_order_relaxed);
+                if (m_packData.empty())
+                {
+                    static int logged = 0;
+                    if (logged++ < 5)
+                        std::fprintf(stderr, "[gs-hw] texture pack: nothing to hash for psm %u tbp %u tbw %u %ux%u\n", t.psm, t.tbp0,
+                                     t.tbw, d.textureWidth, d.textureHeight);
+                }
+                else
+                {
+                    info.psm = t.psm;
+                    info.tw = t.tw;
+                    info.th = t.th;
+                    const bool texa = info.clutEntries == 0u && t.psm != GS_PSM_CT32; // PCSX2: fmt > 0, no palette
+                    info.ta0 = texa ? d.texa.ta0 : 0u;
+                    info.aem = texa ? (d.texa.aem ? 1u : 0u) : 0u;
+                    info.ta1 = texa ? d.texa.ta1 : 0u;
+                    info.data = m_packData.data();
+                    info.bytes = m_packData.size();
+                    info.clut = info.clutEntries ? m_packClut : nullptr;
+                    if (pack->dumping())
+                    {
+                        decodeTexture(d, tc.pixels);
+                        decoded = true;
+                        info.pixels = tc.pixels.data();
+                        info.width = tc.w;
+                        info.height = tc.h;
+                    }
+                    std::shared_ptr<const GSHwReplacement> image;
+                    if (const uint64_t handle = pack->lookup(info, image))
+                    {
+                        if (image && image->width && image->height && image->pixels.size() == size_t(image->width) * image->height)
+                        {
+                            tc.w = image->width;
+                            tc.h = image->height;
+                            tc.pixels = image->pixels;
+                            tc.replaced = true;
+                            decoded = true;
+                            g_packReplaced.fetch_add(1u, std::memory_order_relaxed);
+                        }
+                        else if (!image)
+                            m_packPending.push_back({handle, key}); // loading: swapped in when it is (pollTexturePack)
+                    }
+                }
+            }
+            if (!decoded)
+                decodeTexture(d, tc.pixels);
+            finishTexture(f, tc, decodeStart);
+            return true;
+        }
+
+        // [gta-recomp] A texture's pixels from VRAM or from the queued upload that holds it (step 3c)
+        void decodeTexture(const GSDrawState &d, std::vector<uint32_t> &pixels)
+        {
+            const GSTex0Reg &t = d.context.tex0;
+            if (!decodeFromQueuedUpload(d, pixels)) // [gta-recomp] step 3c
             {
                 if (materializeRectKeepTransfer(t.psm, t.tbp0, t.tbw, 0u, 0u, d.textureWidth, d.textureHeight))
                     ++m_lazyWhy[1];
-                m_cpu.DecodeTexture(d, tc.pixels);
+                m_cpu.DecodeTexture(d, pixels);
                 ++m_decodeFromVram;
                 static const bool stats = std::getenv("PS2X_HW_UPSTATS") != nullptr;
                 static int logged = 0;
@@ -4989,24 +5093,63 @@ namespace
                                  d.textureHeight, m_pendingUploads.empty() ? "nothing queued" : "not one queued upload's");
 
             }
+        }
+
+        // [gta-recomp] A new texture's TexCreate (its mip chain, made early when it can), the texture cache noted
+        void finishTexture(Frame &f, TexCreate &tc, decltype(ps2x::hostNow()) decodeStart)
+        {
             // [gta-recomp] anisotropic filtering samples a mip chain: built here, on the GS stage, not on the main thread's
-            // GPU queue (PS2X_HW_CPU_MIPS=0: a render-target texture and GenerateMips each, as before)
+            // GPU queue (PS2X_HW_CPU_MIPS=0: a render-target texture and GenerateMips each, as before). A texture pack's
+            // image always has one (it is minified)
             static const bool cpuMips = [] {
                 const char *e = std::getenv("PS2X_HW_CPU_MIPS");
                 return !(e && *e == '0');
             }();
-            const bool mipChain = m_anisotropy > 1u && cpuMips && tc.w <= 4096u && tc.h <= 4096u &&
+            const bool mipChain = (m_anisotropy > 1u || tc.replaced) && cpuMips && tc.w <= 4096u && tc.h <= 4096u &&
                                   tc.pixels.size() == size_t(tc.w) * tc.h;
             if (!makeTextureEarly(tc, mipChain) && mipChain)
                 buildMipChain(tc.pixels, tc.w, tc.h, tc.mips);
             ps2perf::add(ps2perf::Counter::TexDecodeUs, static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
                                                             ps2x::hostNow() - decodeStart).count()));
+            const uint64_t key = tc.key;
             f.cmds.push_back({CmdType::TexCreate, static_cast<uint32_t>(f.textures.size())});
             f.textures.push_back(std::move(tc));
             m_texLru[key] = m_frameIndex;
             if (m_texLru.size() > kMaxTextures)
                 evictTextures();
-            return true;
+        }
+
+        // [gta-recomp] Texture packs: the images that finished loading replace their textures from the next frame on (a
+        // TexCreate for the same key); a texture evicted meanwhile is left alone (made again, it asks again)
+        void pollTexturePack(Frame &f)
+        {
+            if (m_packPending.empty())
+                return;
+            GSHwTexturePack *pack = g_texturePack.load(std::memory_order_acquire);
+            for (size_t i = 0; i < m_packPending.size();)
+            {
+                std::shared_ptr<const GSHwReplacement> image;
+                if (!pack || pack->poll(m_packPending[i].handle, image))
+                {
+                    const uint64_t key = m_packPending[i].texKey;
+                    if (image && image->width && image->height && image->pixels.size() == size_t(image->width) * image->height &&
+                        m_texLru.count(key))
+                    {
+                        TexCreate tc;
+                        tc.key = key;
+                        tc.w = image->width;
+                        tc.h = image->height;
+                        tc.pixels = image->pixels;
+                        tc.replaced = true;
+                        g_packReplaced.fetch_add(1u, std::memory_order_relaxed);
+                        finishTexture(f, tc, ps2x::hostNow());
+                    }
+                    m_packPending[i] = m_packPending.back();
+                    m_packPending.pop_back();
+                }
+                else
+                    ++i;
+            }
         }
 
         // [gta-recomp] With a free-threaded device (D3D11, Vulkan) a new texture is made by helper threads, right after its decode:
@@ -5411,6 +5554,15 @@ namespace
         std::unordered_map<uint64_t, uint64_t> m_texLru;  // key -> last frame used
         std::unordered_map<uint64_t, uint64_t> m_meshLru; // [gta-recomp] native draws' meshes: key -> last frame used
         std::unordered_map<uint32_t, RtInfo> m_rts;       // fbp -> extent (game thread's view)
+        // [gta-recomp] texture packs (bindTextureUncached, pollTexturePack)
+        struct PackPending
+        {
+            uint64_t handle, texKey;
+        };
+        std::vector<PackPending> m_packPending;
+        std::vector<uint8_t> m_packData;
+        uint32_t m_packClut[256] = {};
+
         struct TexBindInput // [gta-recomp] bindTexture cache (see there)
         {
             uint64_t version;

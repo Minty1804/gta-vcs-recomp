@@ -1313,6 +1313,73 @@ uint64_t GSCpuBackend::ClutHash(const GSTex0Reg &tex0) const
     return m_clutHashCache ^ (uint64_t(tex0.cpsm) << 56) ^ (uint64_t(tex0.csa) << 48) ^ (uint64_t(tex0.csm) << 40);
 }
 
+// [gta-recomp] Texture packs: what PCSX2 hashes for a texture (gs_cpu_backend.h). Read from VRAM, so the caller makes
+// sure the texture's uploads are written there first (gs_hw.cpp materializeRectKeepTransfer).
+void GSCpuBackend::TexturePackInput(const GSDrawState &state, std::vector<uint8_t> &data, uint32_t (&clut)[256], uint32_t &clutEntries)
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_texturePageCache.Invalidate();
+    const auto &tex = state.context.tex0;
+    const uint32_t psm = tex.psm & 0x3Fu;
+    const uint32_t tw = 1u << std::min<uint32_t>(tex.tw, 10u), th = 1u << std::min<uint32_t>(tex.th, 10u);
+    const bool paletted = isFourBitIndexedPsm(static_cast<uint8_t>(psm)) || isEightBitIndexedPsm(static_cast<uint8_t>(psm));
+    clutEntries = 0u;
+    if (paletted)
+    {
+        // PCSX2's CLUT buffer (GSClut::Read32): entry i = the colour index i reads, TEXA applied to 16-bit palettes
+        clutEntries = isFourBitIndexedPsm(static_cast<uint8_t>(psm)) ? 16u : 256u;
+        for (uint32_t i = 0; i < clutEntries; ++i)
+            clut[i] = LookupCLUT(state, static_cast<u8>(i), tex.cpsm, tex.csm, tex.csa, static_cast<uint8_t>(psm));
+    }
+    data.clear();
+    if (!m_vram)
+        return;
+    // the block size and whether every bit of a block is texture data (PCSX2 psm_t bs / fmsk)
+    uint32_t bsx = 8u, bsy = 8u;
+    bool fullWords = false;
+    switch (psm)
+    {
+    case GS_PSM_CT32: fullWords = true; break;
+    case GS_PSM_CT16:
+    case GS_PSM_CT16S: bsx = 16u; break;
+    case GS_PSM_T8: bsx = 16u, bsy = 16u, fullWords = true; break;
+    case GS_PSM_T4: bsx = 32u, bsy = 16u, fullWords = true; break;
+    default: break; // CT24, T8H, T4HL, T4HH: 8 x 8, part of each word
+    }
+    if (fullWords && tw >= bsx && th >= bsy)
+    {
+        data.reserve(size_t(tw / bsx) * (th / bsy) * 256u);
+        for (uint32_t y = 0; y < th; y += bsy)
+            for (uint32_t x = 0; x < tw; x += bsx)
+            {
+                uint32_t bit = 0, width = 0;
+                if (!GSMem::PixelBits(psm, tex.tbp0, tex.tbw, x, y, bit, width))
+                {
+                    data.clear();
+                    return;
+                }
+                const uint32_t block = (bit / 8u) & (m_vramSize - 1u) & ~255u;
+                data.insert(data.end(), m_vram + block, m_vram + block + 256u);
+            }
+        return;
+    }
+    data.resize(size_t(tw) * th * (paletted ? 1u : 4u));
+    uint8_t *out = data.data();
+    for (uint32_t y = 0; y < th; ++y)
+        for (uint32_t x = 0; x < tw; ++x)
+        {
+            const uint32_t v = ReadTextureVramUnlocked(psm, tex.tbp0, tex.tbw, x, y);
+            if (paletted)
+                *out++ = static_cast<uint8_t>(v);
+            else
+            {
+                const uint32_t c = convertTexel(state, v);
+                std::memcpy(out, &c, 4u);
+                out += 4;
+            }
+        }
+}
+
 void GSCpuBackend::DrawSprite(const GSPrimitiveBatch &batch)
 {
     const GSDrawState &state = batch.state;

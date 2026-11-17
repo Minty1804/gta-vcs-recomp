@@ -145,6 +145,45 @@ void gsHwSetUploadSource(uint32_t address, uint32_t bytes);
 void gsHwTakeUploadSource(uint32_t &address, uint32_t &bytes);
 // [gta-recomp] The renderer's texture key of the raster at `address` (the latest made from it), 0 if none. Render thread.
 uint64_t gsHwTextureForRaster(uint32_t address);
+// [gta-recomp] Texture packs (src/game/vcs_texture_pack.cpp; PCSX2's replacement format). When the renderer makes a new
+// texture from VRAM it hands the pack what PCSX2 names that texture by - the bytes of its hash and its palette - and
+// draws the pack's image instead when it has one (any size: sampled by normalised coordinates, trilinear over a mip
+// chain). Called on the GS stage only, and only while wantsTextures() says so (no hashing otherwise).
+struct GSHwTextureInfo
+{
+    uint32_t psm = 0, tw = 0, th = 0;   // TEX0.PSM, TW, TH
+    uint32_t ta0 = 0, aem = 0, ta1 = 0; // TEXA, for 16 / 24-bit direct colour only (0 otherwise, as PCSX2 keys it)
+    const uint8_t *data = nullptr;      // the bytes PCSX2 hashes (GSCpuBackend::TexturePackInput)
+    size_t bytes = 0;
+    const uint32_t *clut = nullptr;     // the palette PCSX2 hashes (RGBA8), clutEntries 0 for direct colour
+    uint32_t clutEntries = 0;
+    const uint32_t *pixels = nullptr;   // the texture as the renderer decoded it (RGBA8, alpha 0x80 = opaque): for dumps;
+    uint32_t width = 0, height = 0;     // null when the texture was not decoded
+};
+struct GSHwReplacement
+{
+    uint32_t width = 0, height = 0;
+    std::vector<uint32_t> pixels; // RGBA8, alpha on the GS scale (0x80 = opaque), as PCSX2's packs hold it
+};
+class GSHwTexturePack
+{
+public:
+    virtual ~GSHwTexturePack() = default;
+    // Replacing or dumping: the renderer hashes new textures only then
+    virtual bool wantsTextures() const = 0;
+    // A new texture. 0: no replacement. Otherwise a handle; `ready` set when the image is loaded already, else it loads
+    // in the background and poll() hands it over.
+    virtual uint64_t lookup(const GSHwTextureInfo &info, std::shared_ptr<const GSHwReplacement> &ready) = 0;
+    // Whether the load behind `handle` finished; `image` its result (null when it failed).
+    virtual bool poll(uint64_t handle, std::shared_ptr<const GSHwReplacement> &image) = 0;
+    // The decoded texture's pixels are wanted for a dump (lookup gets them then)
+    virtual bool dumping() const = 0;
+};
+// Any thread, before the game starts (the pack outlives the renderer); nullptr = off.
+void gsHwSetTexturePack(GSHwTexturePack *pack);
+// Replaced textures made so far and the textures hashed (the check, diagnostics).
+void gsHwTexturePackStats(uint64_t &hashed, uint64_t &replaced);
+
 // [gta-recomp] Draw sources (milestone 3's "unconverted draws"): the draws still made from GS primitives, by kind -
 // where their packets came from (runtime/gs/gs_draw_source.h), target, texture, blend, depth, coverage - per frame
 // since the last call, one kind per line, most draws first; `reset` starts a new window. The first call switches the

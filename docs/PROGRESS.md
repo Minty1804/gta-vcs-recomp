@@ -1136,6 +1136,9 @@ Python scripts still usable on their own. docs/LAUNCHER.md has the whole of it; 
 | `VCS_CARCAM=0` | the hook on the camera behind a vehicle not installed: the mouse moves the right stick there, as before 2026-11-03; Car camera return does nothing |
 | `VCS_FOOTCAM=0` | the hook on the on-foot follow camera not installed: the camera swings after a moving player while the mouse turns it, as before 2026-11-16; On-foot camera hold does nothing |
 | `VCS_RELOAD_ANIM=0` | the Reload key reloads with no animation (no hook on scePadRead), as before 2026-11-17 |
+| `VCS_TEXPACK=0`, `VCS_TEXTURE_DUMP=1`, `VCS_TEXTURE_DIR=<dir>` | Graphics > Texture packs for this run: off; dump new textures; the folder holding `replacements/` and `dumps/` (default `textures/SLUS-21590` next to vcs.exe) - game-internals.md 7b; `texpack` command: indexed / hashed / replaced / loaded counts |
+| `VCS_TEXPACK_CACHE_MB=<n>` | decoded pack images kept for textures made again (1024) |
+| `PS2X_HW_PACK_ANISO=<n>` | anisotropic filtering of pack images at most n (4) |
 | `VCS_WALK_FIX=0` | Walk (hold) scales the stick as floats, as before 2026-11-16: a diagonal walk (W + D) stands still |
 | `VCS_FOOT_WALL=0` | on foot the mouse's turn does not ask the camera's update for the pull-in at walls: the camera stands at a wall's edge while its heading turns on, as before 2026-11-11 |
 | `VCS_FREEAIM=0` | free aim's hooks not installed (CGame::Process, CCamera::Process, the weapons' line test): the game's aiming untouched, the setting does nothing |

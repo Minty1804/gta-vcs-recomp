@@ -1534,3 +1534,22 @@ The player reported no reload animation and asked for the key in vehicles too. C
 - **In a vehicle** the game already refills the clip every frame you do not fire, so a timed reload there would be gone
   the next frame. The key fills the clip at once during a drive-by burst - what letting go of the trigger already does -
   rather than inventing a delay or an animation the game has none of.
+
+## 2026-11-18 - Texture packs in PCSX2's format (the player's request)
+
+The player asked whether the port takes texture packs and pointed at another VCS port that loads PCSX2's. Claude's
+choices:
+
+- **PCSX2's format, not one of our own**: the packs made for the PS2 game exist for PCSX2 (HD textures, interface), so
+  the same names (its hashes, reproduced: game-internals.md 7b) and the same folder layout -
+  `textures/SLUS-21590/replacements` next to vcs.exe - let a player drop one in as it is.
+- **Hashed only where a texture is made**, and only with a pack present or dumping on: with neither nothing is hashed
+  or materialised, the renderer works as before. An image loads on worker threads; the original is drawn until it is
+  ready, then swapped in under the same texture key - no stall when a new area streams in.
+- **Drawn through the hardware sampler** (gs_draw.hlsl's mode 4: normalised coordinates, trilinear over a mip chain,
+  anisotropic up to the setting but at most 4 - `PS2X_HW_PACK_ANISO`), so an image of any size fits; the GS's exact
+  bilinear stays for every other texture. No shader change.
+- **PNG only for now**: DDS (BC1-BC7) would need compressed formats in three RHI backends; the index counts and names
+  the DDS files it skips. Region-clamped and mip-level names are skipped too.
+- **On by default**: with no pack in the folder it changes nothing (the original game), so a player only has to copy
+  the pack. Dumping is off by default.

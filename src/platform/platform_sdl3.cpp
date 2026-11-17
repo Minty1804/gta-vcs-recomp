@@ -906,11 +906,13 @@ namespace platform
         g_audio = nullptr;
     }
 
-    bool writePng(const char *path, const uint8_t *rgb, int width, int height)
+    // 8-bit RGB (channels 3) or RGBA (4), rows top-down
+    static bool writePngChannels(const char *path, const uint8_t *rgb, int width, int height, int channels)
     {
         // Each row with the PNG filter (none / sub / up / paeth) whose bytes sum smallest as signed values - the
         // usual heuristic - then zlib. A 1080p screenshot was 6.2 MB with stored blocks.
-        const size_t stride = static_cast<size_t>(width) * 3u;
+        const size_t stride = static_cast<size_t>(width) * static_cast<size_t>(channels);
+        const size_t bpp = static_cast<size_t>(channels);
         std::vector<uint8_t> raw(static_cast<size_t>(height) * (stride + 1u));
         std::vector<uint8_t> trial(stride);
         for (int y = 0; y < height; ++y)
@@ -926,7 +928,7 @@ namespace platform
                 uint64_t cost = 0;
                 for (size_t i = 0; i < stride; ++i)
                 {
-                    const int a = i >= 3 ? row[i - 3] : 0, b = above ? above[i] : 0, c = (i >= 3 && above) ? above[i - 3] : 0;
+                    const int a = i >= bpp ? row[i - bpp] : 0, b = above ? above[i] : 0, c = (i >= bpp && above) ? above[i - bpp] : 0;
                     int predicted = 0;
                     if (filter == 1)
                         predicted = a;
@@ -958,7 +960,7 @@ namespace platform
         std::vector<uint8_t> ihdr;
         put32(ihdr, static_cast<uint32_t>(width));
         put32(ihdr, static_cast<uint32_t>(height));
-        ihdr.insert(ihdr.end(), {8, 2, 0, 0, 0}); // 8-bit RGB
+        ihdr.insert(ihdr.end(), {8, static_cast<uint8_t>(channels == 4 ? 6 : 2), 0, 0, 0}); // 8-bit RGB / RGBA
         chunk(png, "IHDR", ihdr);
         chunk(png, "IDAT", z);
         chunk(png, "IEND", {});
@@ -967,5 +969,40 @@ namespace platform
             return false;
         const bool ok = std::fwrite(png.data(), 1, png.size(), f) == png.size();
         return std::fclose(f) == 0 && ok;
+    }
+
+    bool writePng(const char *path, const uint8_t *rgb, int width, int height)
+    {
+        return writePngChannels(path, rgb, width, height, 3);
+    }
+
+    bool writePngRgba(const char *path, const uint8_t *rgba, int width, int height)
+    {
+        return writePngChannels(path, rgba, width, height, 4);
+    }
+
+    bool readPng(const char *path, uint32_t &width, uint32_t &height, std::vector<uint32_t> &rgba)
+    {
+        // SDL's own loader (stb_image inside), converted to bytes R, G, B, A
+        SDL_Surface *loaded = SDL_LoadPNG(path);
+        if (!loaded)
+            return false;
+        SDL_Surface *s = SDL_ConvertSurface(loaded, SDL_PIXELFORMAT_RGBA32);
+        SDL_DestroySurface(loaded);
+        if (!s)
+            return false;
+        bool ok = false;
+        if (SDL_LockSurface(s))
+        {
+            width = static_cast<uint32_t>(s->w);
+            height = static_cast<uint32_t>(s->h);
+            rgba.resize(size_t(width) * height);
+            for (uint32_t y = 0; y < height; ++y)
+                std::memcpy(rgba.data() + size_t(y) * width, static_cast<const uint8_t *>(s->pixels) + size_t(y) * s->pitch, size_t(width) * 4u);
+            SDL_UnlockSurface(s);
+            ok = width && height;
+        }
+        SDL_DestroySurface(s);
+        return ok;
     }
 }

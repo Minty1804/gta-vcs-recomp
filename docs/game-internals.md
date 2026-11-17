@@ -1768,6 +1768,29 @@ Confirmed from `LOADSC*.XTX` (263,372 bytes each, 512x512 8-bit):
   upper half is `NOP; DIRECTHL n` (this split exposed the upstream VIF bug in PS2RECOMP_PATCHES.md).
 - The legal screen (copyright text + logo) is also a 512x512 T8 upload.
 
+### 7b. Texture packs: PCSX2's names (2026-11-18, Graphics > Texture packs)
+
+Found reading PCSX2's GSTextureCache.cpp / GSTextureReplacements.cpp (HashTextureLevel, HashCacheKey::Create,
+PaletteKeyHash, TextureName) and another VCS port that loads PCSX2 packs (its gs_gpu_renderer.cpp); checked in the game.
+
+- A replacement is named `<TEX0 hash>-<bits>.png` (direct colour) or `<TEX0 hash>-<CLUT hash>-<bits>.png` (paletted),
+  hex without padding. bits = PSM | TW << 6 | TH << 10 | TA0 << 15 | AEM << 23 | TA1 << 24 (TEXA only for 16 / 24-bit
+  direct colour; bit 14 was TCC in old dumps and is cleared). Region (`-r<w>x<h>-`) and `-mip<n>` names exist too.
+- TEX0 hash = XXH3-64 of: the texture's 256-byte GS blocks as they lie in VRAM, rows of blocks top-down, when the format
+  uses every bit of a word (CT32, T8, T4) and the texture covers whole blocks (8x8, 16x16, 32x16); otherwise the texels
+  read out row by row - indices (one byte) for paletted formats, RGBA8 after TEXA for the others.
+- CLUT hash = XXH3-64 of the palette as the texture reads it: 16 (4-bit) or 256 entries, RGBA8, TEXA applied to a 16-bit
+  palette - our `LookupCLUT` for each index (`GSCpuBackend::TexturePackInput`).
+- Images keep the GS's alpha scale: 0x80 is opaque (PCSX2's dumps and packs alike).
+- VCS's textures are nearly all T4 / T8 (a dump in the barracks and at the airport: 453 textures, the most common bits
+  `00001554` = T4 32x32, `00001994` = T4 64x64, `00001dd4` = T4 128x128; then T8 16x16). The font sheet dumps as
+  `3ece7b57667e958b-f663bcea3bca5023-00002213` (T8 256x256), the same name the other port's dump gives - both hashes.
+  The other port's owner saw a real PCSX2 HD pack hit; here no pack for the PS2 game was at hand to check T4 against.
+- In the renderer (gs_hw.cpp bindTextureUncached) the hash is taken when a texture is made from VRAM (its uploads written
+  there first), not per draw; every textured draw - the native world, lit models, 2D - goes through that one place.
+  The same texture hashes to the same name in every session (a test pack made from one run's dump: 825 of 825 made
+  textures replaced in the next).
+
 ## 8. Data loaded at boot
 
 - `PS2/GAME.DTZ` = zlib -> 6.6 MB `GTAG` v1 memory image (header: size, then table offsets), loaded

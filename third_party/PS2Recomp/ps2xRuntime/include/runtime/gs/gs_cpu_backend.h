@@ -40,6 +40,12 @@ public:
     // row) - docs/FULLY_NATIVE.md step 3c: a texture decoded from the upload that wrote it
     void DecodeTextureFromTexels(const GSDrawState &state, const std::vector<uint32_t> &texels, std::vector<uint32_t> &out);
     uint64_t ClutHash(const GSTex0Reg &tex0) const;
+    // [gta-recomp] Texture packs (gs_hw.h GSHwTexturePack): the bytes PCSX2 hashes for this texture (TEX0Hash) - its
+    // 256-byte GS blocks as they lie in VRAM when it covers whole blocks of a format whose every bit is texture data
+    // (CT32, T8, T4), else its texels expanded row by row (indices for paletted formats, RGBA8 after TEXA otherwise) -
+    // and its palette as PCSX2 hashes it (CLUTHash: 16 / 256 RGBA8 entries; clutEntries 0 for direct colour).
+    // GSTextureCache::HashTextureLevel / PaletteKeyHash; whole texture, no region, no mips.
+    void TexturePackInput(const GSDrawState &state, std::vector<uint8_t> &data, uint32_t (&clut)[256], uint32_t &clutEntries);
     // [gta-recomp] A CLUT load (TEX0.CLD rules as LoadClut) whose source pixels come from a linear rectangle - the data of
     // the upload that wrote them (rect: rectW x rectH pixels of 2 or 4 bytes from the CLUT buffer's origin) - instead of
     // VRAM. -1 when a source pixel is outside the rectangle (nothing changed then), 0 when CLD skips the load, 1 loaded.

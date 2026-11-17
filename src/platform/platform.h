@@ -9,6 +9,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace platform
 {
@@ -236,4 +237,8 @@ namespace platform
 
     // PNG (8-bit RGB, rows top-down) - screenshots.
     bool writePng(const char *path, const uint8_t *rgb, int width, int height);
+    // PNG with alpha (bytes R, G, B, A, rows top-down) - texture dumps; any thread.
+    bool writePngRgba(const char *path, const uint8_t *rgba, int width, int height);
+    // A PNG file as RGBA8 (bytes R, G, B, A; rows top-down); false when it can't be read. Any thread.
+    bool readPng(const char *path, uint32_t &width, uint32_t &height, std::vector<uint32_t> &rgba);
 }

@@ -48,6 +48,17 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(zlib)
 
+# xxHash (header only): XXH3, the hash PCSX2 names texture-pack textures by (game/vcs_texture_pack.cpp)
+FetchContent_Declare(
+    xxhash
+    GIT_REPOSITORY "https://github.com/Cyan4973/xxHash.git"
+    GIT_TAG "v0.8.3"
+    GIT_SHALLOW TRUE
+    SOURCE_SUBDIR "no-cmake" # the header only
+)
+FetchContent_MakeAvailable(xxhash)
+set(VCS_XXHASH_DIR "${xxhash_SOURCE_DIR}" CACHE INTERNAL "")
+
 add_library(vcs_platform STATIC
     platform_sdl3.cpp
     "${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp"
