@@ -1507,3 +1507,30 @@ takes a zip given by hand). Choices:
 - **`python -B` for the bundle's own scripts**: the first start's `update.py install` runs from inside the app and
   wrote `__pycache__` there, breaking the app's signature (found when the image's check refused the app). The launcher
   passes `-B` when the script is the release's own copy (macOS bundle or AppImage).
+
+## 2026-11-16 - Walk on diagonals, a Reload key, and the on-foot camera held for the mouse (a player's requests)
+
+A player asked for three things in the mod's menu: a manual reload (as the PC "Manual Reload" scripts for III / VC:
+press R), walking with two movement keys held (Alt + W + D stood still), and the on-foot camera no longer turning by
+itself against the mouse while moving. Claude's choices:
+
+- **Walk**: a bug fix, not an option (`VCS_WALK_FIX=0` is the switch back). Walking speed keeps its meaning on one axis.
+- **Reload weapon**: a binding (R; a gamepad button, none by default) that starts exactly the game's own reload (state
+  2, the reload time, the fast-reload cheat's quarter), so the animation, sound and timing are the game's. On foot only
+  (a car's drive-by reload has its own bug, game-internals.md 12c), only when the clip is short of what the ammo fills.
+- **On-foot camera hold**: not a camera of its own - the three on-foot redesigns of 2026-11-11 were reverted. Only the
+  game's own turns are paused (the string, the swing, the wall turn) for a time after the mouse turned the camera, then
+  the game's camera carries on unchanged; the keys still follow the camera. A setting in the Mouse section (Off, 1 / 2
+  / 3 / 5 s, Always) with **2 s by default**, as the player asked for the fix; Off is the PS2's camera. The gamepad is
+  never affected (the hold needs the keyboard / mouse as the device, and the right stick ends it).
+
+## 2026-11-17 - The Reload key's animation, and the key in vehicles (the player's follow-up)
+
+The player reported no reload animation and asked for the key in vehicles too. Claude's choices:
+
+- **The animation is the game's own call**, made from the host: the game plays it only from the ped attack, so the key
+  makes that function's two calls (BlendAnimation, SetFinishCallback) as a guest call chained to the pad read, not an
+  animation of its own (game-internals.md 12c). Fast reload keeps the game's rule: no animation. `VCS_RELOAD_ANIM=0`.
+- **In a vehicle** the game already refills the clip every frame you do not fire, so a timed reload there would be gone
+  the next frame. The key fills the clip at once during a drive-by burst - what letting go of the trigger already does -
+  rather than inventing a delay or an animation the game has none of.

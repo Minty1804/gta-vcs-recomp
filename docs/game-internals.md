@@ -2553,6 +2553,11 @@ timing at 60 fps; independent timing at 60 / 144 fps got through, by luck (below
   FUN_002852a8(n)) +2 / +4 left x / y, +6 / +8 right x / y (s16); **+0x96 = DisablePlayerControls** (the right-stick
   getters FUN_00286af0 / FUN_00286b20 return 0 while it is set; FUN_00286b20 negates y when the game's own invert flag
   `0x487A58` is set). Found when mouse pitch below about half a tilt came out a third short.
+- **Walking on a diagonal** (2026-11-16, a player's report: Alt + W + D stood still): the curve is per axis, so Walk's
+  45% scaled as a float vector gave 0.45 / sqrt 2 = 0.318 per axis, byte offset 40 - inside the dead 42 on both, and
+  the game read no stick at all. Walk now takes the game value one axis has at Walking speed (45%: byte 57 -> 22),
+  splits it over the direction and turns each axis back with `rawFor`: W + D gives bytes 181 / 75 (16 each). Measured
+  at (575, 175): 1.30 m/s straight, 1.23 diagonal (it stood still before); running is ~4.1 m/s.
 - **scePadRead runs three times per game frame** (366 reads in 122 frames, counted with the `reads=` of `padstate`).
   vcs_input.cpp works the mouse out once per `m_FrameCounter` 0x4CD124 and repeats that report for the frame's other
   reads, so whichever read the game keeps carries it (not measured which one that is).
@@ -2730,6 +2735,16 @@ timing at 60 fps; independent timing at 60 / 144 fps got through, by luck (below
     keeping one direction through every turn of the camera (the mouse then did not steer: "disconnected"), the keys
     following a camera that held still and then turned slowly, and the camera coming round behind where he travels
     with the keys keeping their heading through that turn only.
+- **On-foot camera hold** (2026-11-16, src/game/vcs_footcam.cpp; another player's report: moving and turning the mouse
+  together, the camera turned to one side by itself against the mouse). It is the string and the swing above: holding
+  D after a mouse turn, beta fell 1.688 rad in 1.5 s. A hook before FUN_0029DAB0 (a0 the CCam: `daddu $s2, $a0` and
+  beta at `0x7C($s2)` in the generated code), for a while after the mouse turned the camera and only while the keyboard
+  / mouse is the device in use: the source points moved by his displacement since the last update, the swing's cap
+  (`0x487B5C` / `0x487B98`) 0, the speeds +0x140 / +0x130 and the wall turn `0x487E54` cleared. It stands down for
+  another mode or camera, a script camera, the first-update flags (CCam +0xAC, `0x6F4528`, `0x6F4D28`), `0x487E10` (L1 /
+  the game's turn behind him), free aim, the right stick, a frame gap or a jump over 5 m, and puts the caps back.
+  Measured: the same D after a mouse turn 0.000 rad; D held with 120 counts of mouse the other way turned beta exactly
+  the mouse's 0.606 rad. `0x6F4CB8` is left alone: the keys still follow the camera.
 - **The camera update** (2026-10-30, for the trainer's free camera; FUN_00378dd8 decompiled with `tools/eedecomp.py`):
   FUN_00378dd8 = CCamera::Process. At `0x378FC0` it calls **FUN_00294540 = CCam::Process** on the active CCam
   (`TheCamera + 0x70 + ActiveCam x 0x270`, ActiveCam = byte `TheCamera + 0x50`; the only caller), then
@@ -2903,6 +2918,32 @@ hidden run (rig `peek` / `poke`, snapshots diffed).
     (`*(*(0x712770) + 4) + type * 0x70`): **+0xC the firing rate in ms**, +0x10 the reload time, +0x14 the clip size.
     Read in the game: pistol (19) 209 / 450 / 17; Micro SMG (24) 120 / 500 / 50; Scorpion (25), Mac 10 (26), SMG (27)
     90 / 500 / 30; rifle (28) 89 / 1000 / 30.
+  - **Reloading** (2026-11-16, read in the generated FUN_002C0F98 for the Reload key): after a shot, at 0x2C1938, with
+    the clip (+0xC) at 0 and ammo (+0x10) left it stores **state 2** (0x2C1998) and **timer = now (`0x4CD104`) + weapon
+    info +0x10** (0x2C19B4); when the shooter is the player (FUN_0024A430) and `CWorld::Players[0x4CD128] + 0x16C` (0x190
+    a player) is set - fast reload - the timer is now + a quarter of that (0x2C1A14). Nothing else: the weapon's own
+    update fills the clip once the timer passes. Writing state 2 and the timer with rounds left in the clip does the same
+    (src/game/vcs_input.cpp `startReload`): pistol 5 -> 17 after 0.45 s, the ammo count unchanged (it holds the clip) -
+    **but with no animation** (the user's report, 2026-11-17; the 2026-11-16 note "with its animation on screen" was wrong).
+  - **The reload animation** (2026-11-17, from the only use of the callback 0x1D2140 in the generated code): only the ped
+    attack FUN_001D26C8 plays it, at **0x1D3904..0x1D3A2C**, when the attack animation ends with the weapon in state 2:
+    weapon info flag **0x8000** (info +0; FUN_00476098 is IsFlagSet) set, `Players[n] + 0x16C` (fast reload) clear -
+    fast reload has no animation -, then **FUN_00215868(ped, *(ped+0x50) the clump, info +0x40 the animation group,
+    0xD8 - 0xD9 when crouched (ped +0x1C8 bit 45; none for type 30) -, f12 = 8.0)** = BlendAnimation, returning the
+    association, and **FUN_0018ECE8** = SetFinishCallback (assoc +0x34 = 1, +0x38 the callback **0x1D2140**, +0x3C the
+    ped). A reload started outside an attack therefore never gets it. The Reload key makes the same two calls: a hook on
+    scePadRead returns into FUN_00215868 as a guest call, with ra pointing at a host function registered at an empty
+    slot of the function table (`freeGuestAddress`: 0x480534 in this build), which sets the callback and returns where
+    scePadRead would have, with its v0 / v1. Measured (SMG, standing): the association is 0xD8, its time runs 0.57 ->
+    1.57 s, the weapon stays in state 2 until the animation ends (the update waits for it: 1.6 s, not the 0.5 s of
+    info +0x10) and the clip then fills; screenshots show Vic changing the magazine, standing still without it.
+    `VCS_RELOAD_ANIM=0`: the reload without the animation. Test runs that teleport Vic into the air show it cut short
+    by the fall, as the game's own would be.
+  - **In a vehicle the game refills the clip itself** (2026-11-17, a write watch on the clip): CWeapon::Reload
+    (**FUN_002CDFB0**: clip = min(ammo, info +0x14)) is called every frame the player does not fire, from the drive-by
+    updates FUN_002CEBE0 (0x2CEF38; driver) and FUN_002CF078 / FUN_002CF4A8; a state 2 written there is back to 0 the
+    next frame. Only during a burst does the clip run down (and at empty it refills a shot later - the drive-by bug
+    below). The Reload key there fills the clip at once (state 0 or 1), what letting go of the trigger does.
   - **FUN_002C0F98 = CWeapon::Fire(weapon, shooter, source)** fires whenever the state is 0 or 1 - it never checks
     the timer. Afterwards it sets the timer to now + firing rate for the other types (shotguns, thrown, ...); for the instant-hit
     guns (types 19, 20, 24-29, 34, 35, 37: FireInstantHit) it sets **timer = now**, no delay: on foot the firing

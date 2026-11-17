@@ -8,10 +8,12 @@
 
 #include "game/vcs_aim.h"
 #include "game/vcs_carcam.h"
+#include "game/vcs_footcam.h"
 #include "game/vcs_freecam.h"
 #include "game/vcs_frontend.h"
 #include "platform/platform.h"
 #include "ps2_runtime.h"
+#include "ps2_runtime_macros.h"
 #include "runtime/ps2_audio_out.h"
 #include "runtime/ps2_control.h"
 #include "runtime/ps2_pad.h"
@@ -48,6 +50,7 @@ namespace vcs::input
             Button, // `mask`
             Stick,  // `axis` (0 lx, 1 ly, 2 rx, 3 ry) toward `sign`
             Walk,   // left stick held at walking speed
+            Reload, // reloads the gun in hand (no PS2 button: the game's own reload, started at a press)
         };
 
         struct Control
@@ -84,6 +87,7 @@ namespace vcs::input
             {"r2", "R2", "Buttons", Target::Button, kR2, 0, 0, KEY_THREE, KEY_X, kPadRT},
             {"l3", "L3 (left stick click)", "Buttons", Target::Button, kL3, 0, 0, KEY_C, 0, GAMEPAD_LEFT_STICK},
             {"r3", "R3 (right stick click)", "Buttons", Target::Button, kR3, 0, 0, KEY_V, 0, GAMEPAD_RIGHT_STICK},
+            {"reload", "Reload weapon", "Buttons", Target::Reload, 0, 0, 0, KEY_R, 0, kPadNone},
             {"start", "Start (pause menu)", "Buttons", Target::Button, kStart, 0, 0, KEY_ESCAPE, 0, GAMEPAD_START},
             {"select", "Select", "Buttons", Target::Button, kSelect, 0, 0, KEY_BACKSPACE, 0, GAMEPAD_BACK},
             {"dpad_up", "D-pad up", "D-pad", Target::Button, kUp, 0, 0, KEY_UP, 0, GAMEPAD_DPAD_UP},
@@ -208,7 +212,9 @@ namespace vcs::input
             {
                 m.keys[i][0] = settings::value(keyId(kControls[i], 0));
                 m.keys[i][1] = settings::value(keyId(kControls[i], 1));
-                m.pad[i] = kControls[i].target == Target::Button && !kControls[i].driving ? settings::value(padId(kControls[i])) : kPadNone;
+                m.pad[i] = (kControls[i].target == Target::Button || kControls[i].target == Target::Reload) && !kControls[i].driving
+                               ? settings::value(padId(kControls[i]))
+                               : kPadNone;
             }
             m.mouseCamera = settings::value("mouse.camera") != 0;
             // 100%: a mouse moving 1,500 counts a second (a steady turn at 800 DPI) is a full stick; on foot 400 counts
@@ -330,6 +336,8 @@ namespace vcs::input
             uint32_t radioVehicle = 0; // steps back on the radio the game has not added yet: the vehicle (0: none), ...
             uint8_t radioWas = 0, radioSet = 0; // ... its station before them, and where it was put for the L1s
             int radioFrames = 0;       // ... and the game frames since the last press
+            bool reloadWas = false;    // the Reload key was down at the last game frame
+            uint32_t reloadUntil = 0;  // a press still waiting for the gun to be ready, until this game time (ms)
             bool footTurn = false;     // the mouse is turning the on-foot camera (walls: the stick's path, below)
             uint32_t footTurned = 0;   // ... last at this game time, ms
         } g_mouse;
@@ -349,6 +357,145 @@ namespace vcs::input
             return g < 0 ? -a : a;
         }
         float stickFloat(int raw) { return raw == 0 ? 0.0f : (raw + 0.5f) / (raw > 0 ? 127.0f : 128.0f); }
+
+        // ---- Reload weapon (game-internals.md 12c, "Reloading") ---------------------------------------------------------
+        // The game reloads only when the clip runs dry: CWeapon::Fire (FUN_002C0F98, 0x2C1938..0x2C1A14) then sets the
+        // weapon's state to 2 and its timer to now + the reload time (a quarter of it with the player's fast-reload
+        // flag); the weapon's own update fills the clip from the ammo once the timer has passed and plays the reload.
+        // The key starts exactly that with rounds still in the clip. No ammo is lost (the ammo count holds the clip).
+        constexpr uint32_t kWeaponInfo = 0x00712770u; // *(*this + 4) + type * 0x70: +0x10 the reload time (ms), +0x14 the clip
+        constexpr uint32_t kPedSlot = 0x789u, kPedWeapons = 0x578u, kWeaponSize = 0x1Cu; // {type, state, clip, ammo, timer}
+        constexpr uint32_t kPlayerIndex = 0x004CD128u, kPlayerSize = 0x190u, kFastReload = 0x16Cu; // CWorld::Players[n]
+        constexpr uint32_t kFirstGun = 12; // below: unarmed and melee (thrown weapons have a clip of 1)
+        // The reload animation: the game plays it only from the ped attack (FUN_001D26C8, 0x1D3904..0x1D3A2C), once the
+        // attack animation ends with the weapon reloading - so a reload started here, out of an attack, would have none.
+        // There: weapon info flag 0x8000 (+0) set, no fast reload, then BlendAnimation (FUN_00215868: ped, ped's clump
+        // +0x50, the gun's animation group (info +0x40), 0xD8 - 0xD9 crouched, ped +0x1C8 bit 45, not for type 30 -,
+        // delta 8.0) and SetFinishCallback (FUN_0018ECE8: assoc +0x34 = 1, +0x38 the callback 0x1D2140, +0x3C the ped).
+        // The same call is made here, as a guest call chained to the pad read (padReadHook).
+        constexpr uint32_t kBlendAnimation = 0x00215868u, kReloadFinished = 0x001D2140u;
+        constexpr uint32_t kAnimReload = 0xD8u, kAnimReloadCrouched = 0xD9u, kWeaponHasReload = 0x8000u;
+        struct ReloadAnim
+        {
+            uint32_t ped = 0, group = 0, anim = 0;
+        };
+        ReloadAnim g_reloadAnim; // game thread: asked for at the pad read, played right after it
+        bool g_reloadAnimOn = true; // VCS_RELOAD_ANIM=0: the reload without its animation (as before 2026-11-17)
+
+        // scePadRead (0x449488), hooked: after the read, when a reload asked for its animation, the read returns into
+        // BlendAnimation (pc = it, ra = afterBlend: a host function at a guest address no code uses), as a guest call -
+        // its own checkpoints unwind and resume as any other. afterBlend sets the finish callback on the association it
+        // returns and goes back to where scePadRead would have returned, with scePadRead's result.
+        PS2Runtime::RecompiledFunction g_origPadRead = nullptr;
+        uint32_t g_afterBlendPc = 0;
+        struct PadReadReturn
+        {
+            __m128i ra, v0, v1;
+            uint32_t ped;
+        } g_padReturn;
+
+        PS2_GUEST_CC void afterBlend(uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+        {
+            const uint32_t assoc = GPR_U32(ctx, 2);
+            if (assoc)
+            {
+                const uint32_t one = 1, cb = kReloadFinished, ped = g_padReturn.ped;
+                std::memcpy(rdram + ((assoc + 0x34u) & kRamMask), &one, 4);
+                std::memcpy(rdram + ((assoc + 0x38u) & kRamMask), &cb, 4);
+                std::memcpy(rdram + ((assoc + 0x3Cu) & kRamMask), &ped, 4);
+            }
+            std::fprintf(stderr, "[input] reload animation: assoc 0x%x\n", assoc);
+            ctx->r[2] = g_padReturn.v0;
+            ctx->r[3] = g_padReturn.v1;
+            ctx->r[31] = g_padReturn.ra;
+            ctx->pc = GPR_U32(ctx, 31);
+        }
+
+        PS2_GUEST_CC void padReadHook(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            g_origPadRead(rdram, ctx, runtime);
+            const ReloadAnim a = g_reloadAnim;
+            if (!a.ped)
+                return;
+            const uint32_t ra = GPR_U32(ctx, 31);
+            // only from a read that returned normally (not one unwinding to a checkpoint, or another hook's guest call)
+            if (g_checkpointUnwind || ctx->pc != ra || !g_afterBlendPc)
+                return;
+            g_reloadAnim = {};
+            if (rd32(kPlayerPed) != a.ped || rd32(a.ped + kPedVehicle) != 0)
+                return;
+            g_padReturn = {ctx->r[31], ctx->r[2], ctx->r[3], a.ped};
+            SET_GPR_U32(ctx, 4, a.ped);
+            SET_GPR_U32(ctx, 5, rd32(a.ped + 0x50u));
+            SET_GPR_U32(ctx, 6, a.group);
+            SET_GPR_U32(ctx, 7, a.anim);
+            ctx->f[12] = 8.0f;
+            SET_GPR_U32(ctx, 31, g_afterBlendPc);
+            ctx->pc = kBlendAnimation;
+        }
+
+        // A guest address no recompiled function covers, for afterBlend (the table's empty slots: padding between
+        // functions). 0 when there is none.
+        uint32_t freeGuestAddress(const PS2Runtime &runtime)
+        {
+            for (uint32_t a = g_ps2RecompiledFunctionTableEnd & ~3u; a > g_ps2RecompiledFunctionTableBase;)
+            {
+                a -= 4;
+                if (!runtime.hasFunction(a))
+                    return a;
+            }
+            return 0;
+        }
+
+        // Starts a reload of the gun in hand when it can take one: ready (not firing or reloading already), and the clip
+        // short of what the ammo can fill. Game thread, at the pad read (before the weapon's update of the frame).
+        // In a vehicle: see below.
+        bool startReload()
+        {
+            const uint32_t ped = rd32(kPlayerPed);
+            if (!ped)
+                return false;
+            const int8_t slot = static_cast<int8_t>(g_rdram[(ped + kPedSlot) & kRamMask]);
+            if (slot < 0 || slot >= 10)
+                return false;
+            const uint32_t w = ped + kPedWeapons + static_cast<uint32_t>(slot) * kWeaponSize;
+            const uint32_t type = rd32(w);
+            const uint32_t list = rd32(kWeaponInfo) & kRamMask;
+            const uint32_t table = list ? rd32(list + 4) & kRamMask : 0;
+            if (type < kFirstGun || type >= 40 || !table)
+                return false;
+            const int32_t reloadMs = static_cast<int32_t>(rd32(table + type * 0x70u + 0x10u));
+            const int32_t size = static_cast<int32_t>(rd32(table + type * 0x70u + 0x14u));
+            const int32_t state = static_cast<int32_t>(rd32(w + 4)), clip = static_cast<int32_t>(rd32(w + 8));
+            const int32_t ammo = static_cast<int32_t>(rd32(w + 12));
+            const bool inVehicle = rd32(ped + kPedVehicle) != 0;
+            if ((inVehicle ? state > 1 : state != 0) || size <= 1 || size > 1000 || reloadMs <= 0 || reloadMs > 10000 || clip < 0 ||
+                clip >= std::min(size, ammo))
+                return false;
+            // In a vehicle the game refills the clip itself (CWeapon::Reload, FUN_002CDFB0) every frame the player does
+            // not fire - the drive-bys FUN_002CEBE0 / FUN_002CF078 / FUN_002CF4A8 - and a reload's state 2 is gone the next
+            // frame; only during a burst does the clip run down. There the key does what letting go of the trigger does:
+            // the clip full at once.
+            if (inVehicle)
+            {
+                wr32(w + 8, static_cast<uint32_t>(std::min(size, ammo)));
+                std::fprintf(stderr, "[input] reload: weapon %u, clip %d of %d, ammo %d, in a vehicle\n", type, clip, size, ammo);
+                return true;
+            }
+            const uint32_t player = 0x004E4910u + g_rdram[kPlayerIndex] * kPlayerSize;
+            const int32_t wait = rd32(player + kFastReload) ? reloadMs / 4 : reloadMs;
+            wr32(w + 4, 2);
+            wr32(w + 16, rd32(kGameClock) + static_cast<uint32_t>(wait));
+            const uint32_t info = table + type * 0x70u;
+            const bool crouched = (g_rdram[(ped + 0x1C8u + 5u) & kRamMask] & 0x20u) != 0;
+            const bool animated = (rd32(info) & kWeaponHasReload) && !rd32(player + kFastReload) && !(crouched && type == 30) &&
+                                  g_reloadAnimOn;
+            if (animated)
+                g_reloadAnim = {ped, rd32(info + 0x40u), crouched ? kAnimReloadCrouched : kAnimReload};
+            std::fprintf(stderr, "[input] reload: weapon %u, clip %d of %d, ammo %d, %d ms, %s\n", type, clip, size, ammo,
+                         wait, animated ? "animated" : "no animation");
+            return true;
+        }
 
         bool readPad(uint8_t *data)
         {
@@ -410,6 +557,10 @@ namespace vcs::input
             };
             std::array<int, 4> neg{}, pos{}; // per axis: a bound key toward each side is down
             bool walk = false;
+            bool reloadHeld = false; // the Reload key or its gamepad button
+            for (size_t i = 0; i < kControlCount && !freeCamera && padConnected(physical); ++i)
+                if (kControls[i].target == Target::Reload && padSource(m.pad[i], m.trigger))
+                    reloadHeld = true;
             for (size_t i = 0; i < kControlCount && !blocked; ++i)
             {
                 const Control &c = kControls[i];
@@ -427,6 +578,8 @@ namespace vcs::input
                 }
                 else if (c.target == Target::Stick)
                     (c.sign < 0 ? neg : pos)[c.axis] = 1;
+                else if (c.target == Target::Reload)
+                    reloadHeld = true;
                 else
                     walk = true;
             }
@@ -436,8 +589,35 @@ namespace vcs::input
                     *axes[a] = neg[a] ? -1.0f : 1.0f;
             if (walk)
             {
+                // The walk's tilt is set in the game's own units: the size one axis has at Walking speed, split over
+                // the direction, each axis then past the game's dead third (rawFor). Scaled as floats a diagonal (W + D)
+                // put both axes inside the dead third (0.45 / sqrt 2 = 0.32: byte 40 of 42) and Vic stood still.
+                // VCS_WALK_FIX=0: as before.
+                static const bool walkFix = [] {
+                    const char *e = std::getenv("VCS_WALK_FIX");
+                    return !(e && e[0] == '0');
+                }();
                 const float mag = std::sqrt(lx * lx + ly * ly);
-                if (mag > m.walk)
+                if (walkFix && mag > 0.0f)
+                {
+                    const int raw = static_cast<int>(std::lround(std::clamp(m.walk, 0.0f, 1.0f) * 127.0f));
+                    const float size = raw > 42 ? static_cast<float>((raw - 42) * 127 / 85) : 0.0f; // the game's curve
+                    // a tilt under Walking speed (a gamepad's stick held a little) stays as it is
+                    const float wanted = std::max(1.0f, size);
+                    // the game's values the stick gives now
+                    auto game = [](float v) {
+                        const int r = static_cast<int>(toByte(v)) - 128;
+                        return std::abs(r) <= 42 ? 0.0f : static_cast<float>((std::abs(r) - 42) * 127 / 85) * (r < 0 ? -1.0f : 1.0f);
+                    };
+                    const float gx = game(lx), gy = game(ly);
+                    if (std::sqrt(gx * gx + gy * gy) > wanted)
+                    {
+                        const float k = wanted / mag;
+                        lx = stickFloat(rawFor(static_cast<int>(std::lround(lx * k))));
+                        ly = stickFloat(rawFor(static_cast<int>(std::lround(ly * k))));
+                    }
+                }
+                else if (mag > m.walk)
                 {
                     lx *= m.walk / mag;
                     ly *= m.walk / mag;
@@ -458,6 +638,28 @@ namespace vcs::input
             {
                 g_mouse.last = now;
                 g_mouse.frame = frame;
+                // Reload weapon: at the press, with the controls on (not in a cutscene or paused), on foot or in a vehicle
+                {
+                    int16_t disabled = 0;
+                    if (g_rdram)
+                        std::memcpy(&disabled, g_rdram + kPad0 + 0x96, 2);
+                    const bool press = reloadHeld && !g_mouse.reloadWas;
+                    g_mouse.reloadWas = reloadHeld;
+                    const uint32_t ped = g_rdram ? rd32(kPlayerPed) : 0;
+                    const uint32_t clock = g_rdram ? rd32(kGameClock) : 0;
+                    // a press while the gun fires (state 1) waits for it to be ready, up to 0.4 s of game time
+                    if (press)
+                        g_mouse.reloadUntil = clock + 400u;
+                    if (g_mouse.reloadUntil && static_cast<int32_t>(g_mouse.reloadUntil - clock) >= 0 && g_rdram && !blocked &&
+                        !game.paused && ped && disabled == 0 &&
+                        rd32(kLooksAtPlayer) == 1)
+                    {
+                        if (startReload())
+                            g_mouse.reloadUntil = 0;
+                    }
+                    else
+                        g_mouse.reloadUntil = 0;
+                }
                 float dx = 0.0f, dy = 0.0f;
                 takeMouseMotion(dx, dy);
                 if (!physical)
@@ -589,6 +791,8 @@ namespace vcs::input
                     }();
                     const uint32_t clock = rd32(kGameClock);
                     if (turn != 0.0f || tilt != 0.0f)
+                        footcam::mouseTurned(); // the camera held where the mouse puts it (game/vcs_footcam.h)
+                    if (turn != 0.0f || tilt != 0.0f)
                     {
                         g_mouse.footTurn = true;
                         g_mouse.footTurned = clock;
@@ -703,6 +907,8 @@ namespace vcs::input
             // game at once, should the mouse have held it a moment before (game/vcs_carcam.h)
             if ((rx != 0.0f || ry != 0.0f) && game.driving)
                 carcam::stickMoved();
+            else if (rx != 0.0f || ry != 0.0f)
+                footcam::stickMoved();
             rx += g_mouse.x;
             ry += g_mouse.y;
             buttons |= g_mouse.wheelButton;
@@ -861,6 +1067,22 @@ namespace vcs::input
                 settings::add(s);
 
                 s = {};
+                s.key = "mouse.foot_hold";
+                s.page = kKeys;
+                s.section = "Mouse";
+                s.label = "On-foot camera hold";
+                s.help = "On foot the game turns the camera by itself while you move (it swings after you as on a string, "
+                         "and behind you), which fights the mouse - hold D and it goes round one way while you pull it the "
+                         "other. For this long after the mouse turns it, the camera stays where the mouse puts it while you "
+                         "move; then the game's camera follows you again. Always: as in a PC game, it never turns by itself "
+                         "on the keyboard and mouse. Off: as on the PS2. The gamepad is not affected.";
+                s.type = Type::Choice;
+                s.choices = {{"Off", 0}, {"1 s", 10}, {"2 s", 20}, {"3 s", 30}, {"5 s", 50}, {"Always", -1}};
+                s.defaultValue = 20;
+                s.onChange = [](int v) { footcam::setHold(v < 0 ? -1 : v * 100); };
+                settings::add(s);
+
+                s = {};
                 s.key = "mouse.invert_y";
                 s.page = kKeys;
                 s.section = "Mouse";
@@ -911,6 +1133,12 @@ namespace vcs::input
                                                                                     "binding says.")
                  : c.target == Target::Walk
                      ? "While held, you walk instead of running (the left stick at a small tilt, as on the PS2)."
+                 : c.target == Target::Reload
+                     ? "Reloads the gun in your hand now, with the game's own reload (its animation and time), when the "
+                       "clip is not full and you have ammo to fill it; no ammo is lost. In a vehicle the game refills the clip "
+                       "itself whenever you stop shooting: there the key fills it at once during a drive-by. The PS2 only "
+                       "reloads an "
+                       "empty clip."
                  : c.target == Target::Stick ? "The PS2's analog stick in this direction, all the way."
                                              : std::string("Presses the PS2's ") + c.label + ".";
             s.type = Type::Key;
@@ -995,14 +1223,17 @@ namespace vcs::input
         // ---- Gamepad ---------------------------------------------------------------------------------------------
         for (const Control &c : kControls)
         {
-            if (c.target != Target::Button || c.driving)
+            if ((c.target != Target::Button && c.target != Target::Reload) || c.driving)
                 continue;
             s = {};
             s.key = padId(c);
             s.page = kPad;
             s.section = "Buttons";
             s.label = c.label;
-            s.help = std::string("The gamepad button for the PS2's ") + c.label + ". Several PS2 buttons can share one.";
+            s.help = c.target == Target::Reload
+                         ? std::string("The gamepad button that reloads the gun in your hand (it also does what that button does "
+                                       "in the game). None by default.")
+                         : std::string("The gamepad button for the PS2's ") + c.label + ". Several PS2 buttons can share one.";
             s.type = Type::Choice;
             s.choices = padChoices();
             s.defaultValue = c.pad;
@@ -1102,6 +1333,17 @@ namespace vcs::input
             PSPadBackend::setReader(&readPad);
         PSPadBackend::setActuatorSink(&actuators);
         std::fprintf(stderr, "[input] %s\n", g_enabled ? "player bindings" : "built-in mapping (VCS_INPUT_MAP=0)");
+        // the Reload key's animation (startReload, padReadHook)
+        if (const char *e = std::getenv("VCS_RELOAD_ANIM"); e && e[0] == '0')
+            g_reloadAnimOn = false;
+        else if ((g_origPadRead = runtime.lookupFunction(0x00449488u)) && (g_afterBlendPc = freeGuestAddress(runtime)))
+        {
+            runtime.registerFunction(g_afterBlendPc, &afterBlend);
+            runtime.replaceFunction(0x00449488u, &padReadHook);
+            std::fprintf(stderr, "[input] reload animation: after the blend at 0x%x\n", g_afterBlendPc);
+        }
+        else
+            g_reloadAnimOn = false;
         // padstate -> ok buttons=<pressed, hex> rx= ry= lx= ly= reads= (the last report the bindings made, the reads so
         // far; tools/controls_check.py)
         ps2control::addCommand("padstate", [](const std::string &, ps2control::Reply reply) {

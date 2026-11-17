@@ -23,6 +23,7 @@ menu (F2): the **Keyboard** and **Gamepad** pages (src/game/vcs_input.cpp).
 | Start (pause menu) | Escape | Start / Menu |
 | Select | Backspace | Back / View |
 | Walk (hold) | - (unbound) | - (a small stick tilt) |
+| Reload weapon | R | - (none; Gamepad page) |
 
 **While driving** (Keyboard page, Driving) these keys do what a PC driving game does, and nothing else meanwhile; on
 foot they keep their bindings above (W walks, Space jumps):
@@ -98,7 +99,19 @@ as with L1). It does nothing of this while a control is bound to the wheel or wh
   F2, Trainer F5, Free camera F6, Screenshot F8, same page) never take a control's key, and a control can't take theirs - the menu says which setting
   has it.
 - **Walk (hold)**: the left stick at the **Walking speed** (45% by default) while held - GTA walks below about half
-  a tilt, which keys can't do otherwise.
+  a tilt, which keys can't do otherwise. The speed is set in the game's own stick units, so a diagonal (W + D) walks
+  as fast as a straight line (before 2026-11-16 it stood still: both axes fell into the game's dead third;
+  `VCS_WALK_FIX=0`: as before).
+- **Reload weapon** (R; a gamepad button on the Gamepad page, none by default): reloads the gun in hand with the game's
+  own reload (state, time, and its reload animation, played as the game plays it after an attack) while the clip is not
+  full and there is ammo to fill it; no ammo is lost. In a vehicle the game refills the clip itself whenever you stop
+  shooting, so there the key fills it at once during a drive-by. The PS2 reloads only an empty clip (game-internals.md
+  12c, "Reloading"; `VCS_RELOAD_ANIM=0`: no animation).
+- **On-foot camera hold** (Mouse section; 2 s by default; Off, 1 / 2 / 3 / 5 s, Always): for that long after the mouse
+  turns the on-foot camera it stays where the mouse put it while Vic moves - the game's string and its swing behind
+  him are off (game-internals.md 12b), so holding D no longer turns the camera against the mouse. Then the game's camera
+  follows him again. Keyboard and mouse only; the right stick or the camera keys hand it back at once. `VCS_FOOTCAM=0`:
+  not installed.
 - **A driving key** may share its key with an on-foot control (W is Move forward on foot and Accelerate in a car); within
   the Driving section a key does one thing, and the menu keys stay out of both.
 - **Mouse camera** (on by default): the mouse turns the camera, and the mouse is held in the window while playing (free

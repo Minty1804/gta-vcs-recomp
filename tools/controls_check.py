@@ -6,7 +6,8 @@ report they make and in the game, plus the settings registry's presets and reset
 
 Loads the Fort Baxter rig save (a copy, hidden), then: every default key binding (both slots, either Shift / Ctrl,
 Keypad Enter, the mouse buttons) gives its PS2 button or stick direction, Alt+Enter is not Start; a rebound key moves
-Vic and the old one no longer does; the walk key holds the stick at walking speed; the mouse turns the on-foot camera
+Vic and the old one no longer does; the walk key holds the stick at walking speed, on a diagonal too; the Reload key
+refills the clip; On-foot camera hold keeps the camera where the mouse put it while Vic moves; the mouse turns the on-foot camera
 by the amount asked (heading and pitch, inverted, off) and is pulled in at a wall as the stick's camera is, right click
 locks on to a ped, the Driving keys (W / S / Space
 accelerate, brake, handbrake in a car, and nothing else there), the mouse on the vehicle camera (turned 1:1, held while
@@ -398,7 +399,13 @@ class Check:
             steps += 1
         level(*self.BARRACKS_DOOR)
         path = os.path.join(self.out, "wall_orbit.txt").replace("\\", "/")
-        g.cmd("trace %s 0x%x 1 0x%x 3 0x%x 3" % (path, self.CAM + 0x7C, self.CAM + 0x20, self.CAM + 0x1A0))
+        # the control command splits on spaces: a folder with one ("GTA Vice City Stories") goes relative to the game's
+        # working directory (tools/run.py: <build>/run)
+        try:
+            rel = os.path.relpath(path, os.path.join(rig.tc.BUILD, "run")).replace("\\", "/")
+        except ValueError:  # another drive
+            rel = path
+        g.cmd("trace %s 0x%x 1 0x%x 3 0x%x 3" % (rel if " " in path else path, self.CAM + 0x7C, self.CAM + 0x20, self.CAM + 0x1A0))
         g.cmd("gamepad on")
         g.cmd("gamepad rx 1")
         time.sleep(4.0)
@@ -445,6 +452,98 @@ class Check:
     # ---- free aim (src/game/vcs_aim.cpp, game-internals.md 12c) ----
     PED_POOL, PED_SIZE = 0x487A94, 0xD20
     PED_TARGET, PED_HEALTH, PED_SLOT = 0x820, 0x4E4, 0x789
+
+    def walk_reload_hold(self):
+        """Walk on a diagonal (both axes past the game's dead third, and Vic moves), the Reload key (the clip refilled
+        with the ammo unchanged; nothing with a full clip), and On-foot camera hold (after a mouse turn, D held leaves
+        the heading where it is; Off: the game swings it) - 2026-11-16, game-internals.md 12a / 12b / 12c."""
+        g = self.g
+        self.setting("keys.walk", KEY_G)
+        p = self.held("w", "d", "g")
+        live = lambda v: v < 86 or v > 170  # past the game's dead third (|v - 128| > 42)
+        self.ok("walk on a diagonal: both axes count", live(p["lx"]) and live(p["ly"]) and p["lx"] > 128 > p["ly"], str(p))
+        g.teleport(75.0, 175.0, -100.0)
+        time.sleep(2)
+        before = g.player()[1]
+        for k in ("w", "d", "g"):
+            g.cmd("key %s down" % k)
+        time.sleep(2.0)
+        for k in ("w", "d", "g"):
+            g.cmd("key %s up" % k)
+        after = g.player()[1]
+        far = math.hypot(after[0] - before[0], after[1] - before[1])
+        self.ok("walk on a diagonal moves Vic at walking pace", 1.0 < far < 5.0, "%.2f m in 2 s" % far)
+        self.setting("keys.walk", 0)
+
+        self.give(19, 100)
+        ped = g.player()[0]
+        slot = g.peek(ped + 0x789, 1)[0]
+        w = ped + 0x578 + slot * 0x1C
+        weapon = lambda: [int.from_bytes(g.peek(w + 4 * i, 4), "little", signed=True) for i in range(4)]  # type state clip ammo
+        g.cmd("poke 0x%x 05000000" % (w + 8))
+        before = weapon()
+        g.cmd("press r 100")
+        g.wait_frames(3)
+        during = weapon()
+        time.sleep(1.5)
+        after = weapon()
+        self.ok("Reload key reloads", before[2] == 5 and during[1] == 2 and after[2] == 17 and after[3] == before[3] and after[1] == 0,
+                "before %s, during %s, after %s" % (before, during, after))
+        # the reload animation (2026-11-17): the game's own (0xD8, its finish callback 0x1D2140), playing out
+        with open(g.log_path, errors="replace") as f:
+            assocs = re.findall(r"reload animation: assoc 0x([0-9a-f]+)", f.read())
+        assoc = int(assocs[-1], 16) if assocs else 0
+        anim = int.from_bytes(g.peek(assoc + 0x30, 2), "little") if assoc else 0
+        self.ok("Reload key plays the reload animation", anim in (0xD8, 0xD9) and g.u32(assoc + 0x38) == 0x1D2140,
+                "assoc 0x%x anim 0x%x" % (assoc, anim))
+        g.cmd("press r 100")
+        g.wait_frames(3)
+        again = weapon()
+        self.ok("Reload key with a full clip does nothing", again[1] == 0 and again[2] == 17, str(again))
+
+        def drift_with_d():
+            self.g.cmd("mouse 40 0")
+            g.wait_frames(3)
+            _, _, h0 = self.cam()
+            g.cmd("key d down")
+            time.sleep(1.2)
+            g.cmd("key d up")
+            _, _, h1 = self.cam()
+            state = g.cmd("footcam")
+            return (h1 - h0 + math.pi) % (2 * math.pi) - math.pi, state
+
+        time.sleep(3.0)
+        held, state_held = drift_with_d()
+        self.ok("On-foot camera hold: D after a mouse turn leaves the camera", abs(held) < 0.02 and "hold" in state_held,
+                "%+.3f rad, %s" % (held, state_held))
+        self.setting("mouse.foot_hold", 0)
+        time.sleep(3.0)
+        off, state_off = drift_with_d()
+        self.ok("On-foot camera hold Off: the game swings the camera", abs(off) > 0.2 and "game" in state_off,
+                "%+.3f rad, %s" % (off, state_off))
+        self.setting("mouse.foot_hold", 20)
+
+        # in a vehicle the game refills the clip whenever the player does not fire; the key fills it during a drive-by
+        # (the shots fired between the two reads counted back: clip + shots = a full clip)
+        self.give(26, 200)
+        g.spawn_car()
+        time.sleep(2.0)
+        w = ped + 0x578 + g.peek(ped + 0x789, 1)[0] * 0x1C
+        g.cmd("key 1 down")  # L2: look left, a drive-by
+        g.cmd("key ctrl down")
+        time.sleep(0.6)
+        during = weapon()
+        g.cmd("press r 100")
+        g.wait_frames(2)
+        refilled = weapon()
+        g.cmd("key ctrl up")
+        g.cmd("key 1 up")
+        shots = during[3] - refilled[3]
+        self.ok("Reload key in a drive-by fills the clip", during[2] + shots < 30 and refilled[2] + shots >= 30,
+                "during %s, after the key %s" % (during, refilled))
+        time.sleep(1.0)
+        g.cmd("press f 200")  # Triangle: out of the car again
+        time.sleep(3.0)
 
     def give(self, weapon, ammo=200):
         """The weapon to Vic, in his hand (GIVE_WEAPON_TO_CHAR selects it)."""
@@ -1106,6 +1205,9 @@ class Check:
             self.ok("walk key", abs(p["ly"] - want) <= 1, "ly %d (want %d)" % (p["ly"], want))
             walk = self.setting("keys.walk", 0)
             self.ok("walk unbound", walk == "0", walk)
+            self.walk_reload_hold()
+            g.teleport(75.0, 175.0, -100.0)
+            time.sleep(2)
 
             self.mouse_and_driving()
             self.free_aim()

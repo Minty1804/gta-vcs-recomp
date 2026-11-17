@@ -1134,6 +1134,9 @@ Python scripts still usable on their own. docs/LAUNCHER.md has the whole of it; 
 | `VCS_TIMING_LOG=1` | independent timing: fps, host wait, EE clock vs real time, WaitVBlank callers every 2 s |
 | `VCS_GAME_VOLUME=0` | Audio > Music / Sound effects leave the game's own levels alone (no setter hooks, no sync; the reference) |
 | `VCS_CARCAM=0` | the hook on the camera behind a vehicle not installed: the mouse moves the right stick there, as before 2026-11-03; Car camera return does nothing |
+| `VCS_FOOTCAM=0` | the hook on the on-foot follow camera not installed: the camera swings after a moving player while the mouse turns it, as before 2026-11-16; On-foot camera hold does nothing |
+| `VCS_RELOAD_ANIM=0` | the Reload key reloads with no animation (no hook on scePadRead), as before 2026-11-17 |
+| `VCS_WALK_FIX=0` | Walk (hold) scales the stick as floats, as before 2026-11-16: a diagonal walk (W + D) stands still |
 | `VCS_FOOT_WALL=0` | on foot the mouse's turn does not ask the camera's update for the pull-in at walls: the camera stands at a wall's edge while its heading turns on, as before 2026-11-11 |
 | `VCS_FREEAIM=0` | free aim's hooks not installed (CGame::Process, CCamera::Process, the weapons' line test): the game's aiming untouched, the setting does nothing |
 | `VCS_INPUT_MAP=0` | the runtime's fixed built-in key / gamepad mapping instead of the player's bindings (`ps2_pad.cpp`; the reference) |
