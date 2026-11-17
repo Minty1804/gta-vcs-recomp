@@ -27,6 +27,7 @@ option or can be switched off, and everything else is the same as upstream.
 | **Palms at a distance** | With a texture pack or anisotropic filtering, far palms (and other leaves) look see-through | They stay as solid as up close |
 | **First shot of the Mac 10 / Micro SMG** | About half a second after you press fire, even with the gun raised | At once (option, off by default) |
 | **Pedestrian distance** | People appear 35-60 m away | Up to twice as far (option, 100% by default) |
+| **Distant lights** | Street lights vanish past their short corona distance: the city is dark far away at night | Project2DFX's far lights glow over the city at night (option, off by default) |
 
 **Texture packs.** Put the pack's `SLUS-21590` folder into a `textures` folder next to the game, so its images end up
 in `build\textures\SLUS-21590\replacements\` (sub-folders are fine). That is the same layout as PCSX2's own `textures`
@@ -50,6 +51,10 @@ frame rate.
 - **Palms**: no setting. Far fronds used to blend with the sky because the smaller copies of their texture (used at a
   distance) averaged the leaves with the gaps between them. Now each smaller copy keeps the full texture's share of
   solid leaf.
+- **Distant lights**: Settings (F2) > Enhancements > World, off by default. At night (19:00-7:00) the street lamps,
+  traffic lights and other lights far away glow, as with the Project2DFX mod for PCSX2: the same ~4,400 lights, hours,
+  blinking and sizes. Buildings in front hide them, and they work in 16:9. The build downloads the mod's light table
+  (`project2dfx/lodl.c`, MIT) next to the game; without it the option does nothing. Cost: well under 0.1 ms a frame.
 
 **Controls.**
 - **Reload weapon**: Settings (F2) > Keyboard, **R** by default. On the gamepad, Settings > Gamepad (no button by

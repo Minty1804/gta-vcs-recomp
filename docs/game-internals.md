@@ -1802,6 +1802,37 @@ PaletteKeyHash, TextureName) and another VCS port that loads PCSX2 packs (its gs
   `PS2X_HW_MIP_COVERAGE_LOG=1` prints each texture's shares). Without the pack and with anisotropic filtering off
   there are no mips: the picture is the same as before.
 
+### 7c. The world's camera in VU1 memory, and Project2DFX's distant lights (2026-11-17, Enhancements > World)
+
+Found logging VU1 memory at each world packet's MSCAL 0x30 (`VCS_LODLIGHTS_LOG=2`) next to TheCamera, then scanning
+RDRAM for the difference.
+
+- **The world is drawn in render space, not world space**: world - (ox, oy, 0), the origin read at **`0x6F5640`
+  (TheCamera + 0x1170, x and y floats)**; a copy sometimes sits at `0x520DC8`. It moves on a grid near the camera: x in
+  steps of 12.5, y in steps of 108.25 (-1650 / -322.125, -837.5 / -430.375, 225 / -1188.125 at three spots). Qwords
+  16-19 (view x projection to clip) map render space; qword 32 is the camera in render space (the point where clip
+  x = y = w = 0, solved from 16-19, is exactly qword 32; + the origin = TheCamera + 0x30). The object matrices
+  (qwords 0-3) are render space too: their translations are tens to a few hundred metres, scaled by the vertex
+  quantisation (row 0 = 16 .. 1024). Floats near the camera keep their precision this way.
+- One world chain uses one view (16-19) and one viewport (12-15) for all its packets; only the viewport's z (P3.z,
+  524283.8 .. 524292.1, a layer bias) changes between groups of packets. The first world packet's matrices give the
+  frame's camera.
+- Draw order in a frame: sky, clouds, world, particles, the reflection map (fbp 420, fbw 2, reads the frame at 140), peds,
+  bloom (downsample fbw 4 from the frame), trails, HUD. Depth is cleared to 0, nearer is larger, GEQUAL.
+- **Project2DFX for VCS** (ThirteenAG's PCSX2 plugin, `GTAVCS.PCSX2F.Project2DFX`, lodl.c / lodl.h; MIT): a table of
+  ~4400 lights (`aLodLights[]`: x, y, z, size, farclip, heading, rgba, show mode, nodist) drawn as corona sprites at night
+  where the game shows no corona. Rules (RenderLODLightsBuffered): 19:00 - 7:00; strength 30 / 255 at 19:00 rising to
+  255 at midnight, 255 until 3:00, down to 30 at 7:00; shown from farclip / 3 to 1000 m (always for nodist); radius
+  min((d - farclip / 3) x 3.5 / (farclip - farclip / 3), 3.5) x min(0.0025 d + 0.25, 4) x size x 1.5; show modes 1-7
+  blink by the ms clock (500/500 .. 6000/4000 ms); traffic lights (size 0.45) follow the minute (red / green windows of
+  9 minutes, yellow at minute 9, 19...; the heading decides the phase).
+- Here (`src/game/vcs_lod_lights.cpp`, off by default): the first world packet of each chain gives the camera (MSCAL
+  hook), the lights in range are projected on the GS stage and handed to the renderer as additive glows
+  (`gsHwSetOverlay`, gs_hw.cpp), depth-tested against the world's Z buffer without writing it, drawn before the bloom /
+  frame copy so they bloom like the game's coronas. Off inside interiors (`currArea` `0x489F7C` not 0 / 4). Checked at
+  eight night spots: on the lamps, hidden behind buildings, right in 16:9, nothing by day; 20-60 us a frame, no change
+  in frame rate (PERFORMANCE.md-style on / off runs at 120-240 fps within noise).
+
 ## 8. Data loaded at boot
 
 - `PS2/GAME.DTZ` = zlib -> 6.6 MB `GTAG` v1 memory image (header: size, then table offsets), loaded

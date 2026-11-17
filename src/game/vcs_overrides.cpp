@@ -18,6 +18,7 @@
 #include "game/vcs_input.h"
 #include "game/vcs_volume.h"
 #include "game/vcs_world_detail.h"
+#include "game/vcs_lod_lights.h"
 #include "game/vcs_script_fixes.h"
 #include "game/vcs_script_timing.h"
 #include "game/vcs_effects_timing.h"
@@ -1109,6 +1110,7 @@ namespace
         vcs::trainer::onGameFrame(rdram);           // the trainer's actions and held toggles (game/vcs_trainer.h)
         vcs::volume::onGameFrame(rdram);            // the music / effects levels and the pause menu's (game/vcs_volume.h)
         vcs::world::onGameFrame(rdram);             // density, draw distance and their guards (game/vcs_world_detail.h)
+        vcs::lodlights::onGameFrame(rdram);         // the clock the distant lights follow (game/vcs_lod_lights.h)
         vcs::gameinfo::onGameFrame(rdram);          // the F3 game-state panel's snapshot (debug/game_info.h)
         vcs::onFrameKick();                         // the HUD context ends (game/vcs_hud.h)
         vcs::frontend::onFrameKick();               // the pause menu's drawing is over (game/vcs_frontend.h)

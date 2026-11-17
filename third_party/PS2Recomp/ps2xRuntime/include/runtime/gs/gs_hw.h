@@ -99,6 +99,27 @@ void gsHwSetGlyphAtlas(uint32_t width, uint32_t height, std::shared_ptr<const st
 // [gta-recomp] Glyph draws recorded so far (the prompts check).
 uint64_t gsHwGlyphDraws();
 
+// [gta-recomp] Host glows in the game's 3D picture (src/game/vcs_lod_lights.cpp, the "Distant lights" option): a triangle
+// list, Gouraud shaded, added to the picture (Cs x As + Cd), depth-tested GEQUAL against the world's Z buffer, no depth
+// write, untextured. Positions are GS window coordinates (x, y in pixels - XYOFFSET not yet removed -, z the Z buffer's
+// integer value); colours 0..255, alpha 0x80 = 1. Call it on the thread that processes GS packets (through
+// ps2_render_worker::runOnGsStage), in stream order, before the frame's world packets: their context (frame and Z
+// buffer, XYOFFSET, scissor - the first native world draw's after the call) is the overlay's, and the draw goes into the
+// frame right before the next draw that reads that frame buffer into another one (the bloom, the motion blur, the frame
+// copy), or the next 2D draw into it at the far plane (the HUD), or at the frame's end - after the 3D and the game's own
+// coronas. No world draw before then: nothing is drawn. A second call before that replaces the first; an empty list
+// cancels it. The list is swapped in, not copied: the caller gets the previous buffer back, emptied, to fill next time
+// (no allocation per frame).
+struct GSHwOverlayVertex
+{
+    float x, y, z;
+    uint8_t r, g, b, a;
+};
+void gsHwSetOverlay(std::vector<GSHwOverlayVertex> &vertices);
+// [gta-recomp] Overlay draws recorded so far, and their triangles (the distant lights' log)
+uint64_t gsHwOverlayDraws();
+uint64_t gsHwOverlayTriangles();
+
 // [gta-recomp] Native HUD layer: the primitives the classifier names are kept out of the PS2 frame buffer and drawn over
 // the displayed picture at the output size (gsHwSetOutputSize) - sharp at any window size, in its aspect. The displayed
 // buffer's latest HUD is drawn; a new scene in that buffer starts the next one. Any thread.

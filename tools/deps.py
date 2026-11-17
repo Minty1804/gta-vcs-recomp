@@ -12,8 +12,13 @@ the system instead of the prebuilt Windows archive; macOS adds sse2neon and FFmp
 With deps/ in the repository root, toolchain.configure points CMake at it (FETCHCONTENT_SOURCE_DIR_<NAME>, the FFmpeg
 URL, FETCHCONTENT_FULLY_DISCONNECTED): nothing is downloaded. tools/release.py runs `fetch` into the release.
 The pins stay in the CMake files; this reads them, so there is one list.
+
+Data files (VCS_DATA_FILES in the root CMakeLists.txt: `path|url|sha256`, e.g. Project2DFX's light table for the
+Distant lights option) are fetched to DIR/<path>, checked by their hash, and listed in the manifest's "data"; the build
+copies them next to vcs.exe from deps/ when the hash matches, else downloads them itself (a failure only warns).
 """
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -88,6 +93,27 @@ def declared(platform=None):
     return sorted(deps.values(), key=lambda d: d["name"].lower()), ffmpeg
 
 
+def data_files():
+    """[{path, url, sha256}] of the data files the game's options read next to vcs.exe (CMakeLists.txt VCS_DATA_FILES:
+    Project2DFX's light table and its licence). Fetched into DIR/<path>; the build copies them from there."""
+    with open(os.path.join(tc.ROOT, "CMakeLists.txt"), encoding="utf-8") as f:
+        text = re.sub(r"#[^\n]*", "", f.read())
+    m = re.search(r"set\(VCS_DATA_FILES([^)]*)\)", text)
+    files = []
+    for entry in re.findall(r'"([^"]+)"', m.group(1) if m else ""):
+        path, url, sha = entry.split("|")
+        files.append({"path": path, "url": url, "sha256": sha})
+    return files
+
+
+def _sha256(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
 def _remove_tree(path):
     def writable(func, p, _):
         os.chmod(p, stat.S_IWRITE)  # git's pack files are read-only
@@ -151,6 +177,16 @@ def fetch(out_dir, platform=None):
         tc.stage("dep_ffmpeg", "Fetching FFmpeg")
         print("[deps] ffmpeg (%s)" % ffmpeg["url"])
         download(ffmpeg["url"], os.path.join(out_dir, ffmpeg["file"]))
+    data = data_files()
+    for d in data:
+        target = os.path.join(out_dir, *d["path"].split("/"))
+        print("[deps] %s (%s)" % (d["path"], d["url"]))
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        download(d["url"], target)
+        if _sha256(target) != d["sha256"]:
+            os.remove(target)
+            tc.fail("%s: not the pinned file (sha256 differs)" % d["path"], "download_failed")
+    manifest["data"] = data
     with open(os.path.join(out_dir, "manifest.json"), "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=1)
     print("[deps] %d libraries%s in %s (%s)" % (len(deps), " and FFmpeg" if ffmpeg else "", out_dir, platform))
@@ -173,6 +209,10 @@ def check(out_dir, platform=None):
                 if (d["name"], d["repo"], d["tag"]) not in have or not os.path.isdir(os.path.join(out_dir, d["name"]))]
     if ffmpeg and not os.path.isfile(os.path.join(out_dir, ffmpeg["file"])):
         problems.append(ffmpeg["file"] + " missing")
+    for d in data_files():
+        path = os.path.join(out_dir, *d["path"].split("/"))
+        if not os.path.isfile(path) or _sha256(path) != d["sha256"]:
+            problems.append(d["path"] + " missing or not the pinned file")
     return problems
 
 
@@ -191,6 +231,8 @@ def main():
         for d in deps:
             print("%-22s %-28s %s" % (d["name"], d["tag"], d["repo"]))
         print("%-22s %-28s %s" % ("ffmpeg", "", ffmpeg["url"] if ffmpeg else "(the system's)"))
+        for d in data_files():
+            print("%-22s %-28s %s" % (d["path"], d["sha256"][:12], d["url"]))
     elif a.cmd == "fetch":
         fetch(a.dir, a.platform)
     else:

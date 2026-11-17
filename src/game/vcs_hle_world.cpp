@@ -16,6 +16,7 @@
 #include "runtime/gs/gs_draw_source.h"
 #include "debug/rsl_shadow.h"
 #include "game/vcs_hle_world.h"
+#include "game/vcs_lod_lights.h"
 
 #include <algorithm>
 #if defined(USE_SSE2NEON) // arm64 (macOS): the SSE code through NEON
@@ -2855,6 +2856,7 @@ namespace
     bool beforeNative(const ps2hle::MscalContext &c)
     {
         vcs::rslshadow::onMscal(c.startPc, c.vuData); // VCS_RSL_SHADOW 1b (debug/rsl_shadow.h): nothing unless on
+        vcs::lodlights::onMscal(c.startPc, c.vuData); // Distant lights: the frame's camera (game/vcs_lod_lights.h)
         const int rounding = sseRounding();
         g_callerRounding = rounding;
         setSseRounding(FE_TOWARDZERO);

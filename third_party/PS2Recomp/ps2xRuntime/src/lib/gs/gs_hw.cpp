@@ -49,6 +49,16 @@ namespace
     GlyphAtlas g_glyphAtlas;
     std::atomic<uint64_t> g_glyphDraws{0};
     constexpr uint64_t kGlyphAtlasKey = 0xF1F1F1F100000000ull; // its texture key: no GS texture key has these high bits
+    // [gta-recomp] gsHwSetOverlay: the glows waiting for their place in the frame (the GS stage's thread only)
+    struct Overlay
+    {
+        GSContext context; // the first native world draw's after gsHwSetOverlay
+        bool haveContext = false;
+        std::vector<GSHwOverlayVertex> vertices;
+    };
+    Overlay g_overlay;
+    bool g_overlayPending = false;
+    std::atomic<uint64_t> g_overlayDraws{0}, g_overlayTriangles{0};
     std::atomic<uint32_t> g_outputW{0}, g_outputH{0};   // [gta-recomp] gsHwSetOutputSize
     std::atomic<float> g_aspectWidening{1.0f};          // [gta-recomp] gsHwSetAspectWidening
     std::atomic<bool> g_reducedPostFx{false};           // [gta-recomp] gsHwSetReducedPostFx
@@ -252,6 +262,15 @@ void gsHwSetGlyphAtlas(uint32_t width, uint32_t height, std::shared_ptr<const st
     ++g_glyphAtlas.generation;
 }
 uint64_t gsHwGlyphDraws() { return g_glyphDraws.load(std::memory_order_relaxed); }
+void gsHwSetOverlay(std::vector<GSHwOverlayVertex> &vertices)
+{
+    g_overlay.haveContext = false;
+    g_overlay.vertices.swap(vertices);
+    vertices.clear();
+    g_overlayPending = g_overlay.vertices.size() >= 3u;
+}
+uint64_t gsHwOverlayDraws() { return g_overlayDraws.load(std::memory_order_relaxed); }
+uint64_t gsHwOverlayTriangles() { return g_overlayTriangles.load(std::memory_order_relaxed); }
 void gsHwSetOutputSize(uint32_t width, uint32_t height)
 {
     g_outputW.store(width, std::memory_order_relaxed);
@@ -3256,9 +3275,84 @@ namespace
             g_glyphDraws.fetch_add(1, std::memory_order_relaxed);
         }
 
+        // [gta-recomp] gsHwSetOverlay: is this draw where the waiting glows go - the first after the 3D that reads their
+        // target into another buffer (bloom, motion blur, frame copy: not the 128x128 reflection map) or draws 2D into it
+        // at the far plane (the HUD)? Then they are recorded before it.
+        void overlayBefore(const HwState &s, const HwVertex *out, uint32_t n, uint32_t source)
+        {
+            if (!g_overlay.haveContext) // (before the world: the sky, the clouds)
+                return;
+            const uint32_t target = g_overlay.context.frame.fbp;
+            bool here = s.texIsRt && s.rtFbp == target && s.fbp != target && s.fbw >= 4u;
+            if (!here && s.fbp == target && gsDrawSourcePath(source) == 2u)
+            {
+                here = n > 0u;
+                for (uint32_t i = 0; i < n && here; ++i)
+                    here = out[i].z >= 0.99999f;
+            }
+            if (here)
+                overlayRecord();
+        }
+
+        void overlayRecord()
+        {
+            g_overlayPending = false;
+            const GSContext &c = g_overlay.context;
+            std::vector<GSHwOverlayVertex> &v = g_overlay.vertices;
+            const uint32_t count = static_cast<uint32_t>(v.size() / 3u * 3u);
+            if (count == 0u || !m_frame || !g_overlay.haveContext)
+            {
+                v.clear();
+                return;
+            }
+            HwState s{};
+            s.fbp = c.frame.fbp;
+            s.fbw = std::max<uint32_t>(1u, c.frame.fbw);
+            s.fpsm = c.frame.psm;
+            s.zbp = c.zbuf.zbp;
+            s.zpsm = c.zbuf.psm;
+            s.zmsk = 1;  // no depth write
+            s.zte = 1;
+            s.ztst = 2;  // GEQUAL (VCS clears depth to 0; nearer is larger)
+            s.abe = 1;
+            s.ba = 0;    // Cs
+            s.bb = 2;    // 0
+            s.bc = 0;    // As
+            s.bd = 1;    // + Cd
+            s.iip = 1;
+            s.scx0 = c.scissor.x0;
+            s.scy0 = c.scissor.y0;
+            s.scx1 = c.scissor.x1;
+            s.scy1 = c.scissor.y1;
+            const float ofx = c.xyoffset.ofx / 16.0f, ofy = c.xyoffset.ofy / 16.0f, zs = depthScale(c);
+            Frame &f = *m_frame;
+            const uint32_t first = static_cast<uint32_t>(f.vertices.size());
+            for (uint32_t i = 0; i < count; ++i)
+            {
+                HwVertex h{};
+                h.x = v[i].x - ofx;
+                h.y = v[i].y - ofy;
+                h.z = std::min(v[i].z * zs, 1.0f);
+                h.q = 1.0f;
+                h.r = v[i].r;
+                h.g = v[i].g;
+                h.b = v[i].b;
+                h.a = v[i].a;
+                h.fog = 1.0f;
+                f.vertices.push_back(h);
+            }
+            f.cmds.push_back({CmdType::Draw, static_cast<uint32_t>(f.draws.size())});
+            f.draws.push_back({s, first, count, 1u});
+            g_overlayDraws.fetch_add(1, std::memory_order_relaxed);
+            g_overlayTriangles.fetch_add(count / 3u, std::memory_order_relaxed);
+            v.clear();
+        }
+
         void recordPrimitive(HwState s, HwVertex *out, uint32_t n, const GSPrimitiveBatch *batch, float ofx, float ofy,
                              uint32_t source, bool bookkeeping)
         {
+            if (g_overlayPending) // [gta-recomp] gsHwSetOverlay
+                overlayBefore(s, out, n, source);
             if (!s.iip) // [gta-recomp] flat: the GS colours with the last vertex; give every vertex that colour
                 for (uint32_t i = 0; i + 1 < n; ++i)
                 {
@@ -4428,6 +4522,8 @@ namespace
         // ---- frame hand-over (game thread) -------------------------------------------------------------------
         void endFrame(const uint64_t (&privRegs)[15]) override
         {
+            if (g_overlayPending) // [gta-recomp] gsHwSetOverlay: no place found in the frame - at its end
+                overlayRecord();
             Frame &f = *m_frame;
             std::memcpy(f.privRegs, privRegs, sizeof(f.privRegs));
             static const bool debug = std::getenv("PS2X_HW_DEBUG") != nullptr;
@@ -4556,6 +4652,13 @@ namespace
             HwState s{};
             if (!buildState(batch, s))
                 return true; // ZTST NEVER: nothing drawn
+            // [gta-recomp] gsHwSetOverlay: the world's context (target, Z buffer, XYOFFSET, scissor) is the glows'
+            if (g_overlayPending && !g_overlay.haveContext && draw.kind == GSNativeDraw::VcsWorld && s.zte && s.ztst >= 2u &&
+                s.zbp != s.fbp)
+            {
+                g_overlay.context = state.context;
+                g_overlay.haveContext = true;
+            }
             s.mode = draw.kind == GSNativeDraw::VcsLit ? 4 : 3; // native strip kinds (pipeline / merge key only)
             if (s.zte && s.ztst != 1u && s.zbp != s.fbp)
             {

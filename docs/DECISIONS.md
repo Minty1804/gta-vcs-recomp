@@ -1575,3 +1575,21 @@ choices:
   distance factor moves the spawn ring, the removal distances and the minimum distances together, so peds are never
   made where they would be removed at once. Capped at 200 %: beyond that they would spawn past the draw distance most
   of the time. The player's vcs.ini has 175 %.
+
+## 2026-11-17 - Distant lights: Project2DFX's table, drawn by the host renderer
+
+- **An option, off by default** (Enhancements > World > Distant lights; game-internals.md 7c): the PS2 game shows no
+  far street lights, so authentic stays the default. The lights and their rules are Project2DFX's (ThirteenAG's PCSX2
+  plugin for VCS: the table, the hours, the blinking, the traffic lights' minutes, the radius by distance), so the
+  option looks like the mod players know.
+- **Drawn as a host overlay, not through the game's corona sprites**: the plugin calls the game's sprite code from
+  injected PS2 code, which here would mean calling guest functions from host code (never run to the end - AGENTS.md)
+  or patching the game's render list. The renderer instead gets a list of additive, Gouraud-shaded fans on the GS stage,
+  in stream order, with the camera taken from the frame's own VU1 matrices (so the glows line up with the world
+  exactly, Hor+ included) and the world's depth test. It goes in before the bloom / frame copy, so the glows bloom like
+  the game's coronas.
+- **The table is downloaded, not committed**: lodl.c holds no game data (positions and colours typed by the mod's
+  authors, MIT), but it is someone else's file, kept up to date upstream; CMake fetches it with its hash pinned (VCS_DATA_FILES), deps.py
+  bundles it for offline release builds, and without it the option just stays dark (`[lodlights] no light table`).
+- **Off in interiors** (`currArea` not 0 / 4): interiors are drawn far from the city, and the city's lights within
+  1000 m of them would float in the void.

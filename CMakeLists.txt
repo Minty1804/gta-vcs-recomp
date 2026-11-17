@@ -137,6 +137,59 @@ if(VCS_HAVE_GENERATED)
             target_link_options(ps2EntryRunner PRIVATE /MANIFEST:NO)  # lld in mingw mode makes none of its own
         endif()
     endif()
+    # Data files the game's options read next to vcs.exe, never committed: Project2DFX's light table for this game's PS2
+    # version and its licence (ThirteenAG/WidescreenFixesPack, MIT, at a pinned commit; Enhancements > World > Distant
+    # lights, src/game/vcs_lod_lights.cpp). Each: "<path next to vcs.exe>|<url>|<sha256>". Taken from deps/ when there
+    # (tools/deps.py fetch: offline builds, releases), else downloaded once into the build tree; a failed download only
+    # leaves the option without its table (it says so in the log and stays off).
+    set(VCS_DATA_FILES
+        "project2dfx/lodl.c|https://raw.githubusercontent.com/ThirteenAG/WidescreenFixesPack/37057d3883bd607ae047c9f031fe083c32b21c88/source/GTAVCS.PCSX2F.Project2DFX/lodl.c|6ee85ca581848fe060f2d89bac05563011c7b452876d74c52c055252d19549db"
+        "project2dfx/LICENSE|https://raw.githubusercontent.com/ThirteenAG/WidescreenFixesPack/37057d3883bd607ae047c9f031fe083c32b21c88/license|389eef0fb81f8b3bc7aca2025da43cf007acfb390a70f49439d269e51de0b8dc")
+    get_target_property(_vcs_game_dir ps2EntryRunner RUNTIME_OUTPUT_DIRECTORY)
+    if(NOT _vcs_game_dir)
+        set(_vcs_game_dir "${CMAKE_BINARY_DIR}/third_party/PS2Recomp/ps2xRuntime")
+    endif()
+    foreach(_vcs_data IN LISTS VCS_DATA_FILES)
+        string(REPLACE "|" ";" _vcs_data "${_vcs_data}")
+        list(GET _vcs_data 0 _vcs_data_path)
+        list(GET _vcs_data 1 _vcs_data_url)
+        list(GET _vcs_data 2 _vcs_data_hash)
+        set(_vcs_data_file "${CMAKE_BINARY_DIR}/vcs_data/${_vcs_data_path}")
+        set(_vcs_data_have "")
+        if(EXISTS "${_vcs_data_file}")
+            file(SHA256 "${_vcs_data_file}" _vcs_data_have)
+        endif()
+        if(NOT _vcs_data_have STREQUAL _vcs_data_hash)
+            if(EXISTS "${CMAKE_SOURCE_DIR}/deps/${_vcs_data_path}")
+                file(SHA256 "${CMAKE_SOURCE_DIR}/deps/${_vcs_data_path}" _vcs_data_have)
+                if(_vcs_data_have STREQUAL _vcs_data_hash)
+                    configure_file("${CMAKE_SOURCE_DIR}/deps/${_vcs_data_path}" "${_vcs_data_file}" COPYONLY)
+                endif()
+            endif()
+        endif()
+        # (also with FETCHCONTENT_FULLY_DISCONNECTED: a deps/ fetched before these files existed has none)
+        if(NOT _vcs_data_have STREQUAL _vcs_data_hash)
+            file(DOWNLOAD "${_vcs_data_url}" "${_vcs_data_file}" EXPECTED_HASH SHA256=${_vcs_data_hash} STATUS _vcs_data_status
+                 TIMEOUT 20)
+            list(GET _vcs_data_status 0 _vcs_data_code)
+            if(_vcs_data_code EQUAL 0)
+                set(_vcs_data_have "${_vcs_data_hash}")
+            else()
+                file(REMOVE "${_vcs_data_file}")
+                message(WARNING "${_vcs_data_path}: download failed (${_vcs_data_status}); the option that reads it stays off")
+            endif()
+        endif()
+        if(_vcs_data_have STREQUAL _vcs_data_hash)
+            get_filename_component(_vcs_data_dir "${_vcs_data_path}" DIRECTORY)
+            list(APPEND _vcs_data_copies
+                 COMMAND "${CMAKE_COMMAND}" -E make_directory "${_vcs_game_dir}/${_vcs_data_dir}"
+                 COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${_vcs_data_file}" "${_vcs_game_dir}/${_vcs_data_path}")
+        endif()
+    endforeach()
+    if(_vcs_data_copies) # built with the game (a target of this folder: ps2EntryRunner is made in third_party/PS2Recomp)
+        add_custom_target(vcs_data ${_vcs_data_copies} VERBATIM)
+        add_dependencies(ps2EntryRunner vcs_data)
+    endif()
     # Our own sources aren't generated code; keep them out of the unity batches.
     set_source_files_properties(${VCS_SOURCES} "${CMAKE_SOURCE_DIR}/src/main.cpp"
         TARGET_DIRECTORY ps2EntryRunner
