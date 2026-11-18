@@ -1787,6 +1787,29 @@ Found from a RAM dump at the Fort Baxter barracks door (the bobbing arrow's posi
 - In the game: the barracks arrow is drawn at 40, 55, 70, 85, 100, 130 and 160 m (free camera, FOV 20, 16:9) - no
   cut-off up to there.
 
+### 6q. Fences at a distance: the sky through the wire (2026-11-18)
+
+The player's report: Fort Baxter's chain-link fence seen from 60-80 m is a band of sky colour, the hangar behind it
+gone. Found with the free camera at (-705.85, -1318.16, 12.07), heading 293, FOV 30, F12's draw log under
+`PS2X_HLE=0` and two diagnostics added for it (`PS2X_HW_SKIP_KEYS`, a per-creation `PS2X_HW_DUMP_TEX`).
+- The far fence is one draw of texture `69572d722041143b` (32x32 CLUT, dark wire, alpha 0x7D on the wire and 0-1
+  between); like nearly every world draw: GEQUAL 8 alpha test, AFAIL KEEP, Z written, blended, fogged a little
+  (F >= 232). The sky is drawn before it; the hangar behind it **after** it (draws 899 / 1083 / 1141 of 1,400).
+- At that distance the filtered wire's alpha is low everywhere but above 8, so nearly every pixel of the fence passes
+  the test: it writes depth and blends a little dark over the sky. The hangar drawn next fails the depth test there -
+  the sky stays. Skipping the fence's draws shows the hangar; drawing it without depth writes shows the hangar
+  through a faint fence. The emulated path (`PS2X_HLE=0`) is the same picture: it is the game's own draw order and
+  state, not the native renderer.
+- **The user's texture pack** (PCSX2 format, 6,279 images) replaces this texture with a 128x128 one; its thinner wire
+  makes it worse.
+- Graphics > **See-through far fences** (`display.cutout_fix`, off by default, `PS2X_HW_CUTOUT_SPLIT=0|1`;
+  `gsHwSetCutOutSplit`): a draw of that state (GEQUAL / GREATER below 0x40, AFAIL KEEP, Z written, blended) with a
+  texture that has holes (a twentieth of its texels under a tenth of its top alpha: `hasHoles`, worked out when the
+  texture is made - a pack's image too, when it is swapped in) is drawn in two passes: alpha 0x40 and above with
+  depth, the rest (the inverted test) blended without depth. Fences and leaves keep their look up close (their solid
+  texels are far above 0x40) and stop hiding what is behind them far away. Checked at that view: the hangar shows
+  through the fence; nothing else in the picture changes. Costs one more draw call per such draw.
+
 ## 7. Textures: `.XTX`
 
 Confirmed from `LOADSC*.XTX` (263,372 bytes each, 512x512 8-bit):
@@ -3131,6 +3154,33 @@ hidden run (rig `peek` / `poke`, snapshots diffed).
     is before its fire point - the three stores, then SetCurrentTime(loop start) as a guest tail call returning where
     it would have. Measured: Mac 10 84 ms, Micro SMG 133-184 ms (two to four times the bullets in a 0.6 s press);
     the pistol and the SMG unchanged. `quickshot` on the control channel counts the attacks started so.
+
+  - **Close range in free aim** (2026-11-18, the player: the shotgun "would not fire" at men close by, or its pellets
+    passed through them). Two causes, both checked in the game (`aimstate` counts them):
+    - **The melee check.** CPed::SetAttack (`FUN_001D0970`), for a player whose free-aim bit (+0xCC8 bit 51) is clear,
+      calls `FUN_001D23C8(ped, a1, isPlayer)` (returning to `0x1D12D8`): a ped within reach is returned and the shot
+      becomes SetFight (`FUN_001D4320`, ped state 0x11) - a swing of the gun that did no damage. The game's own free
+      aim never runs it (the bit is set); ours clears the bit while the world runs (so Vic walks as when locked on),
+      so it ran. vcs_aim.cpp answers it "no one" for the player in free aim (`meleeCheck`).
+    - **The pellets.** The shotguns (21-23) fire through `FUN_002C9190` -> `FUN_002C7C28`: 3 pellets over a 0.157 rad
+      fan (21), 3 over 0.1047 (22), 5 over 0.314 (23), a horizontal fan about the line from the gun to the target
+      (the dummy), each a line test (`FUN_002D0870`, returning to `0x2C8278`; a0 the muzzle, a1 the end, t1 the
+      shooter; the tracer `FUN_002EB720` is drawn before it). Up close that line and the camera's through the circle
+      part, so a man under the circle was missed. Each pellet's line is now the camera's, turned by the pellet's own
+      angle in the fan, ending at the pellet's range (its own end point left alone: the line's end goes to scratch
+      memory).
+    - Both kinds of shot start 0.75 m short of the gun's depth along the camera's line, so a man pressed against Vic
+      is hit too. Checked (a scratch run; `tools/controls_check.py` `close_free_aim` keeps the shotgun and pistol at 1 m): a man created on the camera's line
+      0.8-5 m past Vic (the game puts him 2-7 m away) - shotgun, SPAS and pistol fire every time and kill in 14 of 15.
+  - **Spread**: FireInstantHit (`FUN_002C3E48`) offsets a shot by (100 - accuracy (ped +0x78E)) x min(5 / distance,
+    1) x 2.5 (constants `0x488024` / `0x488020`) x the recoil (+0xC70), x 0.4 crouched. The player's accuracy is 100
+    and his recoil stayed 0 in bursts: his bullets have no spread, only the shotguns' fans do.
+  - **The circle**: the HUD (`FUN_00319058`) draws it with RenderOneXLUSprite (`FUN_003A0D08`, returning to
+    `0x319424`) at the screen's centre in free aim: f15 / f16 half width / height 14 (f15 10.5 on the game's own
+    widescreen), f14 the depth, texture `*0x6FDD94`; the caller's sp + 0x38 / 0x3C hold CalcScreenCoors' (`FUN_0039FC48`)
+    w / h - the sprite scale at that depth. Enhancements > Combat > **Aiming circle** (`enhance.aim_circle`,
+    `VCS_AIM_CIRCLE`; Original by default): Small = half size; Spread = a 7-pixel dot for guns, a shotgun's circle as
+    wide as its fan at the aim's distance (tan(half angle) x depth x w, 7-64 pixels).
 
 ### 12d. Population: density, caps, spawn chance (2026-11-07, Enhancements > World)
 

@@ -981,6 +981,13 @@ dropped on uploads (lazy render-target patching).
   icon and version information (issue 91: the launcher's icon - since 2026-11-11 its own, the same scene by day in lighter colours -, VERSION through a header only the resource file sees;
   checked: Explorer's details read 0.2.4, "GTA: Vice City Stories PC port").
 
+- **Fences, close range, the aiming circle (2026-11-18, the player's report)**: Graphics > **See-through far fences**
+  (off by default; game-internals.md 6q) - Fort Baxter's far fence shows the hangar behind it instead of sky. Free
+  aim at close range: the melee check SetAttack ran (the shot became a gun swing) is answered "no one", and the
+  shotguns' pellets go down the camera's line with their fan kept; shotgun, SPAS and pistol fire and kill at 2-7 m
+  (14 of 15). Enhancements > Combat > **Aiming circle** (Original / Small / Spread). Palms and bushes further: not
+  done - limited by the streamed world cells, not by LOD distances (DECISIONS.md 2026-11-18).
+
 ## Milestone 9 - Linux (started 2026-10-30)
 
 Native Linux as a second platform (the user's request; the Steam Deck postponed): docs/LINUX.md has the build, the
@@ -1112,6 +1119,9 @@ Python scripts still usable on their own. docs/LAUNCHER.md has the whole of it; 
 |---|---|
 | `PS2X_GS=cpu\|hw\|gpu\|null` | GS renderer (vcs.exe: default hw, set by src/main.cpp; the runtime's own default cpu) |
 | `PS2X_HW_SCALE=n`, `PS2X_HW_DEBUG=1` | hardware renderer scale / stats |
+| `PS2X_HW_CUTOUT_SPLIT=0\|1`, `PS2X_HW_CUTOUT_LOG=1` | Graphics > See-through far fences for one run; count the split draws |
+| `PS2X_HW_SKIP_KEYS=<hex>,...` | diagnostics: skip the draws of those texture keys (what is behind them) |
+| `VCS_AIM_CIRCLE=0\|1\|2` | Enhancements > Combat > Aiming circle (Original / Small / Spread) for one run |
 | `VCS_CPU=AVX2\|AVX\|SSE4` | build tools: the CPU the build is for (default: this PC's, `toolchain.cpu_level`); an older one's build runs here (tests) |
 | `VCS_TOOLCHAIN=mingw\|msvc` | build tools, Windows: llvm-mingw (default; no Visual Studio) or Visual Studio's clang-cl; switching sets the build tree up again (everything rebuilt) |
 | `VCS_LLVM_MINGW=<folder>` | build tools, Windows: an llvm-mingw to use instead of the one in `build/build-tools` (clang 19+) |

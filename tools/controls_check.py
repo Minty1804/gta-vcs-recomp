@@ -810,6 +810,51 @@ class Check:
         self.shot(name)
         return hit, missed, self.aim()[1] - shots0
 
+    def close_free_aim(self):
+        """Free aim at close range (game-internals.md 12c "Close range"): a man created on the camera's line through the
+        circle 1 m past Vic (the game puts him 2-3 m away), the shotgun and then the pistol fired once - the shot is not
+        turned into a melee swing (SetAttack's check answered "no one") and the shotgun's pellets go down the camera's
+        line: the man is hurt each time."""
+        g = self.g
+        cam = self.CAM
+        self.setting("mouse.free_aim", 1)
+        for k, gun in enumerate((21, 19)):
+            g.teleport(575.0 - 30.0 * k, 135.0, -100.0, 0.0)
+            time.sleep(2.0)
+            self.give(gun, 100)
+            g.cmd("key mouseright down")
+            time.sleep(1.0)
+            ped = g.player()[0]
+            (sx, sy, _), (dx, dy, _) = g.peekf(cam + 0x20, 3), g.peekf(g.u32(ped + self.PED_TARGET) + 0x30, 3)
+            (px, py, _) = g.peekf(ped + 0x30, 3)
+            h = math.hypot(dx - sx, dy - sy)
+            t = math.hypot(px - sx, py - sy) + 1.0
+            man = self.ped_at(sx + (dx - sx) / h * t, sy + (dy - sy) / h * t)
+            time.sleep(0.5)
+            for _ in range(3):  # the camera's line through his chest
+                (sx, sy, sz), (dx, dy, dz) = g.peekf(cam + 0x20, 3), g.peekf(g.u32(ped + self.PED_TARGET) + 0x30, 3)
+                (qx, qy, qz) = g.peekf(man + 0x30, 3)
+                along = math.hypot(qx - sx, qy - sy)
+                ray = sz + (dz - sz) * along / math.hypot(dx - sx, dy - sy)
+                g.cmd("mouse 0 %d" % round(-math.atan2(qz + 0.2 - ray, along) * 400))
+                g.wait_frames(10)
+            before = dict(re.findall(r"(\w+)=(\d+)", g.cmd("aimstate")))
+            g.cmd("key mouseleft down")
+            time.sleep(0.4)
+            g.cmd("key mouseleft up")
+            time.sleep(0.6)
+            after = dict(re.findall(r"(\w+)=(\d+)", g.cmd("aimstate")))
+            health = g.peekf(man + self.PED_HEALTH, 1)[0]
+            (mx, my, _), (px, py, _) = g.peekf(man + 0x30, 3), g.peekf(ped + 0x30, 3)
+            sent = int(after.get("pellets" if gun == 21 else "shots", 0)) - int(before.get("pellets" if gun == 21 else "shots", 0))
+            self.shot("close_free_aim_%d" % gun)
+            g.cmd("key mouseright up")
+            time.sleep(1.0)
+            self.ok("free aim at %.1f m: the %s fires and hits" % (math.hypot(mx - px, my - py), "shotgun" if gun == 21 else "pistol"),
+                    health < 100 and sent > 0, "health %.0f, %s down the camera's line %d, melee checks skipped %d" % (
+                        health, "pellets" if gun == 21 else "shots", sent,
+                        int(after.get("melee", 0)) - int(before.get("melee", 0))))
+
     def car_free_aim(self):
         """Free aim in a car: the game's own free aim in a mission's drive-by mode (SET_PLAYER_DRIVEBY_MODE, as Jive
         Drive sets it: Vic in the passenger seat with an SMG), the left stick turning it with free aim off (the PS2), the
@@ -1211,6 +1256,7 @@ class Check:
 
             self.mouse_and_driving()
             self.free_aim()
+            self.close_free_aim()
             self.car_free_aim()
             self.forced_free_aim()
             self.mounted_gun()

@@ -50,6 +50,13 @@ namespace vcs::aim
         constexpr uint32_t kMovesAiming = 0x001F1698u;   // the ped's weapon lets him move while aiming (info byte 0 bit 7)
         constexpr uint32_t kMovesAimingCamReturn = 0x00375B44u; // its call in CCamera::CamControl (FUN_00372450)
         constexpr uint32_t kShotLineReturn = 0x002C47A4u; // its call in FireInstantHit (0x2c3e48) for a locked-on shooter
+        constexpr uint32_t kPelletLineReturn = 0x002C8278u; // its call for each shotgun pellet (FUN_002C7C28)
+        // CPed::SetAttack's (FUN_001D0970) melee check for a player without the free-aim bit: a ped within reach turns the
+        // shot into a melee attack (FUN_001D23C8 returns him; SetFight follows)
+        constexpr uint32_t kMeleeCheck = 0x001D23C8u, kMeleeCheckReturn = 0x001D12D8u;
+        // the free-aim circle: RenderOneXLUSprite (FUN_003A0D08; f15 / f16 its half width / height, f14 the depth) called
+        // by the HUD (FUN_00319058) at the screen's centre; its caller's sp + 0x38 the sprite scale (CalcScreenCoors' w)
+        constexpr uint32_t kSprite = 0x003A0D08u, kAimCircleReturn = 0x00319424u;
         // Guest memory for the shot's start point: the EE kernel's area below the game (0x00000-0x7FFFF), unused by the
         // recompiled runtime and the game (all zero in play, 2026-10-31).
         constexpr uint32_t kScratch = 0x00060000u;
@@ -81,7 +88,18 @@ namespace vcs::aim
         std::atomic<uint32_t> g_quickShots{0};
 
         PS2Runtime::RecompiledFunction g_origGame = nullptr, g_origCamera = nullptr, g_origShotLine = nullptr,
-                                       g_origMovesAiming = nullptr, g_origFinishCallback = nullptr;
+                                       g_origMovesAiming = nullptr, g_origFinishCallback = nullptr, g_origMelee = nullptr,
+                                       g_origSprite = nullptr;
+        // the free-aim circle (Enhancements > Combat: Aiming circle)
+        enum Circle
+        {
+            CircleOriginal = 0,
+            CircleSmall = 1,
+            CircleSpread = 2,
+        };
+        std::atomic<int> g_circle{CircleOriginal};
+        std::atomic<uint32_t> g_pellets{0}; // shotgun pellets sent down the camera ray ("aimstate")
+        std::atomic<uint32_t> g_meleeSkips{0};
         uint8_t *g_rdram = nullptr;
 
         enum class State
@@ -276,18 +294,27 @@ namespace vcs::aim
         // for a locked-on shooter) the line is the camera's through the circle: from the point on it level with the gun
         // to as far as the gun reaches. The gun's own start (a0) is left for the tracer and the impact's effects; the
         // end (a1, FireInstantHit's) gets the camera line's end, so the tracer goes where the shot went.
+        //
+        // The shotgun's pellets (FUN_002C7C28: a horizontal fan about the line from the gun to the target, a line test
+        // each) go the same way: each pellet's line is the camera's, turned by the pellet's own angle in the fan, so the
+        // fan is centred on the circle instead of on the line from the gun - up close those two part (the gun is beside
+        // the camera's line), and a man right under the circle was missed (the user's report, 2026-11-18).
+        //
+        // Both start kStartBack short of the gun's depth along the camera's line: a man pressed against Vic, beside the
+        // gun, is hit as well (the shooter himself is the test's ignored entity, t1).
+        constexpr float kStartBack = 0.75f;
         PS2_GUEST_CC void shotLine(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
-            const uint32_t ped = rd32(kPlayerPed);
-            if ((g_state == State::Active || g_state == State::Script) && GPR_U32(ctx, 31) == kShotLineReturn && ped &&
-                GPR_U32(ctx, 9) == ped && rd32(ped + kPedTarget) == g_dummy)
+            const uint32_t ped = rd32(kPlayerPed), ra = GPR_U32(ctx, 31);
+            if ((g_state == State::Active || g_state == State::Script) && (ra == kShotLineReturn || ra == kPelletLineReturn) &&
+                ped && GPR_U32(ctx, 9) == ped && rd32(ped + kPedTarget) == g_dummy)
             {
                 const uint32_t from = GPR_U32(ctx, 4), to = GPR_U32(ctx, 5), cam = activeCam();
                 const float src[3] = {rdf(cam + kCamSource), rdf(cam + kCamSource + 4), rdf(cam + kCamSource + 8)};
                 const float gun[3] = {rdf(from), rdf(from + 4), rdf(from + 8)};
                 const float end[3] = {rdf(to), rdf(to + 4), rdf(to + 8)};
-                float dir[3] = {rdf(g_dummy + kPedPos) - src[0], rdf(g_dummy + kPedPos + 4) - src[1],
-                                rdf(g_dummy + kPedPos + 8) - src[2]};
+                const float aim[3] = {rdf(g_dummy + kPedPos), rdf(g_dummy + kPedPos + 4), rdf(g_dummy + kPedPos + 8)};
+                float dir[3] = {aim[0] - src[0], aim[1] - src[1], aim[2] - src[2]};
                 const float len = std::sqrt(dir[0] * dir[0] + dir[1] * dir[1] + dir[2] * dir[2]);
                 const float range = std::sqrt((end[0] - gun[0]) * (end[0] - gun[0]) + (end[1] - gun[1]) * (end[1] - gun[1]) +
                                               (end[2] - gun[2]) * (end[2] - gun[2]));
@@ -295,18 +322,93 @@ namespace vcs::aim
                 {
                     for (float &d : dir)
                         d /= len;
+                    if (ra == kPelletLineReturn)
+                    {
+                        // the pellet's turn in the fan: its heading from the gun less the target's
+                        float turn = std::atan2(end[1] - gun[1], end[0] - gun[0]) - std::atan2(aim[1] - gun[1], aim[0] - gun[0]);
+                        turn = std::remainder(turn, 6.2831855f);
+                        const float c = std::cos(turn), s = std::sin(turn), x = dir[0], y = dir[1];
+                        dir[0] = x * c - y * s;
+                        dir[1] = x * s + y * c;
+                    }
                     const float along = std::max(0.0f, (gun[0] - src[0]) * dir[0] + (gun[1] - src[1]) * dir[1] +
-                                                           (gun[2] - src[2]) * dir[2]);
+                                                           (gun[2] - src[2]) * dir[2] - kStartBack);
                     const float start[3] = {src[0] + dir[0] * along, src[1] + dir[1] * along, src[2] + dir[2] * along};
                     const float stop[3] = {start[0] + dir[0] * range, start[1] + dir[1] * range, start[2] + dir[2] * range};
                     wrVec(kScratch, start);
                     wr32(kScratch + 12, 0);
-                    wrVec(to, stop);
+                    if (ra == kPelletLineReturn)
+                    {
+                        // the pellet's own end stays (the loop may build the next from it): the line's end is ours
+                        wrVec(kScratch + 16, stop);
+                        wr32(kScratch + 28, 0);
+                        SET_GPR_U32(ctx, 5, kScratch + 16);
+                    }
+                    else
+                        wrVec(to, stop);
                     SET_GPR_U32(ctx, 4, kScratch);
-                    g_shots.fetch_add(1, std::memory_order_relaxed);
+                    (ra == kPelletLineReturn ? g_pellets : g_shots).fetch_add(1, std::memory_order_relaxed);
                 }
             }
             g_origShotLine(rdram, ctx, runtime);
+        }
+
+        // SetAttack's melee check (kMeleeCheck): in free aim the world runs without the free-aim bit (gameProcess), so the
+        // check the game skips in its own free aim ran - a man within reach turned the shot into a swing of the gun that
+        // did nothing (the user's report: up close the shotgun "would not fire"). Answered "no one" for the player in
+        // free aim, as with the bit set.
+        PS2_GUEST_CC void meleeCheck(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            const uint32_t ped = rd32(kPlayerPed);
+            if ((g_state == State::Active || g_state == State::Script) && GPR_U32(ctx, 31) == kMeleeCheckReturn && ped &&
+                GPR_U32(ctx, 4) == ped && rd32(ped + kPedTarget) == g_dummy)
+            {
+                g_meleeSkips.fetch_add(1, std::memory_order_relaxed);
+                SET_GPR_U64(ctx, 2, 0);
+                ctx->pc = GPR_U32(ctx, 31);
+                return;
+            }
+            g_origMelee(rdram, ctx, runtime);
+        }
+
+        // The half-angle of a shotgun's pellet fan (FUN_002C7C28's), 0 for the other guns: no spread for the player
+        // (his accuracy is 100 - FireInstantHit's offsets are zero; game-internals.md 12c "Spread").
+        float fanHalfAngle(uint32_t ped)
+        {
+            const int8_t slot = static_cast<int8_t>(g_rdram[(ped + kPedSlot) & kRamMask]);
+            switch (slot >= 0 && slot < 10 ? rd32(ped + kPedWeapons + slot * 0x1Cu) : 0)
+            {
+            case 21: return 0.157f / 2;  // the shotgun: 3 pellets over 0.157 rad
+            case 22: return 0.1047f / 2; // the stubby shotgun: 3 over 0.1047
+            case 23: return 0.314f / 2;  // the SPAS 12: 5 over 0.314
+            default: return 0.0f;
+            }
+        }
+
+        // The free-aim circle (kSprite from the HUD): Original keeps the game's 28 pixels (of 640); Small draws it at half
+        // that; Spread at the size of the gun's shot - a dot for the guns that hit where the circle's centre is, the fan
+        // of pellets at the aim's distance for a shotgun.
+        PS2_GUEST_CC void sprite(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            const int mode = g_circle.load(std::memory_order_relaxed);
+            const uint32_t ped = rd32(kPlayerPed);
+            if (mode != CircleOriginal && GPR_U32(ctx, 31) == kAimCircleReturn && ped)
+            {
+                constexpr float kOriginal = 14.0f, kSmall = 7.0f, kLargest = 64.0f;
+                float half = kSmall;
+                if (mode == CircleSpread)
+                    if (const float fan = fanHalfAngle(ped); fan > 0.0f)
+                    {
+                        // a width at the circle's depth on screen: times CalcScreenCoors' w (the caller's sp + 0x38)
+                        const float depth = ctx->f[14], scale = rdf(GPR_U32(ctx, 29) + 0x38);
+                        if (depth > 0.0f && scale > 0.0f && std::isfinite(scale))
+                            half = std::clamp(std::tan(fan) * depth * scale, kSmall, kLargest);
+                    }
+                const float k = half / kOriginal; // f15 is 10.5 on the game's own widescreen: kept in proportion
+                ctx->f[15] *= k;
+                ctx->f[16] *= k;
+            }
+            g_origSprite(rdram, ctx, runtime);
         }
 
         // CAnimBlendAssociation::SetFinishCallback(a0 assoc, a1 callback, a2 data): see kSetFinishCallback.
@@ -351,6 +453,20 @@ namespace vcs::aim
         // VCS_QUICK_FIRST_SHOT=0 brings the original back for one run.
         const char *e = std::getenv("VCS_QUICK_FIRST_SHOT");
         g_quickShot.store(e && e[0] == '0' ? 0 : 1, std::memory_order_relaxed);
+
+        settings::Spec s;
+        s.key = "enhance.aim_circle";
+        s.page = "Enhancements";
+        s.section = "Combat";
+        s.label = "Aiming circle";
+        s.help = "The circle of free aim. Original: the game's. Small: half its size. Spread: as big as the shot - a small "
+                 "dot for guns (they hit its centre), the spread of the pellets for shotguns.";
+        s.type = settings::Type::Choice;
+        s.choices = {{"Original", CircleOriginal}, {"Small", CircleSmall}, {"Spread", CircleSpread}};
+        s.defaultValue = CircleOriginal;
+        s.env = "VCS_AIM_CIRCLE";
+        s.onChange = [](int v) { g_circle.store(v, std::memory_order_relaxed); };
+        settings::add(s);
     }
 
     void install(PS2Runtime &runtime)
@@ -379,10 +495,16 @@ namespace vcs::aim
         runtime.replaceFunction(kCameraProcess, &cameraProcess);
         runtime.replaceFunction(kShotLine, &shotLine);
         runtime.replaceFunction(kMovesAiming, &movesAiming);
-        // aimstate -> ok active=<0|1> shots=<shots down the camera ray so far> (tools/controls_check.py)
+        if ((g_origMelee = runtime.lookupFunction(kMeleeCheck)))
+            runtime.replaceFunction(kMeleeCheck, &meleeCheck);
+        if ((g_origSprite = runtime.lookupFunction(kSprite)))
+            runtime.replaceFunction(kSprite, &sprite);
+        // aimstate -> ok active=<0|1> shots=<shots down the camera ray so far> pellets=<shotgun pellets, the same>
+        // melee=<melee checks answered "no one"> (tools/controls_check.py)
         ps2control::addCommand("aimstate", [](const std::string &, ps2control::Reply reply) {
-            char text[96];
-            std::snprintf(text, sizeof(text), "ok active=%d shots=%u", g_active.load() ? 1 : 0, g_shots.load());
+            char text[128];
+            std::snprintf(text, sizeof(text), "ok active=%d shots=%u pellets=%u melee=%u", g_active.load() ? 1 : 0,
+                          g_shots.load(), g_pellets.load(), g_meleeSkips.load());
             reply(text);
         });
     }

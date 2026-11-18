@@ -678,6 +678,22 @@ namespace
         s.onChange = [](int v) { setEnv("PS2X_HW_ANISO", std::to_string(v)); };
         settings::add(s);
 
+        // Fences and leaves at a distance (docs/game-internals.md 6q): their faint, filtered edges write depth and hide
+        // what is drawn behind them later - the sky shows through a far fence instead of the building behind it.
+        s = {};
+        s.key = "display.cutout_fix";
+        s.page = "Graphics";
+        s.section = "Image quality";
+        s.label = "See-through far fences";
+        s.help = "Far-away fences and leaves show what is behind them. In the original game, their faint edges can hide "
+                 "buildings behind them, so a distant fence looks like a band of sky.";
+        s.type = Type::Choice;
+        s.choices = {{"Off (original)", 0}, {"On", 1}};
+        s.defaultValue = 0;
+        s.env = "PS2X_HW_CUTOUT_SPLIT";
+        s.onChange = [](int v) { gsHwSetCutOutSplit(v != 0); };
+        settings::add(s);
+
         // The reflection on car paint (docs/game-internals.md 6g): the PS2 samples the frame once per spot, so a panel
         // flickers as the camera moves - the same at every resolution, but plainer to see when the rest of the picture is
         // sharp. Always Auto: the original at 1x, Smooth above it - no setting (the user's choice, DECISIONS.md

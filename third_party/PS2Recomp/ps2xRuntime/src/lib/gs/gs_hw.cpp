@@ -444,7 +444,19 @@ namespace
         std::shared_ptr<const GSHwReplacement> image; // [gta-recomp] that image, shared (not copied into pixels)
         uint64_t packHandle = 0;                      // [gta-recomp] the pack's image (its handle): its GPU texture is kept
         std::shared_ptr<rhi::Texture> shared;         // [gta-recomp] that GPU texture, already made (m_packGpu)
+        bool cutOut = false;                          // [gta-recomp] hasHoles: gsHwSetCutOutSplit's draws
     };
+
+    // [gta-recomp] gsHwSetCutOutSplit
+    std::atomic<int> g_cutOutSplit{0};
+    bool cutOutSplit()
+    {
+        static const int env = [] {
+            const char *e = std::getenv("PS2X_HW_CUTOUT_SPLIT");
+            return e && (*e == '0' || *e == '1') ? *e - '0' : -1;
+        }();
+        return env >= 0 ? env == 1 : g_cutOutSplit.load(std::memory_order_relaxed) == 1;
+    }
 
     // [gta-recomp] The levels of a texture: level 0 (pixels) then its mips, as createTextureLevels takes them.
     uint32_t mipLevels(const std::vector<uint32_t> &pixels, const std::vector<uint32_t> &mips, uint32_t w, uint32_t h,
@@ -467,6 +479,7 @@ namespace
     // GenerateMips / linear blits made on the GPU before, built on the GS stage instead (PERFORMANCE.md 21: a burst of new
     // textures was a burst of render-target textures and mip passes on the main thread).
     void keepAlphaCoverage(const std::vector<uint32_t> &base, uint32_t w, uint32_t h, std::vector<uint32_t> &mips);
+    bool isCutOut(const std::vector<uint32_t> &base, uint32_t w, uint32_t h);
     void buildMipChain(const std::vector<uint32_t> &base, uint32_t w, uint32_t h, std::vector<uint32_t> &out)
     {
         out.clear();
@@ -504,32 +517,47 @@ namespace
         keepAlphaCoverage(base, w, h, out);
     }
 
-    // [gta-recomp] Cut-out textures (leaves, palm fronds, fences: texels either clear or solid) lose their alpha down a
-    // mip chain - each level averages the solid texels with the clear ones around them, so far away the fronds came out
-    // half transparent, the sky showing through whole palms (the user's report with a texture pack, whose large images
-    // go down many levels). Each level's alpha is remapped so its texels are clear, solid and in between in the same shares
-    // as the base image's (histogram matching; it keeps the coverage at every alpha, as alpha-to-coverage-preserving mips do
-    // at one). Textures with soft alpha (smoke, glows, shadows) are left as they were. PS2X_HW_MIP_COVERAGE=0: plain
-    // averages.
-    void keepAlphaCoverage(const std::vector<uint32_t> &base, uint32_t w, uint32_t h, std::vector<uint32_t> &mips)
+    // [gta-recomp] A texture with holes - a twentieth of its texels or more clear (under a tenth of its top alpha), the
+    // top at least a quarter of opaque: gsHwSetCutOutSplit's draws (thin fence wire has few solid texels, so isCutOut
+    // passes it by). Large images by every step-th texel.
+    bool hasHoles(const std::vector<uint32_t> &base, uint32_t w, uint32_t h)
     {
-        static const bool enabled = [] {
-            const char *e = std::getenv("PS2X_HW_MIP_COVERAGE");
-            return !(e && *e == '0');
-        }();
-        if (!enabled || base.size() < size_t(w) * h || mips.empty())
-            return;
+        const size_t all = size_t(w) * h;
+        if (!all || base.size() < all)
+            return false;
+        const size_t step = std::max<size_t>(1, all / 65536u);
+        uint32_t top = 0;
+        for (size_t i = 0; i < all; i += step)
+            top = std::max(top, base[i] >> 24);
+        if (top < 0x20u)
+            return false;
+        size_t clear = 0, n = 0;
+        for (size_t i = 0; i < all; i += step, ++n)
+            clear += (base[i] >> 24) <= top / 10 ? 1u : 0u;
+        return clear * 20 >= n;
+    }
+
+    // [gta-recomp] A cut-out texture (leaves, palm fronds, fences): at least half its texels clear (under a tenth of the
+    // top alpha) or solid (over nine tenths), and at least a twentieth of each (the texture packs' fronds have wide soft
+    // edges). Textures with soft alpha (smoke, glows, shadows) are not.
+    bool isCutOut(const std::vector<uint32_t> &base, uint32_t w, uint32_t h)
+    {
+        if (base.size() < size_t(w) * h)
+            return false;
+        // large images (a pack's) by every step-th texel: the shares are what counts
+        const size_t all = size_t(w) * h, step = std::max<size_t>(1, all / 65536u);
         uint32_t hist[256] = {};
-        for (size_t i = 0, n = size_t(w) * h; i < n; ++i)
+        for (size_t i = 0; i < all; i += step)
             ++hist[base[i] >> 24];
         uint32_t top = 255;
         while (top > 0 && !hist[top])
             --top;
         if (top < 16)
-            return;
+            return false;
         // cut-out: at least half the texels clear (under a tenth of the top) or solid (over nine tenths), some of each (the
         // texture packs' fronds have wide soft edges)
-        const uint32_t n = w * h, lowEnd = top / 10, highStart = top - top / 10, ref = (top + 1) / 2;
+        const uint32_t n = static_cast<uint32_t>((all + step - 1) / step), lowEnd = top / 10, highStart = top - top / 10,
+                       ref = (top + 1) / 2;
         uint64_t clear = 0, solid = 0, covered = 0;
         for (uint32_t a = 0; a <= top; ++a)
         {
@@ -545,7 +573,36 @@ namespace
             std::fprintf(stderr, "[mip-coverage] %ux%u top=%u clear=%.0f%% solid=%.0f%% covered=%.0f%%\n", w, h, top,
                          100.0 * clear / n, 100.0 * solid / n, 100.0 * covered / n);
         if (clear < n / 20 || solid < n / 20 || (clear + solid) * 100 < uint64_t(n) * 50)
+            return false;
+        return true;
+    }
+
+    // [gta-recomp] Cut-out textures (leaves, palm fronds, fences: texels either clear or solid) lose their alpha down a
+    // mip chain - each level averages the solid texels with the clear ones around them, so far away the fronds came out
+    // half transparent, the sky showing through whole palms (the user's report with a texture pack, whose large images
+    // go down many levels). Each level's alpha is remapped so its texels are clear, solid and in between in the same shares
+    // as the base image's (histogram matching; it keeps the coverage at every alpha, as alpha-to-coverage-preserving mips do
+    // at one). Textures with soft alpha (smoke, glows, shadows) are left as they were. PS2X_HW_MIP_COVERAGE=0: plain
+    // averages.
+    void keepAlphaCoverage(const std::vector<uint32_t> &base, uint32_t w, uint32_t h, std::vector<uint32_t> &mips)
+    {
+        static const bool enabled = [] {
+            const char *e = std::getenv("PS2X_HW_MIP_COVERAGE");
+            return !(e && *e == '0');
+        }();
+        if (!enabled || mips.empty() || !isCutOut(base, w, h))
             return;
+        uint32_t hist[256] = {};
+        for (size_t i = 0, n = size_t(w) * h; i < n; ++i)
+            ++hist[base[i] >> 24];
+        uint32_t top = 255;
+        while (top > 0 && !hist[top])
+            --top;
+        const uint32_t n = w * h, lowEnd = top / 10, highStart = top - top / 10;
+        static const bool log = [] {
+            const char *e = std::getenv("PS2X_HW_MIP_COVERAGE_LOG");
+            return e && *e == '1';
+        }();
         // the base's cumulative alpha counts: baseBelow[a] texels have an alpha under a
         uint64_t baseBelow[257] = {};
         for (uint32_t a = 0; a < 256; ++a)
@@ -1169,23 +1226,30 @@ namespace
                         m_packTextures.insert(t.key);
                     else
                         m_packTextures.erase(t.key);
+                    if (t.cutOut) // [gta-recomp] gsHwSetCutOutSplit
+                        m_cutOutTextures.insert(t.key);
+                    else
+                        m_cutOutTextures.erase(t.key);
                     if (t.packHandle && t.early && !t.shared && m_textures[t.key]) // [gta-recomp] kept for the next time (m_packGpu)
                         keepPackGpu(t.packHandle, m_textures[t.key], size_t(t.w) * t.h * 4u * 4u / 3u);
                     ps2perf::add(ps2perf::Counter::TexCreateUs, static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
                                                                     ps2x::hostNow() - createStart).count()));
                     ps2perf::add(ps2perf::Counter::TexKBytes,
                                  t.shared ? 0u : ((t.early ? t.early->bytes : (t.pixels.size() + t.mips.size()) * 4u) + 1023u) / 1024u);
-                    // [gta-recomp] PS2X_HW_DUMP_TEX=<key hex>: write that decoded texture (hw_tex_<key>.ppm, alpha dropped)
+                    // [gta-recomp] PS2X_HW_DUMP_TEX=<key hex>: write that decoded texture, each creation (hw_tex_<key>_<n>.ppm, its alpha as grey in _alpha.ppm)
                     static const uint64_t dumpTex = std::getenv("PS2X_HW_DUMP_TEX") ? std::strtoull(std::getenv("PS2X_HW_DUMP_TEX"), nullptr, 16) : 0u;
                     if (dumpTex && t.key == dumpTex)
                     {
-                        char name[64];
-                        std::snprintf(name, sizeof(name), "hw_tex_%llx.ppm", static_cast<unsigned long long>(t.key));
+                        char name[96];
+                        static int dumpCount = 0;
+                        std::fprintf(stderr, "[gs-hw] dump texture %llx #%d: %ux%u, %zu pixels\n", static_cast<unsigned long long>(t.key),
+                                     dumpCount, t.w, t.h, t.pixels.size());
+                        std::snprintf(name, sizeof(name), "hw_tex_%llx_%d.ppm", static_cast<unsigned long long>(t.key), dumpCount++);
                         writePpm(name, reinterpret_cast<const uint8_t *>(t.pixels.data()), t.w, t.h);
                         std::vector<uint32_t> alpha(t.pixels.size());
                         for (size_t i = 0; i < alpha.size(); ++i)
                             alpha[i] = (t.pixels[i] >> 24) * 0x010101u; // alpha as grey
-                        std::snprintf(name, sizeof(name), "hw_tex_%llx_alpha.ppm", static_cast<unsigned long long>(t.key));
+                        std::snprintf(name, sizeof(name), "hw_tex_%llx_%d_alpha.ppm", static_cast<unsigned long long>(t.key), dumpCount - 1);
                         writePpm(name, reinterpret_cast<const uint8_t *>(alpha.data()), t.w, t.h);
                     }
                     break;
@@ -1195,6 +1259,7 @@ namespace
                     const auto deleteStart = ps2x::hostNow(); // [gta-recomp] tex_create_us: releases too
                     m_textures.erase(f.texDeletes[c.index]);
                     m_packTextures.erase(f.texDeletes[c.index]); // [gta-recomp]
+                    m_cutOutTextures.erase(f.texDeletes[c.index]); // [gta-recomp]
                     ps2perf::add(ps2perf::Counter::TexCreateUs, static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
                                                                     ps2x::hostNow() - deleteStart).count()));
                     break;
@@ -1245,6 +1310,20 @@ namespace
                     const HwState &ds = f.draws[c.index].s;
                     hudOnDraw(ds);
                     if (skip && (((skip & 1u) && ds.texIsRt) || (skip & 4u)))
+                        break;
+                    // [gta-recomp] PS2X_HW_SKIP_KEYS=<hex>,<hex>... (diagnostics): skips the draws of those texture keys
+                    static const std::vector<uint64_t> skipKeys = [] {
+                        std::vector<uint64_t> keys;
+                        if (const char *e = std::getenv("PS2X_HW_SKIP_KEYS"))
+                            for (const char *p = e; *p;)
+                            {
+                                char *end = nullptr;
+                                keys.push_back(std::strtoull(p, &end, 16));
+                                p = *end ? end + 1 : end;
+                            }
+                        return keys;
+                    }();
+                    if (ds.tme && std::find(skipKeys.begin(), skipKeys.end(), ds.texKey) != skipKeys.end())
                         break;
                     sources.gsDraw(f, f.draws[c.index]);
                     const bool timed = gpuTimingMarkers();
@@ -2851,6 +2930,26 @@ namespace
                 m_dev.setTexture(0, tex, hwSampler);
                 m_dev.draw(count, first);
             };
+            // [gta-recomp] gsHwSetCutOutSplit: a cut-out texture alpha-tested at a low reference (VCS: GEQUAL 8 of 128) writes
+            // depth for its half-covered pixels too - at a distance, where a fence's wires blur into its gaps, nearly all of
+            // them - and what stands behind it, drawn later, is hidden there: the sky drawn before showed through Fort
+            // Baxter's fence instead of the hangar (the user's report, 2026-11-18). Pass 1 writes depth where the alpha is at
+            // least half; pass 2 (the inverted test) blends the rest without depth.
+            if (s.tme && s.ate && (s.atst == 5u || s.atst == 6u) && s.afail == 0u && zwrite && b.enable && s.aref < 0x40u &&
+                cutOutSplit() && m_cutOutTextures.count(s.texKey))
+            {
+                c.atstArefAfailRt[0] = 5;
+                c.atstArefAfailRt[1] = 0x40;
+                submit(drawPipeline(b, mask, depthOn, s.ztst, zwrite, s.mode, drawSampleMode(c)));
+                c.atstArefAfailRt[2] = 1;
+                submit(drawPipeline(b, mask, depthOn, s.ztst, false, s.mode, drawSampleMode(c)));
+                static const bool splitLog = std::getenv("PS2X_HW_CUTOUT_LOG") != nullptr;
+                static uint64_t splits = 0;
+                if (splitLog && ++splits % 5000u == 0u)
+                    std::fprintf(stderr, "[gs-hw] cut-out split: %llu draws (%zu textures with holes)\n",
+                                 (unsigned long long)splits, m_cutOutTextures.size());
+                return;
+            }
             if (s.ate && s.atst != 1u && s.afail != 0u)
             {
                 // AFAIL other than KEEP: draw the passing pixels normally, the failing ones with the AFAIL mask
@@ -2894,6 +2993,7 @@ namespace
         std::unique_ptr<rhi::Sampler> m_gatherSampler[2][2]; // [gta-recomp] nearest, [U repeat][V repeat]: gs_draw.hlsl mode 3
         std::unique_ptr<rhi::Sampler> m_packSampler[2][2];   // [gta-recomp] texture packs' images, [U repeat][V repeat]
         std::unordered_set<uint64_t> m_packTextures;         // [gta-recomp] the texture keys holding a pack's image
+        std::unordered_set<uint64_t> m_cutOutTextures;       // [gta-recomp] the ones with holes (hasHoles, gsHwSetCutOutSplit)
         std::unique_ptr<rhi::Pipeline> m_blit, m_fillColor, m_fillDepth;
         std::unordered_map<uint32_t, std::unique_ptr<rhi::Pipeline>> m_drawPipelines;
         std::unordered_map<uint32_t, Rt> m_rts;
@@ -5358,6 +5458,9 @@ namespace
         // [gta-recomp] A new texture's TexCreate (its mip chain, made early when it can), the texture cache noted
         void finishTexture(Frame &f, TexCreate &tc, decltype(ps2x::hostNow()) decodeStart)
         {
+            // [gta-recomp] gsHwSetCutOutSplit's draws: told by their texture (before the pixels move to a helper thread)
+            tc.cutOut = hasHoles(tc.image ? tc.image->pixels : tc.pixels, tc.image ? tc.image->width : tc.w,
+                                 tc.image ? tc.image->height : tc.h);
             if (tc.shared) // [gta-recomp] a pack image's GPU texture made before: nothing to build or upload
             {
                 tc.image.reset();
@@ -5424,6 +5527,7 @@ namespace
                         tc.replaced = true;
                         tc.packHandle = m_packPending[i].handle;
                         tc.shared = m_earlyDevice.load(std::memory_order_acquire) ? packGpu(tc.packHandle) : nullptr;
+                        tc.cutOut = hasHoles(tc.image->pixels, tc.w, tc.h); // [gta-recomp] gsHwSetCutOutSplit (no finishTexture here)
                         g_packReplaced.fetch_add(1u, std::memory_order_relaxed);
                         // the game's own texture stays in use until the image's GPU texture is made on a helper thread:
                         // the swap's TexCreate then never waits on the main thread (pollPackMaking)
@@ -6015,6 +6119,11 @@ std::string gsHwDrawSourceReport(bool reset) // [gta-recomp]
 {
     std::lock_guard<std::mutex> lock(g_drawSourcesMutex);
     return g_drawSources.report(reset);
+}
+
+void gsHwSetCutOutSplit(bool on) // [gta-recomp]
+{
+    g_cutOutSplit.store(on ? 1 : 0, std::memory_order_relaxed);
 }
 
 // [gta-recomp] texture packs' loaders build the chain once, off the renderer (gs_hw.h)

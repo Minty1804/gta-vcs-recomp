@@ -1624,3 +1624,19 @@ choices:
   bundles it for offline release builds, and without it the option just stays dark (`[lodlights] no light table`).
 - **Off in interiors** (`currArea` not 0 / 4): interiors are drawn far from the city, and the city's lights within
   1000 m of them would float in the void.
+
+## 2026-11-18 - Fences at a distance, close-range free aim, the aiming circle (the player's report)
+
+- **See-through far fences** is an option, off by default: the sky through a far fence is the game's own draw order
+  (the emulated path shows it too), so the authentic picture stays the default; the fix changes how the GS's alpha test
+  and depth write combine for textures with holes (game-internals.md 6q). Only such textures are split, to keep the
+  extra draw calls few and leave soft-alpha surfaces (glass, smoke) as they were.
+- **The melee check and the pellets in free aim are fixed, not options**: the game's own free aim skips the melee
+  check, and shots through the circle are what free aim already does for bullets - both make our free aim behave as
+  the game's does with the bit set.
+- **Aiming circle** (Original / Small / Spread) is an option, Original by default. Spread is honest: the player's guns
+  have no spread (accuracy 100), so a dot; the shotguns' circle is their pellet fan's width.
+- **Palms and bushes further away: not done.** Scaling the vegetation's model LOD distances (even every model's, x3 on
+  top of Draw distance 300 %) changed nothing at the airport: what is drawn there is limited by the world's streamed
+  cells, not by LOD distances (game-internals.md 6b). Drawing more of them means streaming more cells - a larger
+  change, left for later.

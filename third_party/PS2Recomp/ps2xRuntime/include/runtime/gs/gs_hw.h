@@ -189,6 +189,11 @@ struct GSHwReplacement
     // the renderer only uploads it (empty: the renderer builds it)
     std::vector<uint32_t> mips;
 };
+// [gta-recomp] Cut-out textures (fences, leaves) at a distance: an alpha-tested draw of one (GEQUAL, AFAIL KEEP, Z
+// written, blended) writes depth only where its alpha is at least half, and draws its fainter pixels blended without
+// depth - what lies behind it and is drawn later still shows through the gaps (docs/game-internals.md 6q). Off: the
+// GS's one pass (the original). Any thread, any time; PS2X_HW_CUTOUT_SPLIT=0|1 overrides.
+void gsHwSetCutOutSplit(bool on);
 // [gta-recomp] The renderer's mip chain of a w x h RGBA8 image (box filter + the alpha coverage kept), for a pack's loader
 void gsHwBuildMipChain(const std::vector<uint32_t> &base, uint32_t w, uint32_t h, std::vector<uint32_t> &out);
 class GSHwTexturePack
