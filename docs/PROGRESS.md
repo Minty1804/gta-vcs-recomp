@@ -982,8 +982,8 @@ dropped on uploads (lazy render-target patching).
   checked: Explorer's details read 0.2.4, "GTA: Vice City Stories PC port").
 
 - **Far fences always on; aim after a jump / a sprint (2026-11-18)**: the far-fence split has no setting any more.
-  Free aim held through a sprint comes the frame the sprint ends; pressed in a jump, 59 frames -> 33 (Original) / 18
-  (Fast / Faster: the landing cut short) at 30 fps (game-internals.md 12c "Aim after a jump or a sprint").
+  Free aim held through a sprint comes the frame the sprint ends; pressed in a jump, 59 frames -> 33 at 30 fps (the
+  frame the landing ends; the animations play whole) (game-internals.md 12c "Aim after a jump or a sprint").
 - **Fences 0x60, Aim speed (2026-11-18)**: the far-fence split at alpha 0x60 instead of 0x40 (the specks the player
   still saw). Enhancements > Combat > **Aim speed** (Original / Fast / Faster): the arm aims at +198 / +132 / +99-132
   ms after the button at 30 fps (game-internals.md 12c "Aim start").

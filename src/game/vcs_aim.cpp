@@ -593,31 +593,9 @@ namespace vcs::aim
             ctx->pc = GPR_U32(ctx, 31);
         }
 
-        // The landing after a jump (game-internals.md 12c "Aim after a jump"): the ped state stays 0x2B (the jump) through
-        // the landing animation (141, 0.57 s) once he stands (+0x1C8 bit 0), and the game takes no aim until it ends. With
-        // the aim button held and Aim speed above Original its time is moved on - Fast to half of it, Faster to its end -
-        // and the game ends the landing itself, as when the animation runs out.
+        // a jump (the ped state from take-off to the end of the landing) and a sprint (game-internals.md 12c)
         constexpr uint32_t kPedStateJump = 0x2Bu;
         constexpr uint32_t kPedMoveState = 0x8D4u, kMoveSprint = 5; // FUN_00235D30 checks it before the free-aim entry
-        constexpr uint16_t kAnimLand = 141;
-        std::atomic<uint32_t> g_landSkips{0};
-        void landAim(uint32_t ped)
-        {
-            const int k = g_aimSpeed.load(std::memory_order_relaxed);
-            if (k < 2 || !(rd32(ped + 0x1C8u) & 1u) || !rd32(ped + 0x50u))
-                return;
-            uint32_t a = rd32(rd32(rd32(ped + 0x50u) + 0x18u));
-            while (a && static_cast<uint16_t>(rd32(a + 0x30u)) != kAnimLand)
-                a = rd32(a);
-            const uint32_t hier = a ? rd32(a + 0x20u) : 0;
-            const float length = hier ? rdf(hier + 0x20u) : 0.0f, t = a ? rdf(a + 0x28u) : 0.0f;
-            const float to = k == 2 ? length * 0.5f : length - 0.001f;
-            if (length > 0.0f && length < 2.0f && t < to)
-            {
-                wrf(a + 0x28u, to);
-                g_landSkips.fetch_add(1, std::memory_order_relaxed);
-            }
-        }
     }
 
     bool logOn();
@@ -713,13 +691,12 @@ namespace vcs::aim
         if ((g_origSprite = runtime.lookupFunction(kSprite)))
             runtime.replaceFunction(kSprite, &sprite);
         // aimstate -> ok active=<0|1> shots=<shots down the camera ray so far> pellets=<shotgun pellets, the same>
-        // melee=<melee checks answered "no one"> raise=<gun raises moved sooner by Aim speed> land=<landings
-        // ended sooner> (tools/controls_check.py)
+        // melee=<melee checks answered "no one"> raise=<gun raises moved sooner by Aim speed>
+        // (tools/controls_check.py)
         ps2control::addCommand("aimstate", [](const std::string &, ps2control::Reply reply) {
             char text[160];
-            std::snprintf(text, sizeof(text), "ok active=%d shots=%u pellets=%u melee=%u raise=%u land=%u",
-                          g_active.load() ? 1 : 0, g_shots.load(), g_pellets.load(), g_meleeSkips.load(), g_raiseSkips.load(),
-                          g_landSkips.load());
+            std::snprintf(text, sizeof(text), "ok active=%d shots=%u pellets=%u melee=%u raise=%u", g_active.load() ? 1 : 0,
+                          g_shots.load(), g_pellets.load(), g_meleeSkips.load(), g_raiseSkips.load());
             reply(text);
         });
     }
@@ -970,11 +947,8 @@ namespace vcs::aim
                 aimAlongCamera(cam);
                 // In a jump (ped state 0x2B) or a sprint (move state +0x8D4 = 5) the game takes no aim, R1 or not: the
                 // try waits for its end instead of letting go for 8 frames and missing it (the aim then came up to 0.3 s
-                // late). Landed, Aim speed above Original ends the landing sooner (landAim).
-                const bool jumping = rd32(ped + kPedState) == kPedStateJump;
-                const bool busy = jumping || rd32(ped + kPedMoveState) == kMoveSprint;
-                if (jumping)
-                    landAim(ped);
+                // late). The jump and its landing play whole: the aim comes the frame they end.
+                const bool busy = rd32(ped + kPedState) == kPedStateJump || rd32(ped + kPedMoveState) == kMoveSprint;
                 out.r1 = !target && (busy || ++g_wait < 20);
                 // L3 held with R1 for the whole try, not only its first frame: the game enters free aim on a frame both
                 // are held (FUN_00235D30), and refuses while Vic is in the air or landing - a jump took the try's one L3

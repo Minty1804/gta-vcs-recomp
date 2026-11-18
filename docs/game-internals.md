@@ -3225,12 +3225,10 @@ hidden run (rig `peek` / `poke`, snapshots diffed).
       aim came only with the next try (8 frames let go, then again): **59 frames** from the button to the aim for a
       button pressed in the air, ~1.1 s after landing. L3 is now held with R1 for the whole try (held: a new L3 press
       is the game's own toggle elsewhere); and in a jump or a sprint the try does not time out (the game takes no aim
-      then anyway; a ped locked on still lets go). Button in the air: 33 frames (the jump's own length); held through
-      a sprint: the aim the first frame the sprint ends (the move state goes 5 -> 1 that frame).
-    - With **Aim speed** above Original the landing is cut short while the aim button is held: animation 141's time is
-      moved on (Fast to half, Faster to its end, `landAim`) once he stands, and the game ends 0x2B itself. Button in
-      the air on Faster: 18 frames (the air only); the landing goes straight into the aiming pose (pictures checked).
-      `aimstate`'s `land=` counts them. `VCS_AIM_LOG=1` prints per frame the entry's conditions (`[aim-log] entry`)
+      then anyway; a ped locked on still lets go). Button in the air: 33 frames (the jump's own length: the aim the
+      frame 0x2B ends); held through a sprint: the aim the first frame the sprint ends (the move state goes 5 -> 1
+      that frame). The jump and its landing play whole (a first version cut the landing short with Aim speed; the
+      player wanted the animations kept, 2026-11-18). `VCS_AIM_LOG=1` prints per frame the entry's conditions (`[aim-log] entry`)
       and the player's animations (`[aim-log] anims id:time/length`), and each free-aim entry's / lock-on's caller.
 
 ### 12d. Population: density, caps, spawn chance (2026-11-07, Enhancements > World)

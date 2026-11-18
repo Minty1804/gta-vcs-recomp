@@ -1657,6 +1657,6 @@ choices:
   textures with holes far away, and the original's sky through a fence is a fault, not a look; `PS2X_HW_CUTOUT_SPLIT=0`
   keeps the way back for comparisons (rule 1). An old `display.cutout_fix` line in vcs.ini is ignored.
 - **The aim after a jump / a sprint**: holding L3 for the whole try and not timing the try out while Vic jumps or
-  sprints are fixes of our driver (it lost the game's own chance to aim), always on. Cutting the landing short is a
-  change to the game's timing, so it comes with Aim speed (Fast / Faster) and is off on Original. Only the landing's
-  animation is moved on; the jump's flight stays the game's.
+  sprints are fixes of our driver (it lost the game's own chance to aim), always on. The jump, its landing and the
+  end of a sprint play whole (the user's choice: no animation cut, only the aim the moment they end); a first version
+  that cut the landing short with Aim speed was taken out the same day.
