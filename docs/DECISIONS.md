@@ -1240,6 +1240,16 @@ chose two density sliders and, for draw distance, the LOD scale with the far pla
   on the PS2, and thinned Vice City's haze. Kept as a test switch, `VCS_FAR_CLIP=<metres>`; it would need its own
   work on the distant LOD's colours to be an option.
 
+## 2026-11-18 - Draw distance raises the cars' detail distances too
+
+The player raised the draw distance and saw cars far away still drawn low detail. The game picks a vehicle's detail
+level from distances set once a frame from GenerationDistMultiplier, which the draw distance's LOD scale never touches
+(game-internals.md 6o). Above 100 % the module replaces that function (FUN_0036EBF8, a short leaf: no guest call
+left to chain) with the same stores and the vehicle distances times the draw distance; at 100 % the original runs, so
+the authentic default is the executable's code. It follows the draw distance, not the car distance: the latter is
+where traffic spawns, the former how far detail shows, and the menu text of Draw distance already says "detailed
+models".
+
 ## 2026-11-08 - The NPC drive-by's fire rate (the user's request)
 
 The user saw NPCs in cars fire SMGs far too fast, faster at high frame rates, and asked whether it was frame timing or

@@ -466,6 +466,38 @@ namespace vcs::world
         constexpr uint32_t kPedShadowTex = 0x0048916Cu;
         std::atomic<int> g_pedShadows{1};
         std::atomic<uint64_t> g_pedShadowsSkipped{0};
+        // CVisibilityPlugins::SetRenderWareCamera (FUN_0036EBF8, camera a0; once a frame before the world is drawn): the
+        // squared distances the vehicles' detail levels switch at - 70 / 90 / 100 m (cars: high detail, low detail, fade)
+        // and 60 / 150 m (big vehicles) - scale with GenerationDistMultiplier (TheCamera+0x7D0), not with the
+        // LODDistMultiplier the draw distance raises, so cars drawn far away stayed low detail (the player's report,
+        // 2026-11-18). At 100% the original runs; above, this reproduction with G x the draw distance (game-internals.md
+        // 6o). The rest - the camera globals, the component-cull and ped distances from LODDistMultiplier - as the game.
+        PS2Runtime::RecompiledFunction g_origVisCamera = nullptr;
+        PS2_GUEST_CC void visibilityCamera(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            const int draw = std::clamp(g_draw.load(std::memory_order_relaxed), 100, kMaxPercent);
+            if (draw == 100 || !g_orig.valid)
+                return g_origVisCamera(rdram, ctx, runtime);
+            const uint32_t cam = GPR_U32(ctx, 4);
+            wr32(rdram, 0x00488E08u, cam);
+            wr32(rdram, 0x00488E0Cu, rd32(rdram, cam + 4u) + 0x40u); // RwCameraGetFrame(cam) + 0x40
+            constexpr uint32_t kCamera = 0x006F44D0u;
+            const uint32_t mode = (rd32(rdram, kCamera + 0x50u) & 0xFFu) * 0x270u;
+            const int16_t camMode = static_cast<int16_t>(rd32(rdram, kCamera + mode + 0x70u) & 0xFFFFu);
+            const float lod = rdf(rdram, kCamera + 0x7DCu);
+            const float gen = rdf(rdram, kCamera + 0x7D0u) * (draw / 100.0f);
+            wrf(rdram, 0x004CD5C0u, camMode == 1 || camMode == 0x25 ? 1.0e6f : lod * (lod * 400.0f));
+            const float ped = lod * (lod * 4900.0f);
+            wrf(rdram, 0x004CD5D8u, ped);
+            wrf(rdram, 0x004CD5CCu, ped);
+            wrf(rdram, 0x004CD5BCu, gen * (gen * 4900.0f));  // car: high detail to 70 m
+            wrf(rdram, 0x004CD5D0u, gen * (gen * 8100.0f));  // low detail to 90 m
+            wrf(rdram, 0x004CD5D4u, gen * (gen * 10000.0f)); // faded out at 100 m
+            wrf(rdram, 0x004CD5C4u, gen * (gen * 22500.0f)); // big vehicles: 150 m
+            wrf(rdram, 0x004CD5C8u, gen * (gen * 3600.0f));  // and 60 m
+            ctx->pc = GPR_U32(ctx, 31);
+        }
+
         PS2Runtime::RecompiledFunction g_origStoreShadow = nullptr, g_origStoreStatic = nullptr, g_origStorePoly = nullptr;
 
         bool skipPedShadow(const uint8_t *rdram, R5900Context *ctx, int texReg)
@@ -598,6 +630,8 @@ namespace vcs::world
                     runtime.replaceFunction(kPopDistFactor, &popDistFactor);
                 if ((g_origRemoveCarsIfPoolFull = runtime.lookupFunction(kRemoveCarsIfPoolFull)))
                     runtime.replaceFunction(kRemoveCarsIfPoolFull, &removeCarsIfPoolFull);
+                if ((g_origVisCamera = runtime.lookupFunction(0x0036EBF8u)))
+                    runtime.replaceFunction(0x0036EBF8u, &visibilityCamera);
             }
             else
             {

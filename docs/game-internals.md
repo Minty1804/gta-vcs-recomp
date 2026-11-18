@@ -1755,6 +1755,37 @@ maths, then checked in the game (`tools/world_check.py`, the free camera).
   GenerationDistMultiplier. On the PS2 that is past where cars are drawn; with the LOD scale up they are drawn beyond
   it, and cars about 175 m ahead vanished while driving (16:9, Draw distance 300%, even at 100% traffic: 6 in 3 min).
   The module skips that removal for a car in view within 160 m x GenerationDistMultiplier x the draw distance.
+- **Vehicles' detail levels do not follow the LOD scale** (2026-11-18, the player: cars now appear further away but
+  stay low detail from a distance). `FUN_0036EBF8` = CVisibilityPlugins::SetRenderWareCamera (camera a0, once a frame
+  before the world is drawn; disassembled) stores a0 at `0x488E08` and its frame + 0x40 at `0x488E0C`, then the
+  squared distances: `0x4CD5C0` = (20 x LODDist)^2 (component cull; 1e6 in camera modes 1 / 0x25, read from
+  TheCamera + 0x70 + mode index x 0x270, index byte +0x50), `0x4CD5D8` = `0x4CD5CC` = (70 x LODDist)^2 (peds), and
+  from **GenerationDistMultiplier** (+0x7D0): `0x4CD5BC` (70 x G)^2 car high detail, `0x4CD5D0` (90 x G)^2 low detail,
+  `0x4CD5D4` (100 x G)^2 faded out, `0x4CD5C4` (150 x G)^2 and `0x4CD5C8` (60 x G)^2 the big vehicles' - VC's
+  ms_vehicleLod0Dist & co. The LOD scale `0x4887F8` multiplies only LODDist (0x37B06C, after G was copied), so at
+  any draw distance cars dropped detail at 70 m and vanished at 100 m. vcs_world_detail.cpp replaces the function
+  above 100 % (at 100 % the original runs) with G x the draw distance: read back at 200 %, 140 / 180 / 200 m and 300 /
+  120 m for big vehicles, the ped and component distances unchanged (the game's own LODDist values).
+- Other readers of G: the car spawner `FUN_00430290`, PossiblyRemoveVehicle `FUN_00433378`, the ped population
+  `FUN_002AFE80` / `FUN_002B0200`, `FUN_003DA070` (165 / 110 m: likely the parked-car generators), `FUN_003F29D8`
+  (two (70 x G)^2 tests against FUN_0036F130, the distance squared from the camera; not identified), `FUN_00219898`
+  (writes it).
+
+### 6p. Entrance arrows (2026-11-18)
+
+Found from a RAM dump at the Fort Baxter barracks door (the bobbing arrow's position), then write watches with
+`VCS_WATCH_STACK=1`.
+- The cyan arrows at doors are **3D markers** in the array at `0x4E01D0` (32 x 0x90; the barracks arrow's position at
+  `0x4E0EF0`, +0x7C type, +0x58 id, +0x80 flags). `FUN_0016C4B0` = C3dMarkers::PlaceMarker (id a0, type a1, position
+  a2, size f12...), `FUN_0016EB38` = PlaceMarkerSet (two markers, the second at 0.93 x size); PlaceMarker has no far
+  cut-off for these types - its 100 m tests (`(100)^2` at 0x16DBD0 / 0x16DCEC) only drop the arrow onto the ground.
+- The entrances themselves are 16 slots of 0x20 at `0x50CE10` (+0x1A active, +0x1C kind 6 / 7 / other, +0x10 id, +0x14
+  size); `FUN_00256338` places a marker for each active slot every frame, with no distance test. A slot is filled by
+  `FUN_002564A8` from the script command handler `FUN_004060A8` (four parameters, z = -100 finds the ground) and
+  cleared at `0x256578`: the scripts make them (the barracks safehouse's), and teleporting 60-160 m away did not
+  clear it.
+- In the game: the barracks arrow is drawn at 40, 55, 70, 85, 100, 130 and 160 m (free camera, FOV 20, 16:9) - no
+  cut-off up to there.
 
 ## 7. Textures: `.XTX`
 

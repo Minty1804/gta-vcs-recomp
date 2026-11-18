@@ -29,6 +29,7 @@ option or can be switched off, and everything else is the same as upstream.
 | **First shot of the Mac 10 / Micro SMG** | About half a second after you press fire, even with the gun raised | At once, always |
 | **Pedestrian distance** | People appear 35-60 m away | Up to twice as far (option, 100% by default) |
 | **Car distance** | Traffic appears about 110 m ahead | Up to twice as far (option, 100% by default) |
+| **Cars' detail at a distance** | Cars drop to their low-detail model at 70 m and vanish at 100 m, whatever the draw distance | Those distances grow with the draw distance (140 m / 200 m at 200%) |
 | **Character shadows** | Always on under Vic and everyone on foot | Can be turned off (option, on by default) |
 | **Distant lights** | Street lights vanish past their short corona distance: the city is dark far away at night | Project2DFX's far lights glow over the city at night (option, off by default) |
 
