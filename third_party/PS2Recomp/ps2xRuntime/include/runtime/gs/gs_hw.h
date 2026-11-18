@@ -185,7 +185,12 @@ struct GSHwReplacement
 {
     uint32_t width = 0, height = 0;
     std::vector<uint32_t> pixels; // RGBA8, alpha on the GS scale (0x80 = opaque), as PCSX2's packs hold it
+    // [gta-recomp] its mip chain (levels 1.. after each other, gsHwBuildMipChain), made by the pack's loader thread once:
+    // the renderer only uploads it (empty: the renderer builds it)
+    std::vector<uint32_t> mips;
 };
+// [gta-recomp] The renderer's mip chain of a w x h RGBA8 image (box filter + the alpha coverage kept), for a pack's loader
+void gsHwBuildMipChain(const std::vector<uint32_t> &base, uint32_t w, uint32_t h, std::vector<uint32_t> &out);
 class GSHwTexturePack
 {
 public:

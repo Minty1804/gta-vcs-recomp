@@ -25,8 +25,11 @@ option or can be switched off, and everything else is the same as upstream.
 | **Walk on a diagonal** | *Walk* + two direction keys (Alt + W + D) left Vic standing still | He walks diagonally, as he does in one direction |
 | **On-foot camera** | Swings back behind Vic against your mouse as soon as he moves | Stays where the mouse put it for a while (2 s by default) |
 | **Palms at a distance** | With a texture pack or anisotropic filtering, far palms (and other leaves) look see-through | They stay as solid as up close |
-| **First shot of the Mac 10 / Micro SMG** | About half a second after you press fire, even with the gun raised | At once (option, off by default) |
+| **Far palms fading out** | The game fades far palms out with distance: with a longer draw distance whole rows look like ghosts | Solid at every distance they are drawn at (option, off by default) |
+| **First shot of the Mac 10 / Micro SMG** | About half a second after you press fire, even with the gun raised | At once, always |
 | **Pedestrian distance** | People appear 35-60 m away | Up to twice as far (option, 100% by default) |
+| **Car distance** | Traffic appears about 110 m ahead | Up to twice as far (option, 100% by default) |
+| **Character shadows** | Always on under Vic and everyone on foot | Can be turned off (option, on by default) |
 | **Distant lights** | Street lights vanish past their short corona distance: the city is dark far away at night | Project2DFX's far lights glow over the city at night (option, off by default) |
 
 **Texture packs.** Put the pack's `SLUS-21590` folder into a `textures` folder next to the game, so its images end up

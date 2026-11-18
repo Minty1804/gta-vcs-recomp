@@ -477,6 +477,30 @@ namespace vcs::texpack
                     const bool ok = (dds ? readDds(path, image->width, image->height, image->pixels, why)
                                          : platform::readPng(path.c_str(), image->width, image->height, image->pixels)) &&
                                     image->width <= 8192u && image->height <= 8192u;
+                    if (ok) // the mip chain here, once per image: the renderer only uploads it (PERFORMANCE.md 33)
+                    {
+                        gsHwBuildMipChain(image->pixels, image->width, image->height, image->mips);
+                        // larger than the limit: the chain's first level that fits becomes the image
+                        static const uint32_t maxSize = [] {
+                            const char *e = std::getenv("VCS_TEXPACK_MAX");
+                            return e && *e ? static_cast<uint32_t>(std::strtoul(e, nullptr, 10)) : 0u;
+                        }();
+                        if (maxSize >= 16u && (image->width > maxSize || image->height > maxSize))
+                        {
+                            uint32_t w = image->width, h = image->height;
+                            size_t at = 0;
+                            while (w > maxSize || h > maxSize)
+                            {
+                                w = std::max(1u, w >> 1), h = std::max(1u, h >> 1);
+                                if (w > maxSize || h > maxSize)
+                                    at += size_t(w) * h;
+                            }
+                            std::vector<uint32_t> base(image->mips.begin() + at, image->mips.begin() + at + size_t(w) * h);
+                            image->pixels = std::move(base);
+                            image->width = w, image->height = h;
+                            gsHwBuildMipChain(image->pixels, w, h, image->mips);
+                        }
+                    }
                     const auto us = std::chrono::duration_cast<std::chrono::microseconds>(
                                         std::chrono::steady_clock::now() - start).count();
                     std::lock_guard<std::mutex> lock(m_mutex);
@@ -495,7 +519,7 @@ namespace vcs::texpack
                     if (m_loaded <= 5u)
                         std::fprintf(stderr, "[texpack] loaded %s (%ux%u, %.1f ms)\n",
                                      utf8(fs::u8path(path).filename()).c_str(), image->width, image->height, us / 1000.0);
-                    m_cacheBytes += image->pixels.size() * 4u;
+                    m_cacheBytes += (image->pixels.size() + image->mips.size()) * 4u;
                     e.image = std::move(image);
                     trimCache();
                 }
@@ -512,7 +536,7 @@ namespace vcs::texpack
                             oldest = &e;
                     if (!oldest)
                         return;
-                    m_cacheBytes -= oldest->image->pixels.size() * 4u;
+                    m_cacheBytes -= (oldest->image->pixels.size() + oldest->image->mips.size()) * 4u;
                     oldest->image.reset();
                 }
             }

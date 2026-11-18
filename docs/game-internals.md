@@ -1801,6 +1801,20 @@ PaletteKeyHash, TextureName) and another VCS port that loads PCSX2 packs (its gs
   half clear-or-solid with 5 % of each (gs_hw.cpp `keepAlphaCoverage`; `PS2X_HW_MIP_COVERAGE=0` plain averages,
   `PS2X_HW_MIP_COVERAGE_LOG=1` prints each texture's shares). Without the pack and with anisotropic filtering off
   there are no mips: the picture is the same as before.
+- **Far palms fading out: the game's own distance fade** (2026-11-17, the player still saw ghost palms at 200 % draw
+  distance). The emulated path draws them the same way (PS2X_HLE=0; F12's draw log at the airport: the palm LOD
+  `d96dd55226fd3903` 128x128, atst GREATER 8, its vertex alpha 0x00 for most instances and rising to 0x3d only for
+  the nearest, in step with the fog value - so far instances are invisible and the band before them half clear). The
+  alpha comes from the prelit world table's colour scale, **qword 0x9c .w** of VU1 memory (colour = 0x9d + 0x9c x
+  vertex colour, stage 0x2700), which the EE sets per instance: the palms (and other far vegetation) carry a grey
+  scale .xyz = 0.502 (128 / 255) and .w = 0.502 x fade, 0 .. 0.48 in a city frame (logged at each MSCAL); buildings
+  carry a tinted .xyz with .w = 1. Not RenderAtomicWithAlpha (FUN_0036DBF8: 1,200 calls in a run, nearly all alpha
+  224-255, from 0x36EBBC / 0x36DCB4), not the m_alpha ramp (model info +0x39, +16 a frame in SetupEntityVisibility
+  FUN_0035EFD8), and not the fading list (0x6F40D0 / 0x6F4118, rendered by FUN_0036EFA8 -> FUN_0035D610(ent, 1)).
+  Enhancements > World > **Solid far palms** (`enhance.solid_far_palms`, off by default, `VCS_SOLID_FAR_PALMS`;
+  vcs_hle_world.cpp `solidFoliage`): before a world packet runs (native or on the VU1), a grey scale whose .w is below
+  0.502 gets .w = 0.502 - the palms drawn solid at every distance they are drawn at. Only with the native draw (the
+  default; not under PS2X_HLE=0). `worlddetail` counts the packets raised (foliage=).
 
 ### 7c. The world's camera in VU1 memory, and Project2DFX's distant lights (2026-11-17, Enhancements > World)
 
@@ -3075,8 +3089,8 @@ hidden run (rig `peek` / `poke`, snapshots diffed).
     a2 the ped; returning to 0x1D1904; CPed::Attack FUN_001D26C8 has the same sequence returning to 0x1D3DAC).
     Association: +0x28 current time, +0x20 its hierarchy (+0x20 duration), +0x30 animation id, +0x34 / +0x38 / +0x3C
     callback kind / function / data. SetCurrentTime is FUN_0018EB70 (a0 association, f12 time; sets every node).
-  - Enhancements > Combat > **Instant first shot** (`enhance.quick_first_shot`, off by default, `VCS_QUICK_FIRST_SHOT`;
-    game/vcs_aim.cpp): that SetFinishCallback call is replaced for the player with a gun of flag 0x80 whose loop start
+  - **Instant first shot** (always on since 2026-11-17, the user's choice: no menu option; `VCS_QUICK_FIRST_SHOT=0`
+    brings the original back for one run; game/vcs_aim.cpp): that SetFinishCallback call is replaced for the player with a gun of flag 0x80 whose loop start
     is before its fire point - the three stores, then SetCurrentTime(loop start) as a guest tail call returning where
     it would have. Measured: Mac 10 84 ms, Micro SMG 133-184 ms (two to four times the bullets in a 0.6 s press);
     the pistol and the SMG unchanged. `quickshot` on the control channel counts the attacks started so.
@@ -3157,6 +3171,23 @@ probes in the game (rig, `worlddetail`).
     ring, the removal and the minimum distances move out together; 100 % calls the original. Measured at 200 %:
     the peds' mean distance 38.5 -> 49.2 m, the farthest 124 m (`worlddetail` prints peddist / pedmean / pedfar).
     The same number of peds spreads over a larger ring: raise the draw distance with it.
+- **Car distance** (2026-11-17, Enhancements > World > **Car distance**, `enhance.car_distance` 100-200 %,
+  `VCS_CAR_DISTANCE`): GenerationDistMultiplier (TheCamera + 0x7D0) is read in the car spawner FUN_00430290 four times
+  (0x4306C0, 0x430738, 0x4307B8, 0x43081C: the spot 110 m x it ahead) and in PossiblyRemoveVehicle (160 m x it).
+  CGame::Process (FUN_003BA8D8) runs the ped step (0x3BAB44), then CCamera::Process (0x3BAC38, which rewrites the
+  value at 0x37B068), the car spawner's loop FUN_00430148 (0x3BAC88), RemoveDistantCars FUN_00433008 (0x3BAC98) and
+  RemoveCarsIfThePoolGetsFull FUN_00433188 (0x3BACA0). So the spawner's hook scales the camera's value (once a frame:
+  it remembers what it wrote) and FUN_00433188's hook puts it back: spawn spots and the removal move out together, the
+  ped step never sees it. Measured on an AI drive from 575, 175 (60 s): 11.5 -> 14.4 cars around, new cars' mean
+  distance 330 -> 409 m (it counts parked-car generators too; `worlddetail` carspawns / carspawnmean), none vanished.
+- **Ped shadows** (2026-11-17, Enhancements > World > **Character shadows**, `enhance.ped_shadows`, on by default,
+  `VCS_PED_SHADOWS=0`): the shadow textures are read at boot by FUN_003896F8 (RwTextureRead 0x346C80) into
+  0x489168 (`shad_car`), **0x48916C (`shad_ped`)**, 0x489170 (`shad_heli`), 0x489174 (`shad_bike`), 0x489178
+  (`shad_rcbaron`), 0x48917C (`shad_exp`)... `shad_ped` is passed to FUN_0038A000 (StoreShadowToBeRendered, a0 type,
+  a1 texture; up to 0x30 entries at 0x6FB980) by CShadows::StoreShadowForPed FUN_0038AE30 and FUN_003C35A8, to
+  FUN_003898E8 (a static shadow, a1, 3-5 s; FUN_001FA930) and to FUN_003899B0 (the kind projected on the ground's
+  polygons, a2; FUN_0021BC50). Off, the three return before storing when the texture is `shad_ped`; cars, bikes and
+  lamps keep theirs. Checked at the airport: Vic's shadow gone, nothing else in the picture changed.
 
 ## 13. Open questions / next research targets
 

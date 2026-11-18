@@ -1558,6 +1558,26 @@ choices:
 - **On by default**: with no pack in the folder it changes nothing (the original game), so a player only has to copy
   the pack. Dumping is off by default.
 
+## 2026-11-17 - Far palms solid, character shadows, car distance; the instant first shot always on (the player's requests)
+
+- **Far palms: an option, off by default** (Enhancements > World > Solid far palms; game-internals.md 7b): the
+  palms that still looked like ghosts at 200 % draw distance are the game's own distance fade (the PS2 draws them the
+  same way), so authentic stays the default and the player's vcs.ini has it on. It works on the VU1 constants the EE
+  wrote for the packet (the grey colour scale's alpha), before the packet is drawn: no guest code changed, and the same
+  values reach the native draw and the VU1. The test is the grey .xyz the palms carry - buildings' tinted scales and
+  their alpha of 1 never match. Not under PS2X_HLE=0 (the hook is the native draw's).
+- **Character shadows: an option, on by default** (game-internals.md 12d): the three shadow stores return early for
+  the `shad_ped` texture - one test, no state, and cars / lamps keep their shadows. Skipping only the store keeps the
+  game's shadow list and its render untouched.
+- **Car distance: like the ped distance, capped at 200 %** (game-internals.md 12d): the game's GenerationDistMultiplier
+  is scaled only between the car spawner and the end of the car removal, so spawn spots and the removal distance move
+  out together (a car is never made where it is removed at once) and the ped step and everything else see the camera's
+  value. The hook writes before the original runs and the next hook in the frame puts the value back - nothing relies
+  on code after a guest call (AGENTS.md rule 2).
+- **Instant first shot always on, no option** (the user: "elimina la opción del instant first-shot, que siempre venga
+  activada"): this replaces 2026-11-18's "an option, off by default". `VCS_QUICK_FIRST_SHOT=0` keeps the original
+  reachable for comparisons (the switch back AGENTS.md asks for).
+
 ## 2026-11-18 - Solid palms, an instant first shot, peds farther away (the player's requests)
 
 - **Palms: mip levels histogram-matched, always on** (game-internals.md 7b): the see-through palms came from the mip

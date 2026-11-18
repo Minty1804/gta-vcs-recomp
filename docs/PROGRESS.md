@@ -1241,11 +1241,15 @@ Python scripts still usable on their own. docs/LAUNCHER.md has the whole of it; 
 | `VCS_DRIVEBY_RATE=0\|1` | Enhancements > Combat > Drive-by fire rate for this run: 0 as on the PS2, 1 the gun's own rate (the menu shows it read-only) |
 | `VCS_DRIVEBY_HOOKS=0` | the NPC drive-by's fire rate left alone: a shot every frame, as the original game (the setting then does nothing; game/vcs_driveby.h) |
 | `VCS_PED_DISTANCE=100..200` | Enhancements > World > Pedestrian distance for this run (percent of the game's spawn / removal distances; game-internals.md 12d) |
+| `VCS_TEXPACK_MAX=<px>` | Texture pack images larger than this many pixels a side are shrunk to their first mip level that fits (memory; no effect on hitches, PERFORMANCE.md 33) |
+| `VCS_CAR_DISTANCE=100..200` | Enhancements > World > Car distance for this run (percent of GenerationDistMultiplier while the car spawner and RemoveDistantCars run; game-internals.md 12d) |
+| `VCS_PED_SHADOWS=0\|1` | Enhancements > World > Character shadows for this run (0: no `shad_ped` shadow is stored; game-internals.md 12d) |
+| `VCS_SOLID_FAR_PALMS=0\|1` | Enhancements > World > Solid far palms for this run (the far vegetation's distance fade off, native draw only; game-internals.md 7b) |
 | `VCS_DISTANT_LIGHTS=0\|1` | Enhancements > World > Distant lights for this run (Project2DFX's far street lights at night; game-internals.md 7c) |
 | `VCS_LODLIGHTS_FILE=<path>` | The light table to read (default `project2dfx/lodl.c` next to vcs.exe, fetched by the build) |
 | `VCS_LODLIGHTS_FARCLIP=m`, `VCS_LODLIGHTS_RADIUS=x`, `VCS_LODLIGHTS_INTENSITY=x` | The lights' range (1000 m), size factor (1.5) and strength (1) |
 | `VCS_LODLIGHTS_LOG=1\|2` | Every 5 s: lights in range / drawn a frame, the cost, the camera and its matrices; 2: the cameras of each world chain |
-| `VCS_QUICK_FIRST_SHOT=0\|1` | Enhancements > Combat > Instant first shot for this run (the Mac 10's and Micro SMG's attack started at the loop start; game-internals.md 12c) |
+| `VCS_QUICK_FIRST_SHOT=0` | The instant first shot off for this run (always on otherwise since 2026-11-17, no menu option: the Mac 10's and Micro SMG's attack started at the loop start; game-internals.md 12c) |
 | `VCS_AIM_LOG=1` | a line per frame while aiming or firing (`[aim-log]`: fire, clip, state, target) and the player's SetFinishCallback calls - for timing the first shot |
 | `PS2X_HW_MIP_COVERAGE=0` | mip chains as plain averages: cut-out textures' alpha not histogram-matched to the base (far palms see-through again; game-internals.md 7b) |
 | `PS2X_HW_MIP_COVERAGE_LOG=1` | each mip chain's alpha shares (clear / solid / covered) and per level the half-transparent share before and after |

@@ -736,7 +736,7 @@ namespace
         vcs::lodlights::registerSettings(); // Enhancements > World: distant lights (game/vcs_lod_lights.h)
         vcs::texpack::registerSettings(); // Graphics > Texture packs (game/vcs_texture_pack.h)
         vcs::driveby::registerSettings(); // Enhancements > Combat: drive-by fire rate (game/vcs_driveby.h)
-        vcs::aim::registerSettings();     // Enhancements > Combat: instant first shot (game/vcs_aim.h)
+        vcs::aim::registerSettings();     // the instant first shot (always on; VCS_QUICK_FIRST_SHOT=0 turns it off)
         vcs::registerEffectsSettings();   // Enhancements > Effects: Reduce Post Processing Effects (game/vcs_effects_timing.h)
 
         s = {};

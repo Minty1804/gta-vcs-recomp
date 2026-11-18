@@ -949,6 +949,34 @@ Retina window. `tools/bench.py` from a new game (this Mac has no Fort Baxter car
   the frame.
 - Not measured yet: `cruise.py` (needs a card), uncapped frame rates, a quick (no LTO) build.
 
+### 33. Texture packs: hitches from the HD images (2026-11-17)
+
+**The report.** With the 6,279-image BC7 pack installed (game-internals.md 7b) the player saw "many stutters that were
+not there before" (their overlay: p99 48 ms, max 130 ms).
+
+**Measured** with the cruise (section 21; the player's vcs.ini: draw distance 200 %, MSAA 2x, anisotropic 16x; 60 cap):
+
+| | p99.9 ms | max ms | frames > 33 / 50 / 100 ms | hitches | lost a minute |
+|---|---|---|---|---|---|
+| no pack (`VCS_TEXPACK=0`) | 25.0 | 59.4 | 6 / 1 / 0 | 5 | 62.5 ms |
+| pack, before | 44.4 | 102.9 | 23 / 7 / 1 | 23 | 319 ms |
+| pack, mips once + image shared | 44.8 | 112.3 | 14 / 6 / 1 | 14 | 223 ms |
+| pack, + swaps made before they go in, frame textures first (now) | 41.9 / 39.7 | 64.5 / 66.3 | 15 / 4 / 0, 14 / 3 / 0 | 15 / 14 | 194 / 172 ms |
+
+**What it was**: a pack image is up to 2048x2048 (16 MB RGBA, 21 MB with mips). On every texture made from it the GS
+stage copied it (`tc.pixels = image->pixels`), the helper thread built its mip chain again, and the swaps of images that
+finished loading went into the same queue as the textures the next frame draws with - the main thread's `TexCreate`
+then waited behind them (host frames of 40-78 ms with 3 new textures). Now the loader builds the chain once per image,
+the image is shared, a swap goes in only once its GPU texture is made (the game's texture stays until then), and the
+helpers serve the frame's textures first. The GS stage's decode time in a burst went from 12-18 ms to 3-7 ms.
+
+**Tried and dropped**: capping the images at 1024 (`VCS_TEXPACK_MAX=1024`, kept as a switch for memory: the chain's
+first level that fits becomes the image) changed nothing in the hitches; swapping even already-loaded images in later
+(the game's texture first) doubled the textures made in a burst and was worse (max 123 ms).
+
+**What is left**: the bursts of 150-300 new textures still give one frame of 40-65 ms with the pack (the uploads of the
+images the frame needs at once); the level swap's ~40 ms frame is the game's (the same without the pack).
+
 ## Next
 
 - **The heavy views (~120 fps)**: the game thread's chain submission there (1.4-1.6 ms: the VIF1 chain copy, the walker

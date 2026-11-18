@@ -528,7 +528,16 @@ namespace vcs::rig
                 if (w[0] == "start" && w.size() >= 3)
                 {
                     Cruise c;
-                    FILE *f = std::fopen(w[1].c_str(), "r");
+                    // the file's path may hold spaces (a checkout under "C:\Games\GTA Vice City Stories"): the
+                    // shortest run of words from w[1] that names a file, the speed right after it
+                    std::string path = w[1];
+                    size_t next = 2;
+                    FILE *f = std::fopen(path.c_str(), "r");
+                    while (!f && next + 1 < w.size())
+                    {
+                        path += " " + w[next++];
+                        f = std::fopen(path.c_str(), "r");
+                    }
                     if (!f)
                         return reply("error cannot read " + w[1]);
                     for (float px, py, pz; std::fscanf(f, "%f %f %f", &px, &py, &pz) == 3;)
@@ -548,8 +557,8 @@ namespace vcs::rig
                     std::fclose(f);
                     if (c.x.size() < 2)
                         return reply("error the route needs two points or more");
-                    c.speed = std::strtof(w[2].c_str(), nullptr);
-                    for (size_t i = 3; i < w.size(); ++i)
+                    c.speed = std::strtof(w[next].c_str(), nullptr);
+                    for (size_t i = next + 1; i < w.size(); ++i)
                         if (w[i] == "loop")
                             c.loop = true;
                         else if (w[i] == "from" && i + 1 < w.size())

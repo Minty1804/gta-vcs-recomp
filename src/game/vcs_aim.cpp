@@ -77,7 +77,7 @@ namespace vcs::aim
         constexpr uint32_t kSetFinishCallback = 0x0018ECE8u, kSetCurrentTime = 0x0018EB70u;
         constexpr uint32_t kAttackBlendReturns[2] = {0x001D1904u, 0x001D3DACu}; // SetAttack (FUN_001D0970), Attack
         constexpr uint32_t kInfoWalksAiming = 0x80u, kInfoLoopStart = 0x44u, kInfoFirePoint = 0x4Cu;
-        std::atomic<int> g_quickShot{0};
+        std::atomic<int> g_quickShot{1};
         std::atomic<uint32_t> g_quickShots{0};
 
         PS2Runtime::RecompiledFunction g_origGame = nullptr, g_origCamera = nullptr, g_origShotLine = nullptr,
@@ -346,19 +346,11 @@ namespace vcs::aim
 
     void registerSettings()
     {
-        settings::Spec s;
-        s.key = "enhance.quick_first_shot";
-        s.page = "Enhancements";
-        s.section = "Combat";
-        s.label = "Instant first shot";
-        s.help = "The Micro SMG and the Mac 10 fire as soon as you press fire. In the original game Vic first plays "
-                 "the start of the firing animation, so the first bullet comes about half a second late even with the "
-                 "gun already raised.";
-        s.type = settings::Type::Toggle;
-        s.defaultValue = 0;
-        s.env = "VCS_QUICK_FIRST_SHOT";
-        s.onChange = [](int v) { g_quickShot.store(v, std::memory_order_relaxed); };
-        settings::add(s);
+        // The instant first shot is always on (the user's choice, 2026-11-17: no menu option any more). The Micro SMG
+        // and the Mac 10 fire as soon as fire is pressed; the original plays the start of the firing animation first.
+        // VCS_QUICK_FIRST_SHOT=0 brings the original back for one run.
+        const char *e = std::getenv("VCS_QUICK_FIRST_SHOT");
+        g_quickShot.store(e && e[0] == '0' ? 0 : 1, std::memory_order_relaxed);
     }
 
     void install(PS2Runtime &runtime)

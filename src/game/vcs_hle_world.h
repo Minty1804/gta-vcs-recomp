@@ -20,4 +20,8 @@ namespace vcs::hleworld
     void setMeshCapture(WorldMesh *capture);
     // the next world packet takes its mesh from here when it has the same vertex count (the replay of the same block)
     void setMeshHint(const WorldMesh *hint);
+
+    // Enhancements > World: "Solid far palms" - the far vegetation's distance fade off (vcs_hle_world.cpp solidFoliage)
+    void setSolidFarFoliage(bool on);
+    uint64_t solidFarFoliageRaised(); // packets raised so far (worlddetail's foliage=)
 }

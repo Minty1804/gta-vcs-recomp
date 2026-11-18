@@ -19,6 +19,7 @@
 #include "game/vcs_lod_lights.h"
 
 #include <algorithm>
+#include <atomic>
 #if defined(USE_SSE2NEON) // arm64 (macOS): the SSE code through NEON
 #include "sse2neon.h"
 #else
@@ -2853,8 +2854,32 @@ namespace
         return true;
     }
 
+    // "Solid far palms" (vcs::hleworld::setSolidFarFoliage): the palm LODs and other far vegetation fade out with
+    // distance through their prelit colour scale's alpha (qword 0x9c .w, which the EE sets per instance: 0.502 = 128/255
+    // opaque, down to 0 at the end of the fade; grey .xyz where buildings carry the day's tint) - game-internals.md 7b.
+    // On, the alpha scale is raised back to the grey colour scale before the packet is drawn, natively or on the VU1.
+    std::atomic<bool> g_solidFoliage{false};
+    std::atomic<uint64_t> g_solidFoliageRaised{0};
+
+    void solidFoliage(const ps2hle::MscalContext &c)
+    {
+        if (c.startPc != 0x30u || !g_solidFoliage.load(std::memory_order_relaxed))
+            return;
+        if (!isWorldPipeline(c.vuCode, c.vuData, c.codeGeneration)) // the prelit world table: its constants at 0x9c
+            return;
+        float cs[4];
+        std::memcpy(cs, c.vuData + 0x9Cu * 16u, 16);
+        const float opaque = bitsToFloat(0x3F008081u); // 128 / 255: vertex alpha 255 -> 0x80
+        if (cs[0] == cs[1] && cs[1] == cs[2] && cs[3] < opaque)
+        {
+            std::memcpy(c.vuData + 0x9Cu * 16u + 12u, &opaque, 4);
+            g_solidFoliageRaised.fetch_add(1, std::memory_order_relaxed);
+        }
+    }
+
     bool beforeNative(const ps2hle::MscalContext &c)
     {
+        solidFoliage(c);
         vcs::rslshadow::onMscal(c.startPc, c.vuData); // VCS_RSL_SHADOW 1b (debug/rsl_shadow.h): nothing unless on
         vcs::lodlights::onMscal(c.startPc, c.vuData); // Distant lights: the frame's camera (game/vcs_lod_lights.h)
         const int rounding = sseRounding();
@@ -2994,3 +3019,5 @@ namespace
 
 void vcs::hleworld::setMeshCapture(WorldMesh *capture) { t_meshCapture = capture; }
 void vcs::hleworld::setMeshHint(const WorldMesh *hint) { t_meshHint = hint; }
+void vcs::hleworld::setSolidFarFoliage(bool on) { g_solidFoliage.store(on, std::memory_order_relaxed); }
+uint64_t vcs::hleworld::solidFarFoliageRaised() { return g_solidFoliageRaised.load(std::memory_order_relaxed); }

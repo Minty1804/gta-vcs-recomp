@@ -369,6 +369,7 @@ namespace
         uint32_t w = 0, h = 0;
         bool mipChain = false; // anisotropic filtering: buildMipChain there
         std::vector<uint32_t> pixels, mips;
+        std::shared_ptr<const GSHwReplacement> image; // [gta-recomp] a pack's image: its pixels (and mips) used in place
         size_t bytes = 0;
         std::unique_ptr<rhi::Texture> made;
         std::atomic<bool> done{false};
@@ -382,6 +383,7 @@ namespace
         std::vector<uint32_t> mips; // [gta-recomp] anisotropic filtering: levels 1.. after each other (buildMipChain)
         std::shared_ptr<EarlyTexture> early; // [gta-recomp] being made on a helper thread (pixels moved there)
         bool replaced = false;               // [gta-recomp] a texture pack's image (GSHwTexturePack): any size, sampled normalised
+        std::shared_ptr<const GSHwReplacement> image; // [gta-recomp] that image, shared (not copied into pixels)
     };
 
     // [gta-recomp] The levels of a texture: level 0 (pixels) then its mips, as createTextureLevels takes them.
@@ -4576,6 +4578,7 @@ namespace
             }
             ps2perf::add(ps2perf::Counter::Draws, f.draws.size() + f.nativeDraws.size()); // [gta-recomp] once per frame
             ps2perf::add(ps2perf::Counter::Vertices, f.vertices.size() + f.nativeVertices);
+            pollPackMaking(f);  // [gta-recomp] texture packs: swaps made on the helper threads since
             pollTexturePack(f); // [gta-recomp] texture packs: images loaded since
             ps2perf::add(ps2perf::Counter::TexUploads, f.textures.size());
             ++m_frameIndex;
@@ -5250,7 +5253,8 @@ namespace
                         {
                             tc.w = image->width;
                             tc.h = image->height;
-                            tc.pixels = image->pixels;
+                            tc.image = std::move(image);
+                            tc.pixels.clear(); // (the game's own, decoded for the dump)
                             tc.replaced = true;
                             decoded = true;
                             g_packReplaced.fetch_add(1u, std::memory_order_relaxed);
@@ -5295,12 +5299,27 @@ namespace
                 const char *e = std::getenv("PS2X_HW_CPU_MIPS");
                 return !(e && *e == '0');
             }();
+            if (tc.image && tc.pixels.empty() && !m_earlyDevice.load(std::memory_order_acquire))
+                tc.pixels = tc.image->pixels; // [gta-recomp] no helper threads: the main thread makes it from a copy
             const bool mipChain = (m_anisotropy > 1u || tc.replaced) && cpuMips && tc.w <= 4096u && tc.h <= 4096u &&
-                                  tc.pixels.size() == size_t(tc.w) * tc.h;
-            if (!makeTextureEarly(tc, mipChain) && mipChain)
-                buildMipChain(tc.pixels, tc.w, tc.h, tc.mips);
+                                  (tc.image || tc.pixels.size() == size_t(tc.w) * tc.h);
+            if (!makeTextureEarly(tc, mipChain))
+            {
+                if (tc.image && tc.pixels.empty())
+                    tc.pixels = tc.image->pixels;
+                if (mipChain && tc.image && !tc.image->mips.empty())
+                    tc.mips = tc.image->mips;
+                else if (mipChain)
+                    buildMipChain(tc.pixels, tc.w, tc.h, tc.mips);
+            }
             ps2perf::add(ps2perf::Counter::TexDecodeUs, static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
                                                             ps2x::hostNow() - decodeStart).count()));
+            pushTexCreate(f, tc);
+        }
+
+        // [gta-recomp] The TexCreate command for a texture whose pixels (or helper-thread job) are ready
+        void pushTexCreate(Frame &f, TexCreate &tc)
+        {
             const uint64_t key = tc.key;
             f.cmds.push_back({CmdType::TexCreate, static_cast<uint32_t>(f.textures.size())});
             f.textures.push_back(std::move(tc));
@@ -5329,16 +5348,43 @@ namespace
                         tc.key = key;
                         tc.w = image->width;
                         tc.h = image->height;
-                        tc.pixels = image->pixels;
+                        tc.image = std::move(image);
                         tc.replaced = true;
                         g_packReplaced.fetch_add(1u, std::memory_order_relaxed);
-                        finishTexture(f, tc, ps2x::hostNow());
+                        // the game's own texture stays in use until the image's GPU texture is made on a helper thread:
+                        // the swap's TexCreate then never waits on the main thread (pollPackMaking)
+                        static const bool cpuMips = [] {
+                            const char *e = std::getenv("PS2X_HW_CPU_MIPS");
+                            return !(e && *e == '0');
+                        }();
+                        if (cpuMips && tc.w <= 4096u && tc.h <= 4096u && makeTextureEarly(tc, true, true))
+                            m_packMaking.push_back(std::move(tc));
+                        else
+                            finishTexture(f, tc, ps2x::hostNow());
                     }
                     m_packPending[i] = m_packPending.back();
                     m_packPending.pop_back();
                 }
                 else
                     ++i;
+            }
+        }
+
+        // [gta-recomp] Texture packs: the swaps whose GPU texture is made go in (a texture evicted meanwhile is dropped)
+        void pollPackMaking(Frame &f)
+        {
+            for (size_t i = 0; i < m_packMaking.size();)
+            {
+                TexCreate &tc = m_packMaking[i];
+                if (!tc.early->done.load(std::memory_order_acquire))
+                {
+                    ++i;
+                    continue;
+                }
+                if (m_texLru.count(tc.key))
+                    pushTexCreate(f, tc);
+                m_packMaking[i] = std::move(m_packMaking.back());
+                m_packMaking.pop_back();
             }
         }
 
@@ -5349,10 +5395,10 @@ namespace
         // chain for anisotropic filtering - while the GS stage goes on; the main thread takes it when it executes the
         // TexCreate (waiting only if it is not done yet). True when handed off (tc.pixels moved there).
         // PS2X_HW_EARLY_TEXTURES=0: made on the main thread, as before (the default with Vulkan; =1 turns it on there).
-        bool makeTextureEarly(TexCreate &tc, bool mipChain)
+        bool makeTextureEarly(TexCreate &tc, bool mipChain, bool background = false)
         {
             rhi::Device *dev = m_earlyDevice.load(std::memory_order_acquire);
-            if (!dev || tc.pixels.size() != size_t(tc.w) * tc.h)
+            if (!dev || (!tc.image && tc.pixels.size() != size_t(tc.w) * tc.h))
                 return false;
             if (m_anisotropy > 1u && !mipChain)
                 return false; // a chain by GenerateMips (PS2X_HW_CPU_MIPS=0): the immediate context, main thread only
@@ -5364,6 +5410,7 @@ namespace
             job->h = tc.h;
             job->mipChain = mipChain;
             job->pixels = std::move(tc.pixels);
+            job->image = tc.image; // [gta-recomp] a pack's image: read in place on the helper
             tc.pixels.clear();
             tc.early = job;
             {
@@ -5371,7 +5418,8 @@ namespace
                 if (m_makers.empty())
                     for (int i = 0; i < 2; ++i)
                         m_makers.emplace_back([this, dev] { textureMaker(*dev); });
-                m_makeQueue.push_back(std::move(job));
+                // [gta-recomp] a pack swap waits behind the textures a frame needs now (pollPackMaking)
+                (background ? m_makeQueueLow : m_makeQueue).push_back(std::move(job));
             }
             m_makeCv.notify_one();
             return true;
@@ -5384,26 +5432,36 @@ namespace
                 std::shared_ptr<EarlyTexture> job;
                 {
                     std::unique_lock<std::mutex> lock(m_makeMutex);
-                    m_makeCv.wait(lock, [&] { return m_makeStop || !m_makeQueue.empty(); });
-                    if (m_makeQueue.empty())
+                    m_makeCv.wait(lock, [&] { return m_makeStop || !m_makeQueue.empty() || !m_makeQueueLow.empty(); });
+                    std::deque<std::shared_ptr<EarlyTexture>> &q = !m_makeQueue.empty() ? m_makeQueue : m_makeQueueLow;
+                    if (q.empty())
                         return;
-                    job = std::move(m_makeQueue.front());
-                    m_makeQueue.pop_front();
+                    job = std::move(q.front());
+                    q.pop_front();
                 }
                 rhi::TextureDesc d;
                 d.width = job->w;
                 d.height = job->h;
                 d.usage = rhi::UsageSampled;
                 d.name = "gs texture";
+                // [gta-recomp] a pack's image: its pixels and the mips its loader made, in place (no copies)
+                const std::vector<uint32_t> &base = job->image ? job->image->pixels : job->pixels;
                 if (job->mipChain)
                 {
-                    buildMipChain(job->pixels, job->w, job->h, job->mips);
+                    const bool ready = job->image && !job->image->mips.empty();
+                    if (!ready)
+                        buildMipChain(base, job->w, job->h, job->mips);
+                    const std::vector<uint32_t> &mips = ready ? job->image->mips : job->mips;
                     const void *levels[16];
-                    job->made = dev.createTextureLevels(d, levels, mipLevels(job->pixels, job->mips, job->w, job->h, levels));
+                    job->made = dev.createTextureLevels(d, levels, mipLevels(base, mips, job->w, job->h, levels));
+                    job->bytes = (base.size() + mips.size()) * 4u;
                 }
                 else
-                    job->made = dev.createTexture(d, job->pixels.data(), job->w * 4u);
-                job->bytes = (job->pixels.size() + job->mips.size()) * 4u;
+                {
+                    job->made = dev.createTexture(d, base.data(), job->w * 4u);
+                    job->bytes = base.size() * 4u;
+                }
+                job->image.reset();
                 std::vector<uint32_t>().swap(job->pixels); // the memory back now, not when the frame is recycled
                 std::vector<uint32_t>().swap(job->mips);
                 job->done.store(true, std::memory_order_release);
@@ -5715,7 +5773,7 @@ namespace
         std::atomic<rhi::Device *> m_earlyDevice{nullptr}; // [gta-recomp] makeTextureEarly: set by the main thread
         std::mutex m_makeMutex;                             // [gta-recomp] makeTextureEarly's helper threads
         std::condition_variable m_makeCv;
-        std::deque<std::shared_ptr<EarlyTexture>> m_makeQueue;
+        std::deque<std::shared_ptr<EarlyTexture>> m_makeQueue, m_makeQueueLow; // [gta-recomp] Low: pack swaps
         std::vector<std::thread> m_makers;
         bool m_makeStop = false;
         GSCpuBackend m_cpu;
@@ -5750,6 +5808,7 @@ namespace
             uint64_t handle, texKey;
         };
         std::vector<PackPending> m_packPending;
+        std::vector<TexCreate> m_packMaking; // [gta-recomp] pack swaps being made (pollPackMaking)
         std::vector<uint8_t> m_packData;
         uint32_t m_packClut[256] = {};
 
@@ -5882,4 +5941,10 @@ std::string gsHwDrawSourceReport(bool reset) // [gta-recomp]
 {
     std::lock_guard<std::mutex> lock(g_drawSourcesMutex);
     return g_drawSources.report(reset);
+}
+
+// [gta-recomp] texture packs' loaders build the chain once, off the renderer (gs_hw.h)
+void gsHwBuildMipChain(const std::vector<uint32_t> &base, uint32_t w, uint32_t h, std::vector<uint32_t> &out)
+{
+    buildMipChain(base, w, h, out);
 }

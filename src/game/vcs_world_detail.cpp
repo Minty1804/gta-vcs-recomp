@@ -31,6 +31,7 @@
 #include "game/vcs_world_detail.h"
 
 #include "game/vcs_display.h"
+#include "game/vcs_hle_world.h"
 #include "ps2_runtime.h"
 #include "ps2_runtime_macros.h"
 #include "runtime/ps2_control.h"
@@ -86,8 +87,18 @@ namespace vcs::world
 
         bool g_enabled = false;
         bool g_keep = true; // VCS_WORLD_KEEP=0: no pool reserve, no keeping cars in view
-        std::atomic<int> g_traffic{100}, g_peds{100}, g_draw{100}, g_pedDistance{100};
+        std::atomic<int> g_traffic{100}, g_peds{100}, g_draw{100}, g_pedDistance{100}, g_carDistance{100};
         constexpr int kPedDistanceMax = 200;
+        constexpr int kCarDistanceMax = 200;
+        // Car distance: GenerationDistMultiplier (TheCamera+0x7D0, which CCamera::Process 0x378DD8 rewrites every frame
+        // at 0x37B068) scaled from the first car spawner call of a frame (FUN_00430148 from CGame::Process 0x3BAC88:
+        // the spawn spot 110 m x it ahead) through RemoveDistantCars (0x3BAC98: 160 m x it in view) to
+        // RemoveCarsIfThePoolGetsFull (FUN_00433188, 0x3BACA0), whose hook puts the camera's value back - so the next
+        // frame's ped step (0x3BAB44, before the camera) sees the game's own.
+        constexpr uint32_t kRemoveCarsIfPoolFull = 0x00433188u;
+        PS2Runtime::RecompiledFunction g_origRemoveCarsIfPoolFull = nullptr;
+        float g_genBase = 0.0f, g_genWritten = -1.0f; // game thread
+        bool g_genScaled = false;
         PS2Runtime::RecompiledFunction g_origPopDistFactor = nullptr;
 
         struct Original
@@ -107,7 +118,9 @@ namespace vcs::world
         std::atomic<int> g_stCarCap{0}, g_stPedCapOut{0}, g_stPedCapIn{0}, g_stPedFree{-1}, g_stVehicleFree{-1},
             g_stPedsUsed{-1}, g_stVehiclesUsed{-1}, g_stPlayerInView{-1};
         std::atomic<float> g_stLod{1.0f}, g_stPedMean{0.0f}, g_stPedFar{0.0f};
-        std::atomic<int> g_stPedCount{0};
+        std::atomic<int> g_stPedCount{0}, g_stCarCount{0};
+        std::atomic<float> g_stCarMean{0.0f}, g_stCarFar{0.0f};
+        std::atomic<uint64_t> g_stSpawnSum{0}, g_stSpawnCount{0}; // cars made: their distance from the camera
         std::atomic<uint32_t> g_stPacketUsed{0}, g_stPacketPeak{0}, g_stCarChance{0}, g_stPedChance{0};
         std::atomic<uint32_t> g_stMinVehicleFree{999}, g_stMinPedFree{999}; // since the last query
         std::atomic<uint64_t> g_stKeptInView{0}, g_stVanished{0};
@@ -203,20 +216,23 @@ namespace vcs::world
 
         // the peds in the pool (0xD20 bytes each, vcs_driveby.cpp) other than the player: count, mean and farthest 2D
         // distance from the camera - for the command (tests of the ped distance)
-        void pedDistances(const uint8_t *ram, int &count, float &mean, float &farthest)
+        // (cars: the vehicle pool, 0x8C0 bytes each, the player's own car left out)
+        void pedDistances(const uint8_t *ram, int &count, float &mean, float &farthest, bool cars = false)
         {
             count = 0;
             mean = farthest = 0.0f;
-            const uint32_t pool = rd32(ram, kPedPool) & 0x01FFFFFFu;
+            const uint32_t pool = rd32(ram, cars ? kVehiclePool : kPedPool) & 0x01FFFFFFu;
             if (!pool)
                 return;
             const uint32_t entries = rd32(ram, pool) & 0x01FFFFFFu, flags = rd32(ram, pool + 4) & 0x01FFFFFFu;
             const int size = std::min(static_cast<int>(rd32(ram, pool + 8)), 256);
-            const uint32_t player = rd32(ram, kPlayers) & 0x01FFFFFFu;
+            uint32_t player = rd32(ram, kPlayers) & 0x01FFFFFFu;
+            if (cars)
+                player = player ? rd32(ram, player + kPedVehicle) & 0x01FFFFFFu : 0u;
             const float cx = rdf(ram, kCamera + 0x30), cy = rdf(ram, kCamera + 0x34);
             for (int i = 0; i < size && entries && flags; ++i)
             {
-                const uint32_t ped = entries + static_cast<uint32_t>(i) * 0xD20u;
+                const uint32_t ped = entries + static_cast<uint32_t>(i) * (cars ? 0x8C0u : 0xD20u);
                 if ((ram[flags + i] & 0x80) || ped == player)
                     continue;
                 const float d = std::hypot(rdf(ram, ped + 0x30) - cx, rdf(ram, ped + 0x34) - cy);
@@ -328,7 +344,30 @@ namespace vcs::world
                 wr32(rdram, kSpawnChance, g_carChance);
                 writeCarCap(rdram);
             }
+            const int carDistance = std::clamp(g_carDistance.load(std::memory_order_relaxed), 100, kCarDistanceMax);
+            if (carDistance > 100 && g_orig.valid)
+            {
+                const float now = rdf(rdram, kGenerationDist);
+                if (!g_genScaled || now != g_genWritten) // the camera wrote a new one: scale that (once a frame)
+                    g_genBase = now;
+                g_genWritten = g_genBase * (carDistance / 100.0f);
+                wrf(rdram, kGenerationDist, g_genWritten);
+                g_genScaled = true;
+            }
             g_origCarSpawner(rdram, ctx, runtime);
+        }
+
+        // RemoveCarsIfThePoolGetsFull (FUN_00433188, right after RemoveDistantCars): the camera's
+        // GenerationDistMultiplier back before anything else reads it (see g_carDistance)
+        PS2_GUEST_CC void removeCarsIfPoolFull(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            if (g_genScaled)
+            {
+                if (rdf(rdram, kGenerationDist) == g_genWritten)
+                    wrf(rdram, kGenerationDist, g_genBase);
+                g_genScaled = false;
+            }
+            g_origRemoveCarsIfPoolFull(rdram, ctx, runtime);
         }
 
         // the ped spawner (FUN_002B17A8; the ped count 0x4CD550 was just recounted by its caller FUN_002AFE80)
@@ -418,6 +457,44 @@ namespace vcs::world
             g_origProjection(rdram, ctx, runtime);
         }
 
+        // Ped shadows (the user's wish, 2026-11-17: an option to turn off Vic's and the NPCs' shadows). The blob
+        // texture "shad_ped" (RwTextureRead at 0x389734, kept at 0x48916C) goes to the shadow store through
+        // FUN_0038A000 (StoreShadowToBeRendered: a0 type, a1 texture; CShadows::StoreShadowForPed 0x38AE30 and
+        // 0x3C35A8), FUN_003898E8 (StoreStaticShadow, a1 texture; 0x1FA930) and FUN_003899B0 (the projected kind, a2
+        // texture; 0x21BC50). All three return nothing the callers read, so a ped's shadow is skipped by returning
+        // before the store. Cars, bikes, helis and lamps keep theirs (other textures).
+        constexpr uint32_t kPedShadowTex = 0x0048916Cu;
+        std::atomic<int> g_pedShadows{1};
+        std::atomic<uint64_t> g_pedShadowsSkipped{0};
+        PS2Runtime::RecompiledFunction g_origStoreShadow = nullptr, g_origStoreStatic = nullptr, g_origStorePoly = nullptr;
+
+        bool skipPedShadow(const uint8_t *rdram, R5900Context *ctx, int texReg)
+        {
+            if (g_pedShadows.load(std::memory_order_relaxed))
+                return false;
+            const uint32_t tex = rd32(rdram, kPedShadowTex);
+            if (!tex || GPR_U32(ctx, texReg) != tex)
+                return false;
+            g_pedShadowsSkipped.fetch_add(1, std::memory_order_relaxed);
+            ctx->pc = GPR_U32(ctx, 31);
+            return true;
+        }
+        PS2_GUEST_CC void storeShadow(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            if (!skipPedShadow(rdram, ctx, 5))
+                g_origStoreShadow(rdram, ctx, runtime);
+        }
+        PS2_GUEST_CC void storeStatic(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            if (!skipPedShadow(rdram, ctx, 5))
+                g_origStoreStatic(rdram, ctx, runtime);
+        }
+        PS2_GUEST_CC void storePoly(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            if (!skipPedShadow(rdram, ctx, 6))
+                g_origStorePoly(rdram, ctx, runtime);
+        }
+
         settings::Spec percentSpec(const char *key, const char *label, const char *help, const char *env, std::atomic<int> &target)
         {
             settings::Spec s;
@@ -458,6 +535,39 @@ namespace vcs::world
                                        "VCS_PED_DISTANCE", g_pedDistance);
         s.max = kPedDistanceMax;
         settings::add(s);
+        settings::Spec c = percentSpec("enhance.car_distance", "Car distance",
+                                       "How far ahead traffic appears and how far away cars are removed. 100% is the "
+                                       "original game (cars appear about 110 m ahead). Raise the draw distance with it so "
+                                       "they are drawn that far.",
+                                       "VCS_CAR_DISTANCE", g_carDistance);
+        c.max = kCarDistanceMax;
+        settings::add(c);
+
+        settings::Spec f;
+        f.key = "enhance.solid_far_palms";
+        f.page = "Enhancements";
+        f.section = "World";
+        f.label = "Solid far palms";
+        f.help = "Far-away palms and trees stay solid. In the original game they fade out with distance, so with a "
+                 "longer draw distance whole rows of them look like ghosts. Off is the original game.";
+        f.type = settings::Type::Toggle;
+        f.defaultValue = 0;
+        f.env = "VCS_SOLID_FAR_PALMS";
+        f.onChange = [](int v) { vcs::hleworld::setSolidFarFoliage(v != 0); };
+        settings::add(f);
+
+        settings::Spec sh;
+        sh.key = "enhance.ped_shadows";
+        sh.page = "Enhancements";
+        sh.section = "World";
+        sh.label = "Character shadows";
+        sh.help = "The round shadow under Vic and everyone else on foot. On is the original game; cars and lamps keep "
+                  "their shadows either way.";
+        sh.type = settings::Type::Toggle;
+        sh.defaultValue = 1;
+        sh.env = "VCS_PED_SHADOWS";
+        sh.onChange = [](int v) { g_pedShadows.store(v, std::memory_order_relaxed); };
+        settings::add(sh);
     }
 
     void install(PS2Runtime &runtime)
@@ -486,6 +596,8 @@ namespace vcs::world
                     runtime.replaceFunction(0x0018FA50u, &worldRemove);
                 if ((g_origPopDistFactor = runtime.lookupFunction(kPopDistFactor)))
                     runtime.replaceFunction(kPopDistFactor, &popDistFactor);
+                if ((g_origRemoveCarsIfPoolFull = runtime.lookupFunction(kRemoveCarsIfPoolFull)))
+                    runtime.replaceFunction(kRemoveCarsIfPoolFull, &removeCarsIfPoolFull);
             }
             else
             {
@@ -493,6 +605,19 @@ namespace vcs::world
                 g_enabled = false;
             }
         }
+
+        // the ped shadow hooks pass everything through unless the option is off
+        g_origStoreShadow = runtime.lookupFunction(0x0038A000u);
+        g_origStoreStatic = runtime.lookupFunction(0x003898E8u);
+        g_origStorePoly = runtime.lookupFunction(0x003899B0u);
+        if (g_origStoreShadow && g_origStoreStatic && g_origStorePoly)
+        {
+            runtime.replaceFunction(0x0038A000u, &storeShadow);
+            runtime.replaceFunction(0x003898E8u, &storeStatic);
+            runtime.replaceFunction(0x003899B0u, &storePoly);
+        }
+        else
+            std::fprintf(stderr, "[world] the shadow store not found: character shadows stay on\n");
 
         if (const char *far = std::getenv("VCS_FAR_CLIP"); g_enabled && far && *far)
         {
@@ -526,8 +651,14 @@ namespace vcs::world
                           (unsigned long long)g_stVanished.load(),                          g_stPlayerInView.load(), g_stPacketUsed.load(), g_stPacketPeak.exchange(0),
                           g_farClip > 0 ? g_farClip : 2000.0f, g_stCarChance.load(), g_stPedChance.load());
             const size_t n = std::strlen(text);
-            std::snprintf(text + n, sizeof(text) - n, " peddist=%d peds=%d pedmean=%.1f pedfar=%.1f",
-                          g_pedDistance.load(), g_stPedCount.load(), g_stPedMean.load(), g_stPedFar.load());
+            std::snprintf(text + n, sizeof(text) - n,
+                          " peddist=%d peds=%d pedmean=%.1f pedfar=%.1f cardist=%d cars=%d carmean=%.1f carfar=%.1f foliage=%llu "
+                          "shadows=%d shadowsskipped=%llu carspawns=%llu carspawnmean=%.1f",
+                          g_pedDistance.load(), g_stPedCount.load(), g_stPedMean.load(), g_stPedFar.load(), g_carDistance.load(),
+                          g_stCarCount.load(), g_stCarMean.load(), g_stCarFar.load(),
+                          (unsigned long long)vcs::hleworld::solidFarFoliageRaised(), g_pedShadows.load(),
+                          (unsigned long long)g_pedShadowsSkipped.load(), (unsigned long long)g_stSpawnCount.load(),
+                          g_stSpawnCount.load() ? double(g_stSpawnSum.load()) / double(g_stSpawnCount.load()) : 0.0);
             reply(text);
         });
     }
@@ -573,6 +704,10 @@ namespace vcs::world
             g_stPedCount.store(count, std::memory_order_relaxed);
             g_stPedMean.store(mean, std::memory_order_relaxed);
             g_stPedFar.store(farthest, std::memory_order_relaxed);
+            pedDistances(rdram, count, mean, farthest, true);
+            g_stCarCount.store(count, std::memory_order_relaxed);
+            g_stCarMean.store(mean, std::memory_order_relaxed);
+            g_stCarFar.store(farthest, std::memory_order_relaxed);
         }
         if (const uint32_t player = rd32(rdram, 0x004E4910u) & 0x01FFFFFFu)
         {
@@ -603,11 +738,25 @@ namespace vcs::world
                                  i, g_nearDist[i], g_removedBy[i], traffic, draw, poolFree(rdram, kVehiclePool));
                 }
                 g_nearInView[i] = -1;
+                static int lastFlag[256];
+                static bool lastFlagInit = false;
+                if (!lastFlagInit)
+                {
+                    std::fill(std::begin(lastFlag), std::end(lastFlag), -2);
+                    lastFlagInit = true;
+                }
+                const int before = lastFlag[i];
+                lastFlag[i] = flag;
                 if (flag & 0x80)
                     continue;
                 const uint32_t car = entries + static_cast<uint32_t>(i) * 0x8C0u;
                 const float p[3] = {rdf(rdram, car + 0x30), rdf(rdram, car + 0x34), rdf(rdram, car + 0x38)};
                 const float dist = std::hypot(p[0] - cam[0], p[1] - cam[1]);
+                if (before != -2 && before != flag && !cut) // a car made this frame: how far away (the command's spawn=)
+                {
+                    g_stSpawnSum.fetch_add(static_cast<uint64_t>(dist), std::memory_order_relaxed);
+                    g_stSpawnCount.fetch_add(1, std::memory_order_relaxed);
+                }
                 if (dist < drawn && inView(rdram, p, 1.0f))
                 {
                     g_nearInView[i] = flag;

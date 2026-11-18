@@ -24,7 +24,8 @@ namespace vcs::aim
 {
     // Before runtime.run(): the hooks (applyVcs).
     void install(PS2Runtime &runtime);
-    // Enhancements > Combat: Instant first shot (the walking SMGs' first bullet without the firing animation's start).
+    // the instant first shot (the walking SMGs' first bullet without the firing animation's start): always on,
+    // VCS_QUICK_FIRST_SHOT=0 turns it off for a run
     void registerSettings();
 
     // What the pad read hands over, once per game frame (game thread).
