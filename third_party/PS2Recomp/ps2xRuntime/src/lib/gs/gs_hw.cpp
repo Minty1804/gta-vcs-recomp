@@ -115,6 +115,64 @@ namespace
     std::atomic<uint64_t> g_packHashed{0}, g_packReplaced{0};
 }
 
+// [gta-recomp] Texture packs: each image's GPU texture by its pack handle, kept after the game's texture goes (LRU,
+// PS2X_HW_PACK_GPU_MB, 1536): the game makes the same textures again and again while driving, and each time the HD image
+// was uploaded again (10 GB in a 140 s drive, up to 100 MB a frame; Present then waited 20-40 ms on the GPU). Filled and
+// trimmed by the main thread (the executor, only for textures made on the helper threads: D3D11 / Metal, where a texture
+// is shared across threads); the GS stage looks up under the mutex. PERFORMANCE.md 33.
+namespace
+{
+    struct PackGpu
+    {
+        std::shared_ptr<rhi::Texture> tex;
+        size_t bytes = 0;
+        uint64_t lastUse = 0;
+    };
+    std::mutex g_packGpuMutex;
+    std::unordered_map<uint64_t, PackGpu> g_packGpu;
+    size_t g_packGpuBytes = 0;
+    uint64_t g_packGpuClock = 0;
+
+    std::shared_ptr<rhi::Texture> packGpu(uint64_t handle)
+    {
+        std::lock_guard<std::mutex> lock(g_packGpuMutex);
+        auto it = g_packGpu.find(handle);
+        if (it == g_packGpu.end())
+            return nullptr;
+        it->second.lastUse = ++g_packGpuClock;
+        return it->second.tex;
+    }
+
+    void keepPackGpu(uint64_t handle, const std::shared_ptr<rhi::Texture> &tex, size_t bytes)
+    {
+        static const size_t limit = [] {
+            const char *e = std::getenv("PS2X_HW_PACK_GPU_MB");
+            return size_t(e && *e ? std::strtoull(e, nullptr, 10) : 1536u) << 20;
+        }();
+        if (!limit)
+            return;
+        std::vector<std::shared_ptr<rhi::Texture>> dropped; // released after the lock
+        std::lock_guard<std::mutex> lock(g_packGpuMutex);
+        PackGpu &e = g_packGpu[handle];
+        if (e.tex)
+            g_packGpuBytes -= e.bytes;
+        e.tex = tex;
+        e.bytes = bytes;
+        e.lastUse = ++g_packGpuClock;
+        g_packGpuBytes += bytes;
+        while (g_packGpuBytes > limit && g_packGpu.size() > 1u)
+        {
+            auto oldest = g_packGpu.begin();
+            for (auto it = g_packGpu.begin(); it != g_packGpu.end(); ++it)
+                if (it->second.lastUse < oldest->second.lastUse)
+                    oldest = it;
+            g_packGpuBytes -= oldest->second.bytes;
+            dropped.push_back(std::move(oldest->second.tex));
+            g_packGpu.erase(oldest);
+        }
+    }
+}
+
 void gsHwSetTexturePack(GSHwTexturePack *pack)
 {
     g_texturePack.store(pack, std::memory_order_release);
@@ -384,6 +442,8 @@ namespace
         std::shared_ptr<EarlyTexture> early; // [gta-recomp] being made on a helper thread (pixels moved there)
         bool replaced = false;               // [gta-recomp] a texture pack's image (GSHwTexturePack): any size, sampled normalised
         std::shared_ptr<const GSHwReplacement> image; // [gta-recomp] that image, shared (not copied into pixels)
+        uint64_t packHandle = 0;                      // [gta-recomp] the pack's image (its handle): its GPU texture is kept
+        std::shared_ptr<rhi::Texture> shared;         // [gta-recomp] that GPU texture, already made (m_packGpu)
     };
 
     // [gta-recomp] The levels of a texture: level 0 (pixels) then its mips, as createTextureLevels takes them.
@@ -1091,7 +1151,9 @@ namespace
                     d.name = "gs texture";
                     d.mipLevels = m_anisotropy ? 0u : 1u; // [gta-recomp] anisotropic filtering samples a mip chain
                     const auto createStart = ps2x::hostNow(); // [gta-recomp] tex_create_us / tex_kb
-                    if (t.early) // [gta-recomp] made on a helper thread (makeTextureEarly): usually done long before
+                    if (t.shared) // [gta-recomp] a pack image's GPU texture, made before (m_packGpu)
+                        m_textures[t.key] = t.shared;
+                    else if (t.early) // [gta-recomp] made on a helper thread (makeTextureEarly): usually done long before
                     {
                         t.early->done.wait(false);
                         m_textures[t.key] = std::move(t.early->made);
@@ -1107,10 +1169,12 @@ namespace
                         m_packTextures.insert(t.key);
                     else
                         m_packTextures.erase(t.key);
+                    if (t.packHandle && t.early && !t.shared && m_textures[t.key]) // [gta-recomp] kept for the next time (m_packGpu)
+                        keepPackGpu(t.packHandle, m_textures[t.key], size_t(t.w) * t.h * 4u * 4u / 3u);
                     ps2perf::add(ps2perf::Counter::TexCreateUs, static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
                                                                     ps2x::hostNow() - createStart).count()));
                     ps2perf::add(ps2perf::Counter::TexKBytes,
-                                 ((t.early ? t.early->bytes : (t.pixels.size() + t.mips.size()) * 4u) + 1023u) / 1024u);
+                                 t.shared ? 0u : ((t.early ? t.early->bytes : (t.pixels.size() + t.mips.size()) * 4u) + 1023u) / 1024u);
                     // [gta-recomp] PS2X_HW_DUMP_TEX=<key hex>: write that decoded texture (hw_tex_<key>.ppm, alpha dropped)
                     static const uint64_t dumpTex = std::getenv("PS2X_HW_DUMP_TEX") ? std::strtoull(std::getenv("PS2X_HW_DUMP_TEX"), nullptr, 16) : 0u;
                     if (dumpTex && t.key == dumpTex)
@@ -2841,7 +2905,7 @@ namespace
         };
         std::unordered_map<uint32_t, DroppedSize> m_droppedSize; // [gta-recomp] dropRt / rtFor
         std::unordered_map<uint32_t, Depth> m_depth;
-        std::unordered_map<uint64_t, std::unique_ptr<rhi::Texture>> m_textures;
+        std::unordered_map<uint64_t, std::shared_ptr<rhi::Texture>> m_textures; // [gta-recomp] shared: a pack image's GPU texture
         std::unique_ptr<rhi::Texture> m_display, m_feedback;
         std::unordered_map<uint32_t, HudLayer> m_hud; // [gta-recomp] native HUD layer per frame buffer
         // [gta-recomp] Per frame buffer, the shape (wide or 4:3) of the frame that last drew into it; a plain copy carries
@@ -5255,6 +5319,8 @@ namespace
                             tc.h = image->height;
                             tc.image = std::move(image);
                             tc.pixels.clear(); // (the game's own, decoded for the dump)
+                            tc.packHandle = handle;
+                            tc.shared = m_earlyDevice.load(std::memory_order_acquire) ? packGpu(handle) : nullptr;
                             tc.replaced = true;
                             decoded = true;
                             g_packReplaced.fetch_add(1u, std::memory_order_relaxed);
@@ -5292,6 +5358,12 @@ namespace
         // [gta-recomp] A new texture's TexCreate (its mip chain, made early when it can), the texture cache noted
         void finishTexture(Frame &f, TexCreate &tc, decltype(ps2x::hostNow()) decodeStart)
         {
+            if (tc.shared) // [gta-recomp] a pack image's GPU texture made before: nothing to build or upload
+            {
+                tc.image.reset();
+                pushTexCreate(f, tc);
+                return;
+            }
             // [gta-recomp] anisotropic filtering samples a mip chain: built here, on the GS stage, not on the main thread's
             // GPU queue (PS2X_HW_CPU_MIPS=0: a render-target texture and GenerateMips each, as before). A texture pack's
             // image always has one (it is minified)
@@ -5350,6 +5422,8 @@ namespace
                         tc.h = image->height;
                         tc.image = std::move(image);
                         tc.replaced = true;
+                        tc.packHandle = m_packPending[i].handle;
+                        tc.shared = m_earlyDevice.load(std::memory_order_acquire) ? packGpu(tc.packHandle) : nullptr;
                         g_packReplaced.fetch_add(1u, std::memory_order_relaxed);
                         // the game's own texture stays in use until the image's GPU texture is made on a helper thread:
                         // the swap's TexCreate then never waits on the main thread (pollPackMaking)
@@ -5357,7 +5431,7 @@ namespace
                             const char *e = std::getenv("PS2X_HW_CPU_MIPS");
                             return !(e && *e == '0');
                         }();
-                        if (cpuMips && tc.w <= 4096u && tc.h <= 4096u && makeTextureEarly(tc, true, true))
+                        if (!tc.shared && cpuMips && tc.w <= 4096u && tc.h <= 4096u && makeTextureEarly(tc, true, true))
                             m_packMaking.push_back(std::move(tc));
                         else
                             finishTexture(f, tc, ps2x::hostNow());

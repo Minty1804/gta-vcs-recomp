@@ -1241,6 +1241,7 @@ Python scripts still usable on their own. docs/LAUNCHER.md has the whole of it; 
 | `VCS_DRIVEBY_RATE=0\|1` | Enhancements > Combat > Drive-by fire rate for this run: 0 as on the PS2, 1 the gun's own rate (the menu shows it read-only) |
 | `VCS_DRIVEBY_HOOKS=0` | the NPC drive-by's fire rate left alone: a shot every frame, as the original game (the setting then does nothing; game/vcs_driveby.h) |
 | `VCS_PED_DISTANCE=100..200` | Enhancements > World > Pedestrian distance for this run (percent of the game's spawn / removal distances; game-internals.md 12d) |
+| `PS2X_HW_PACK_GPU_MB=<MB>` | GPU memory kept for texture pack images after the game's texture goes (1536; 0: every texture made again uploads its image again; PERFORMANCE.md 33) |
 | `VCS_TEXPACK_MAX=<px>` | Texture pack images larger than this many pixels a side are shrunk to their first mip level that fits (memory; no effect on hitches, PERFORMANCE.md 33) |
 | `VCS_CAR_DISTANCE=100..200` | Enhancements > World > Car distance for this run (percent of GenerationDistMultiplier while the car spawner and RemoveDistantCars run; game-internals.md 12d) |
 | `VCS_PED_SHADOWS=0\|1` | Enhancements > World > Character shadows for this run (0: no `shad_ped` shadow is stored; game-internals.md 12d) |

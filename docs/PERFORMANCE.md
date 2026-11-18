@@ -961,7 +961,8 @@ not there before" (their overlay: p99 48 ms, max 130 ms).
 | no pack (`VCS_TEXPACK=0`) | 25.0 | 59.4 | 6 / 1 / 0 | 5 | 62.5 ms |
 | pack, before | 44.4 | 102.9 | 23 / 7 / 1 | 23 | 319 ms |
 | pack, mips once + image shared | 44.8 | 112.3 | 14 / 6 / 1 | 14 | 223 ms |
-| pack, + swaps made before they go in, frame textures first (now) | 41.9 / 39.7 | 64.5 / 66.3 | 15 / 4 / 0, 14 / 3 / 0 | 15 / 14 | 194 / 172 ms |
+| pack, + swaps made before they go in, frame textures first | 41.9 / 39.7 | 64.5 / 66.3 | 15 / 4 / 0, 14 / 3 / 0 | 15 / 14 | 194 / 172 ms |
+| pack, + each image's GPU texture kept (now) | 26.7 | 56.3 | 7 / 1 / 0 | 7 | 81 ms |
 
 **What it was**: a pack image is up to 2048x2048 (16 MB RGBA, 21 MB with mips). On every texture made from it the GS
 stage copied it (`tc.pixels = image->pixels`), the helper thread built its mip chain again, and the swaps of images that
@@ -974,8 +975,16 @@ helpers serve the frame's textures first. The GS stage's decode time in a burst 
 first level that fits becomes the image) changed nothing in the hitches; swapping even already-loaded images in later
 (the game's texture first) doubled the textures made in a burst and was worse (max 123 ms).
 
-**What is left**: the bursts of 150-300 new textures still give one frame of 40-65 ms with the pack (the uploads of the
-images the frame needs at once); the level swap's ~40 ms frame is the game's (the same without the pack).
+**The GPU side** (`PS2X_HOST_SPIKES=30`): after those changes the main thread's long frames were all in `Present` (22-41
+ms), none without the pack. The CSV's `tex_kb` gave why: 10.4 GB uploaded in the 138 s drive (up to 106 MB in a frame)
+against 0.66 GB without the pack - the game makes the same textures again and again (its VRAM changes, the texture cache
+evicts), and every time the HD image went up again. Now each image's GPU texture is kept by its pack handle (LRU, 1.5 GB,
+`PS2X_HW_PACK_GPU_MB`; 0 = off) and a texture made again from the same image takes it: 1.16 GB uploaded (max 28 MB a
+frame), no host spike left. Only where textures are made on the helper threads (D3D11, Metal), where one texture is
+shared across threads.
+
+**What is left**: one or two frames of ~45-56 ms in a drive - the busiest texture bursts and the level swap's ~40 ms
+frame, which is the game's (the same without the pack).
 
 ## Next
 
