@@ -1803,8 +1803,9 @@ gone. Found with the free camera at (-705.85, -1318.16, 12.07), heading 293, FOV
 - **The user's texture pack** (PCSX2 format, 6,279 images) replaces this texture with a 128x128 one; its thinner wire
   makes it a little worse, but turning the pack off hardly changes the far fence (compared side by side, 2026-11-18):
   the sky comes from the draw order, not from the image.
-- Graphics > **See-through far fences** (`display.cutout_fix`, off by default, `PS2X_HW_CUTOUT_SPLIT=0|1`;
-  `gsHwSetCutOutSplit`): a draw of that state (GEQUAL / GREATER below 0x40, AFAIL KEEP, Z written, blended) with a
+- **See-through far fences** - always on since 2026-11-18, no setting (it was Graphics > See-through far fences,
+  `display.cutout_fix`, off by default; `PS2X_HW_CUTOUT_SPLIT=0` brings the original back for one run;
+  `gsHwSetCutOutSplit`, called by main.cpp at start): a draw of that state (GEQUAL / GREATER below 0x40, AFAIL KEEP, Z written, blended) with a
   texture that has holes (a twentieth of its texels under a tenth of its top alpha: `hasHoles`, worked out when the
   texture is made - a pack's image too, when it is swapped in; and its top alpha at least 0x70, so its solid texels
   pass pass 1) is drawn in two passes: alpha 0x60 and above with depth, the rest (the inverted test) blended without
@@ -3209,6 +3210,28 @@ hidden run (rig `peek` / `poke`, snapshots diffed).
       the wait, Faster as soon as the torso has turned (flag 1, or its yaw still for a frame; half the wait at the
       latest). Measured at 30 fps: Original +198 ms, Fast +132, Faster +99 (no turn) / +132 (a 70 deg turn); at 144
       fps +160 / +96 / +48-96. The pose checked in pictures for the pistol and the SPAS (`aimstate`'s `raise=` counts).
+  - **Aim after a jump or a sprint** (2026-11-18, the player: aiming and firing waited too long after a jump or a run).
+    The game's free-aim entry is `FUN_002394D8` (sets bit 51, places the dummy, SetLockOnTarget `FUN_0023AD28` - called
+    through the vtable at `0x490324`, found by a write watch on ped +0x820: pc `0x1FA404`), called at `0x236594` by
+    `FUN_00235D30` (the player's weapon control) when, on one frame: R1 held (`FUN_002864A8`, pad +0x96 / +0x92 /
+    +0xE), the selected slot (+0xCC8 low byte) is the weapon in hand (+0x789), not sprinting with a gun whose info +4
+    is set (move state +0x8D4 = 5 is the sprint), the camera allows it (`FUN_0037C568`), the weapon aims (info flag
+    0x40), bit 51 clear, the flags byte +0xCCC zero, L3 held (`FUN_00286E30`, pad +0x2E: held, not a new press), Vic
+    not busy (`FUN_001FA830`: states 0x2D / 0x2E / 0x30, or in the air), the camera mode not 15, +0xE8 bit 40 clear.
+    In a jump the ped state is **0x2B** from take-off to the end of the landing: ~15 frames in the air (+0x1C8 bit 0
+    clear; animations 140 / 137), then ~17 on the ground playing the landing, **animation 141 (0.57 s)**; the game
+    takes no aim until 0x2B ends (with the aim's animation 214 starting the frame after). Two delays were ours:
+    - vcs_aim.cpp sent L3 only on the first frame of each try (R1 for 20): a try started in the air lost its L3, and the
+      aim came only with the next try (8 frames let go, then again): **59 frames** from the button to the aim for a
+      button pressed in the air, ~1.1 s after landing. L3 is now held with R1 for the whole try (held: a new L3 press
+      is the game's own toggle elsewhere); and in a jump or a sprint the try does not time out (the game takes no aim
+      then anyway; a ped locked on still lets go). Button in the air: 33 frames (the jump's own length); held through
+      a sprint: the aim the first frame the sprint ends (the move state goes 5 -> 1 that frame).
+    - With **Aim speed** above Original the landing is cut short while the aim button is held: animation 141's time is
+      moved on (Fast to half, Faster to its end, `landAim`) once he stands, and the game ends 0x2B itself. Button in
+      the air on Faster: 18 frames (the air only); the landing goes straight into the aiming pose (pictures checked).
+      `aimstate`'s `land=` counts them. `VCS_AIM_LOG=1` prints per frame the entry's conditions (`[aim-log] entry`)
+      and the player's animations (`[aim-log] anims id:time/length`), and each free-aim entry's / lock-on's caller.
 
 ### 12d. Population: density, caps, spawn chance (2026-11-07, Enhancements > World)
 

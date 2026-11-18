@@ -61,7 +61,8 @@ game-internals.md 12c):
   it in 0.2 s, with every gun (the game blends 0.35-0.4 s, and cuts out of the aim with the guns that stand Vic still;
   its other camera changes keep their blends and cuts).
 - Sprinting the game doesn't aim: with the button held the mouse turns the camera as without it, and the aim starts
-  when Vic stops sprinting.
+  the frame Vic stops sprinting. In a jump it starts when he has landed; with Aim speed Fast or Faster (Enhancements >
+  Combat) the landing is cut short while the button is held.
 - When the gun runs dry while aiming the game puts the fists in Vic's hand: with the button still held nothing
   locks on until it is let go, and choosing another gun (the wheel) aims again at once.
 - Fists, melee weapons, thrown weapons and the scoped guns (sniper rifles, rocket launcher, camera, binoculars) keep

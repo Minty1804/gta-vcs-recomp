@@ -30,8 +30,9 @@ option or can be switched off, and everything else is the same as upstream.
 | **Pedestrian distance** | People appear 35-60 m away | Up to twice as far (option, 100% by default) |
 | **Car distance** | Traffic appears about 110 m ahead | Up to twice as far (option, 100% by default) |
 | **Cars' detail at a distance** | Cars drop to their low-detail model at 70 m and vanish at 100 m, whatever the draw distance | Those distances grow with the draw distance (140 m / 200 m at 200%) |
-| **Far fences** | A chain-link fence far away turns into a band of sky, hiding the buildings behind it | They show what is behind them (Graphics: **See-through far fences**, off by default) |
-| **Aim speed** | Vic raises his gun about 0.2 s after the aim button | Fast raises it in about two thirds of the time, Faster in about half; his arms and body turn faster too (Enhancements → Combat, Original by default) |
+| **Far fences** | A chain-link fence far away turns into a band of sky, hiding the buildings behind it | They show what is behind them (always on) |
+| **Aim speed** | Vic raises his gun about 0.2 s after the aim button, and after a jump the aim waits for the whole landing | Fast raises it in about two thirds of the time, Faster in about half; his arms and body turn faster too, and the landing after a jump is cut short when you aim (Enhancements → Combat, Original by default) |
+| **Aim after a jump or sprint** | The aim could come up to a second late after a jump, or after sprinting with the button held | It comes as soon as the game allows: the frame the sprint ends, as soon as he has landed |
 | **Free aim up close** | Firing at a man right next to you swung the gun instead of shooting; shotgun pellets left from the gun, not through the circle, and missed close targets | Every gun fires up close, and shotgun pellets spread around the circle |
 | **Aiming circle** | The game's large circle | Original, Small, or Spread: a small dot for guns (they hit its centre), the pellet spread for shotguns (Enhancements → Combat, Original by default) |
 | **Character shadows** | Always on under Vic and everyone on foot | Can be turned off (option, on by default) |

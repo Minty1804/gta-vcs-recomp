@@ -981,6 +981,9 @@ dropped on uploads (lazy render-target patching).
   icon and version information (issue 91: the launcher's icon - since 2026-11-11 its own, the same scene by day in lighter colours -, VERSION through a header only the resource file sees;
   checked: Explorer's details read 0.2.4, "GTA: Vice City Stories PC port").
 
+- **Far fences always on; aim after a jump / a sprint (2026-11-18)**: the far-fence split has no setting any more.
+  Free aim held through a sprint comes the frame the sprint ends; pressed in a jump, 59 frames -> 33 (Original) / 18
+  (Fast / Faster: the landing cut short) at 30 fps (game-internals.md 12c "Aim after a jump or a sprint").
 - **Fences 0x60, Aim speed (2026-11-18)**: the far-fence split at alpha 0x60 instead of 0x40 (the specks the player
   still saw). Enhancements > Combat > **Aim speed** (Original / Fast / Faster): the arm aims at +198 / +132 / +99-132
   ms after the button at 30 fps (game-internals.md 12c "Aim start").
@@ -1122,7 +1125,7 @@ Python scripts still usable on their own. docs/LAUNCHER.md has the whole of it; 
 |---|---|
 | `PS2X_GS=cpu\|hw\|gpu\|null` | GS renderer (vcs.exe: default hw, set by src/main.cpp; the runtime's own default cpu) |
 | `PS2X_HW_SCALE=n`, `PS2X_HW_DEBUG=1` | hardware renderer scale / stats |
-| `PS2X_HW_CUTOUT_SPLIT=0\|1`, `PS2X_HW_CUTOUT_LOG=1` | Graphics > See-through far fences for one run; count the split draws |
+| `PS2X_HW_CUTOUT_SPLIT=0\|1`, `PS2X_HW_CUTOUT_LOG=1` | the far-fence split (always on) off / on for one run; count the split draws |
 | `PS2X_HW_SKIP_KEYS=<hex>,...` | diagnostics: skip the draws of those texture keys (what is behind them) |
 | `VCS_AIM_CIRCLE=0\|1\|2` | Enhancements > Combat > Aiming circle (Original / Small / Spread) for one run |
 | `VCS_AIM_SPEED=1\|2\|3` | Enhancements > Combat > Aim speed (Original / Fast / Faster) for one run |

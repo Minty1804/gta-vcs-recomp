@@ -472,6 +472,23 @@ namespace vcs::aim
 
         // CAnimManager::BlendAnimation(a0 clump, a1 group, a2 animation, f12 blend delta): the player's, logged (VCS_AIM_LOG)
         PS2Runtime::RecompiledFunction g_origBlendAnim = nullptr;
+        // CPed::SetLockOnTarget-like (FUN_0023AD28, a0 ped, a1 target; through the vtable at 0x490324): its caller, logged
+        PS2Runtime::RecompiledFunction g_origLockOn = nullptr;
+        PS2_GUEST_CC void lockOnLog(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            if (GPR_U32(ctx, 4) == rd32(kPlayerPed))
+                std::fprintf(stderr, "[aim-log] lock-on t=%u ra=0x%x target=0x%x state=0x%x\n", rd32(0x004CD104u),
+                             GPR_U32(ctx, 31), GPR_U32(ctx, 5), rd32(GPR_U32(ctx, 4) + kPedState));
+            g_origLockOn(rdram, ctx, runtime);
+        }
+        // the game's free-aim entry (FUN_002394D8, a0 the player): its caller, logged
+        PS2Runtime::RecompiledFunction g_origFreeAimEnter = nullptr;
+        PS2_GUEST_CC void freeAimEnterLog(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            std::fprintf(stderr, "[aim-log] free-aim enter t=%u ra=0x%x state=0x%x\n", rd32(0x004CD104u), GPR_U32(ctx, 31),
+                         rd32(GPR_U32(ctx, 4) + kPedState));
+            g_origFreeAimEnter(rdram, ctx, runtime);
+        }
         PS2_GUEST_CC void blendAnim(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
             const uint32_t ped = rd32(kPlayerPed);
@@ -575,6 +592,32 @@ namespace vcs::aim
             SET_GPR_U64(ctx, 2, a);
             ctx->pc = GPR_U32(ctx, 31);
         }
+
+        // The landing after a jump (game-internals.md 12c "Aim after a jump"): the ped state stays 0x2B (the jump) through
+        // the landing animation (141, 0.57 s) once he stands (+0x1C8 bit 0), and the game takes no aim until it ends. With
+        // the aim button held and Aim speed above Original its time is moved on - Fast to half of it, Faster to its end -
+        // and the game ends the landing itself, as when the animation runs out.
+        constexpr uint32_t kPedStateJump = 0x2Bu;
+        constexpr uint32_t kPedMoveState = 0x8D4u, kMoveSprint = 5; // FUN_00235D30 checks it before the free-aim entry
+        constexpr uint16_t kAnimLand = 141;
+        std::atomic<uint32_t> g_landSkips{0};
+        void landAim(uint32_t ped)
+        {
+            const int k = g_aimSpeed.load(std::memory_order_relaxed);
+            if (k < 2 || !(rd32(ped + 0x1C8u) & 1u) || !rd32(ped + 0x50u))
+                return;
+            uint32_t a = rd32(rd32(rd32(ped + 0x50u) + 0x18u));
+            while (a && static_cast<uint16_t>(rd32(a + 0x30u)) != kAnimLand)
+                a = rd32(a);
+            const uint32_t hier = a ? rd32(a + 0x20u) : 0;
+            const float length = hier ? rdf(hier + 0x20u) : 0.0f, t = a ? rdf(a + 0x28u) : 0.0f;
+            const float to = k == 2 ? length * 0.5f : length - 0.001f;
+            if (length > 0.0f && length < 2.0f && t < to)
+            {
+                wrf(a + 0x28u, to);
+                g_landSkips.fetch_add(1, std::memory_order_relaxed);
+            }
+        }
     }
 
     bool logOn();
@@ -623,6 +666,10 @@ namespace vcs::aim
             runtime.replaceFunction(kSetFinishCallback, &finishCallback);
         if ((g_origGetAssoc = runtime.lookupFunction(kGetAssoc)))
             runtime.replaceFunction(kGetAssoc, &getAssoc);
+        if (logOn() && (g_origLockOn = runtime.lookupFunction(0x0023AD28u)))
+            runtime.replaceFunction(0x0023AD28u, &lockOnLog);
+        if (logOn() && (g_origFreeAimEnter = runtime.lookupFunction(0x002394D8u)))
+            runtime.replaceFunction(0x002394D8u, &freeAimEnterLog);
         if (logOn() && (g_origBlendAnim = runtime.lookupFunction(0x00215868u)))
             runtime.replaceFunction(0x00215868u, &blendAnim);
         {
@@ -666,11 +713,13 @@ namespace vcs::aim
         if ((g_origSprite = runtime.lookupFunction(kSprite)))
             runtime.replaceFunction(kSprite, &sprite);
         // aimstate -> ok active=<0|1> shots=<shots down the camera ray so far> pellets=<shotgun pellets, the same>
-        // melee=<melee checks answered "no one"> raise=<gun raises moved sooner by Aim speed> (tools/controls_check.py)
+        // melee=<melee checks answered "no one"> raise=<gun raises moved sooner by Aim speed> land=<landings
+        // ended sooner> (tools/controls_check.py)
         ps2control::addCommand("aimstate", [](const std::string &, ps2control::Reply reply) {
-            char text[128];
-            std::snprintf(text, sizeof(text), "ok active=%d shots=%u pellets=%u melee=%u raise=%u", g_active.load() ? 1 : 0,
-                          g_shots.load(), g_pellets.load(), g_meleeSkips.load(), g_raiseSkips.load());
+            char text[160];
+            std::snprintf(text, sizeof(text), "ok active=%d shots=%u pellets=%u melee=%u raise=%u land=%u",
+                          g_active.load() ? 1 : 0, g_shots.load(), g_pellets.load(), g_meleeSkips.load(), g_raiseSkips.load(),
+                          g_landSkips.load());
             reply(text);
         });
     }
@@ -820,6 +869,20 @@ namespace vcs::aim
                          ped ? rd32(ped + kPedState) : 0u, ped ? rd32(ped + 0x35Cu) & 0xFFu : 0u,
                          target ? (rd32(target + kEntityFlags) & 0xEu) : 0u, ped && freeAimBit(ped) ? 1 : 0, out.r1 ? 1 : 0,
                          out.l3 ? 1 : 0, out.own ? 1 : 0);
+            if (ped) // the free-aim entry's conditions (FUN_00235D30 before its FUN_002394D8 call, game-internals.md 12c)
+                std::fprintf(stderr, "[aim-log] entry cc8=%02x slot=%02x move=%u ccc=%02x 1c8=%08x 1d0=%08x e8=%08x\n",
+                             g_rdram[(ped + 0xCC8u) & kRamMask], g_rdram[(ped + kPedSlot) & kRamMask], rd32(ped + 0x8D4u),
+                             g_rdram[(ped + 0xCCCu) & kRamMask], rd32(ped + 0x1C8u), rd32(ped + 0x1D0u), rd32(ped + 0xECu));
+            if (ped && rd32(ped + 0x50u)) // his animations: id time / length (the hierarchy's +0x20) blend (+0x1C?) flags (+8)
+            {
+                char line[512];
+                int n = std::snprintf(line, sizeof(line), "[aim-log] anims");
+                for (uint32_t a = rd32(rd32(rd32(ped + 0x50u) + 0x18u)), i = 0; a && i < 12 && n < 440; a = rd32(a), ++i)
+                    n += std::snprintf(line + n, sizeof(line) - n, " %d:%.2f/%.2f b%.2f d%.2f f%x", static_cast<int16_t>(rd32(a + 0x30u)),
+                                       rdf(a + 0x28u), rd32(a + 0x20u) ? rdf(rd32(a + 0x20u) + 0x20u) : -1.0f, rdf(a + 0x1Cu),
+                                       rdf(a + 0x24u), rd32(a + 0x8u) & 0xFFFFu);
+                std::fprintf(stderr, "%s\n", line);
+            }
             if (ped) // the camera (TheCamera's matrix: +0x10 forward, +0x30 position) from Vic, his heading (+0x10)
             {
                 const float dx = rdf(kTheCamera + 0x30) - rdf(ped + kPedPos), dy = rdf(kTheCamera + 0x34) - rdf(ped + kPedPos + 4);
@@ -905,7 +968,19 @@ namespace vcs::aim
                 // The game took R1 without L3 and locked on to a ped, or ~20 frames went by: let go a few frames, then
                 // try again. The camera turns as without the button meanwhile; the aim starts where it then looks.
                 aimAlongCamera(cam);
-                out.r1 = !target && ++g_wait < 20;
+                // In a jump (ped state 0x2B) or a sprint (move state +0x8D4 = 5) the game takes no aim, R1 or not: the
+                // try waits for its end instead of letting go for 8 frames and missing it (the aim then came up to 0.3 s
+                // late). Landed, Aim speed above Original ends the landing sooner (landAim).
+                const bool jumping = rd32(ped + kPedState) == kPedStateJump;
+                const bool busy = jumping || rd32(ped + kPedMoveState) == kMoveSprint;
+                if (jumping)
+                    landAim(ped);
+                out.r1 = !target && (busy || ++g_wait < 20);
+                // L3 held with R1 for the whole try, not only its first frame: the game enters free aim on a frame both
+                // are held (FUN_00235D30), and refuses while Vic is in the air or landing - a jump took the try's one L3
+                // frame, and the aim only came with the next try, ~1 s after landing (the player's report, 2026-11-18).
+                // Held, not pulsed: a new L3 press is the game's own toggle elsewhere.
+                out.l3 = out.r1;
                 if (!out.r1)
                 {
                     g_state = State::Released;
