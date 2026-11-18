@@ -16,6 +16,8 @@
 
 namespace vcs::aim
 {
+    bool logOn(); // VCS_AIM_LOG=1
+
     namespace
     {
         constexpr uint32_t kRamMask = 0x01FFFFFFu;
@@ -411,6 +413,75 @@ namespace vcs::aim
             g_origSprite(rdram, ctx, runtime);
         }
 
+        // Aim speed (Enhancements > Combat): CPedIK's limb tables (VC's, game-internals.md 12c "Raising the gun") -
+        // per limb max / min yaw, the yaw step, max / min pitch, the pitch step, radians; the steps are taken once a frame
+        // toward the target. Head 0x4881A8, head restore 0x4881C0, torso 0x4881D8, upper arm 0x4881F0, lower arm 0x488208.
+        // The functions that read them (all with a0 the CPedIK, whose +0 is its ped) get the steps scaled for the player:
+        // twice as fast per second as at 30 fps (x 2 x the time step / 1.667), never slower than the original at the frame
+        // rate played (its steps are per frame: a higher frame rate already turns the limbs faster).
+        constexpr uint32_t kLimbTables = 0x004881A8u;
+        constexpr int kLimbCount = 5;
+        constexpr uint32_t kIkReaders[] = {0x002EE188u, 0x002EE4C0u, 0x002EE6F0u, 0x002EEA28u, 0x002EEED0u};
+        PS2Runtime::RecompiledFunction g_origIk[std::size(kIkReaders)] = {};
+        std::atomic<int> g_aimSpeed{1}; // x1 (Original), 2, 3
+        float g_limbSteps[kLimbCount][2] = {}; // the executable's steps, read at the first call
+        int g_limbRead = 0;                   // 0 not yet, 1 read, -1 not the tables expected (left alone)
+        bool g_limbScaled = false;
+        void limbSteps(bool player)
+        {
+            if (g_limbRead == 0)
+            {
+                // VC's tables: steps of 15 / 8, 10 / 5, 8 / 5, 20 / 20, 15 / 10 degrees
+                const bool tables = std::fabs(rdf(kLimbTables + 8) - 0.2617994f) < 1e-4f &&
+                                    std::fabs(rdf(kLimbTables + 3 * 24 + 8) - 0.3490659f) < 1e-4f &&
+                                    std::fabs(rdf(kLimbTables + 4 * 24 + 8) - 0.2617994f) < 1e-4f;
+                g_limbRead = tables ? 1 : -1;
+                if (!tables)
+                    std::fprintf(stderr, "[aim] the limb tables not found: Aim speed left alone\n");
+                for (int i = 0; tables && i < kLimbCount; ++i)
+                {
+                    g_limbSteps[i][0] = rdf(kLimbTables + i * 24u + 8u);
+                    g_limbSteps[i][1] = rdf(kLimbTables + i * 24u + 20u);
+                }
+            }
+            if (g_limbRead < 0)
+                return;
+            const int k = g_aimSpeed.load(std::memory_order_relaxed);
+            const bool scale = player && k > 1;
+            if (!scale && !g_limbScaled)
+                return;
+            // x2 for both: x3 with Faster's immediate raise left the arm pointing aside, not at the circle (2026-11-18)
+            const float f = scale ? std::max(1.0f, 2.0f * std::clamp(rdf(kTimeStep), 0.05f, 3.4f) / (50.0f / 30.0f)) : 1.0f;
+            for (int i = 0; i < kLimbCount; ++i)
+            {
+                wrf(kLimbTables + i * 24u + 8u, g_limbSteps[i][0] * f);
+                wrf(kLimbTables + i * 24u + 20u, g_limbSteps[i][1] * f);
+            }
+            g_limbScaled = scale;
+        }
+        template <int I> PS2_GUEST_CC void ikReader(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            const uint32_t ik = GPR_U32(ctx, 4);
+            const bool player = rd32(ik) == rd32(kPlayerPed);
+            limbSteps(player);
+            if (player && logOn()) // CPedIK: +0xC / +0x10 the torso's yaw / pitch, +0x2C its flags (1 torso done, 4 aims with the arm)
+                std::fprintf(stderr, "[aim-log] ik%d t=%u flags=%x torso=%.2f,%.2f\n", I, rd32(0x004CD104u), rd32(ik + 0x2C),
+                             rdf(ik + 0xC), rdf(ik + 0x10));
+            g_origIk[I](rdram, ctx, runtime);
+        }
+
+        // CAnimManager::BlendAnimation(a0 clump, a1 group, a2 animation, f12 blend delta): the player's, logged (VCS_AIM_LOG)
+        PS2Runtime::RecompiledFunction g_origBlendAnim = nullptr;
+        PS2_GUEST_CC void blendAnim(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            const uint32_t ped = rd32(kPlayerPed);
+            if (ped && GPR_U32(ctx, 4) == rd32(ped + 0x50u))
+                std::fprintf(stderr, "[aim-log] blend t=%u ra=0x%x group=%d anim=%d delta=%.2f state=0x%x\n", rd32(0x004CD104u),
+                             GPR_U32(ctx, 31), static_cast<int>(GPR_U32(ctx, 5)), static_cast<int>(GPR_U32(ctx, 6)), ctx->f[12],
+                             rd32(ped + kPedState));
+            g_origBlendAnim(rdram, ctx, runtime);
+        }
+
         // CAnimBlendAssociation::SetFinishCallback(a0 assoc, a1 callback, a2 data): see kSetFinishCallback.
         PS2_GUEST_CC void finishCallback(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
@@ -444,7 +515,69 @@ namespace vcs::aim
             }
             g_origFinishCallback(rdram, ctx, runtime);
         }
+
+        // The gun's raise when aiming starts (game-internals.md 12c "Aim start"): FUN_001D06A0, every frame while he aims,
+        // looks up the weapon's aim animation (FUN_002159A8 -> RpAnimBlendClumpGetAssociation, FUN_001787E8) and, once
+        // its time passes 0.4 x the weapon's loop start (info +0x44; +0x50 for the crouched one), jumps it to the loop
+        // start and sets the IK's "aims with the arm" flag (CPedIK +0x2C bit 2): the arm swings up to the target only
+        // then (~200 ms after the button at 30 fps). The lookup is done here, on the host (the same list walk), and for
+        // the player with Aim speed above Original the animation's time is moved to that point sooner: Fast at half of
+        // it, Faster as soon as the torso has turned - the game's own jump does the rest.
+        constexpr uint32_t kGetAssoc = 0x001787E8u;
+        constexpr uint32_t kRaiseLookupReturns[2] = {0x001D06F4u, 0x001D074Cu}; // FUN_002159A8's calls in FUN_001D06A0
+        constexpr uint32_t kRaiseLoopStart[2] = {0x44u, 0x50u};
+        constexpr float kRaiseJoin = 0.4f; // FUN_001D06A0's 0x3ECCCCCD
+        std::atomic<uint32_t> g_raiseSkips{0};
+        PS2Runtime::RecompiledFunction g_origGetAssoc = nullptr;
+        PS2_GUEST_CC void getAssoc(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            (void)rdram;
+            (void)runtime;
+            const uint32_t clump = GPR_U32(ctx, 4);
+            const uint16_t id = static_cast<uint16_t>(GPR_U32(ctx, 5));
+            uint32_t a = rd32(rd32(clump + 0x18u));
+            while (a && static_cast<uint16_t>(rd32(a + 0x30u)) != id)
+                a = rd32(a);
+            const int k = g_aimSpeed.load(std::memory_order_relaxed);
+            if (a && (k > 1 || logOn()))
+            {
+                const uint32_t ped = rd32(kPlayerPed), ret = rd32(GPR_U32(ctx, 29) + 0x18u); // FUN_002159A8's saved $ra
+                const int which = ret == kRaiseLookupReturns[0] ? 0 : ret == kRaiseLookupReturns[1] ? 1 : -1;
+                if (which >= 0 && ped && clump == rd32(ped + 0x50u))
+                {
+                    const int8_t slot = static_cast<int8_t>(g_rdram[(ped + kPedSlot) & kRamMask]);
+                    const uint32_t type = slot >= 0 && slot < 10 ? rd32(ped + kPedWeapons + slot * 0x1Cu) : 0;
+                    const uint32_t table = rd32(rd32(kWeaponInfo) + 4);
+                    const uint32_t info = isGun(type) && table ? table + type * 0x70u : 0;
+                    const float join = info ? kRaiseJoin * rdf(info + kRaiseLoopStart[which]) : 0.0f, t = rdf(a + 0x28u);
+                    if (logOn())
+                        std::fprintf(stderr, "[aim-log] raise t=%u anim=%d time=%.3f join=%.3f\n", rd32(0x004CD104u), id, t,
+                                     join);
+                    // Faster: as soon as the torso has turned (its "done" flag, or its yaw still since the last frame). The
+                    // arm takes over from the torso when it starts, and the torso stops where it is: started before it had
+                    // turned, the arm (its yaw only 5 / -120 deg) pointed aside of the circle (seen at 144 fps).
+                    const uint32_t ik = ped + 0x330u;
+                    const float yaw = rdf(ik + 0xCu);
+                    static float s_yaw = 0.0f;
+                    static uint32_t s_when = 0;
+                    const uint32_t now = rd32(0x004CD104u); // CTimer::m_snTimeInMilliseconds
+                    const bool turned = (rd32(ik + 0x2Cu) & 1u) ||
+                                        (now - s_when < 200u && now != s_when && yaw != 0.0f && std::fabs(yaw - s_yaw) < 1e-4f);
+                    if (now != s_when)
+                        s_yaw = yaw, s_when = now;
+                    if (k > 1 && join > 0.0f && t <= join && (t >= join * 0.5f || (k == 3 && turned)))
+                    {
+                        wrf(a + 0x28u, join + 1e-4f);
+                        g_raiseSkips.fetch_add(1, std::memory_order_relaxed);
+                    }
+                }
+            }
+            SET_GPR_U64(ctx, 2, a);
+            ctx->pc = GPR_U32(ctx, 31);
+        }
     }
+
+    bool logOn();
 
     void registerSettings()
     {
@@ -467,6 +600,20 @@ namespace vcs::aim
         s.env = "VCS_AIM_CIRCLE";
         s.onChange = [](int v) { g_circle.store(v, std::memory_order_relaxed); };
         settings::add(s);
+
+        s = {};
+        s.key = "enhance.aim_speed";
+        s.page = "Enhancements";
+        s.section = "Combat";
+        s.label = "Aim speed";
+        s.help = "How fast Vic raises his gun when he starts aiming, and turns his arms and body with the aim (other people "
+                 "as in the game). Original: the game's. Fast: the gun up in about two thirds of the time. Faster: at once.";
+        s.type = settings::Type::Choice;
+        s.choices = {{"Original", 1}, {"Fast", 2}, {"Faster", 3}};
+        s.defaultValue = 1;
+        s.env = "VCS_AIM_SPEED";
+        s.onChange = [](int v) { g_aimSpeed.store(std::clamp(v, 1, 3), std::memory_order_relaxed); };
+        settings::add(s);
     }
 
     void install(PS2Runtime &runtime)
@@ -474,6 +621,25 @@ namespace vcs::aim
         g_rdram = runtime.memory().getRDRAM();
         if ((g_origFinishCallback = runtime.lookupFunction(kSetFinishCallback)))
             runtime.replaceFunction(kSetFinishCallback, &finishCallback);
+        if ((g_origGetAssoc = runtime.lookupFunction(kGetAssoc)))
+            runtime.replaceFunction(kGetAssoc, &getAssoc);
+        if (logOn() && (g_origBlendAnim = runtime.lookupFunction(0x00215868u)))
+            runtime.replaceFunction(0x00215868u, &blendAnim);
+        {
+            bool all = true;
+            for (size_t i = 0; i < std::size(kIkReaders); ++i)
+                all = all && (g_origIk[i] = runtime.lookupFunction(kIkReaders[i]));
+            if (all)
+            {
+                runtime.replaceFunction(kIkReaders[0], &ikReader<0>);
+                runtime.replaceFunction(kIkReaders[1], &ikReader<1>);
+                runtime.replaceFunction(kIkReaders[2], &ikReader<2>);
+                runtime.replaceFunction(kIkReaders[3], &ikReader<3>);
+                runtime.replaceFunction(kIkReaders[4], &ikReader<4>);
+            }
+            else
+                std::fprintf(stderr, "[aim] the IK functions not found: Aim speed left alone\n");
+        }
         // quickshot -> ok on=<0|1> shots=<attacks started at the loop start so far>
         ps2control::addCommand("quickshot", [](const std::string &, ps2control::Reply reply) {
             char text[64];
@@ -500,11 +666,11 @@ namespace vcs::aim
         if ((g_origSprite = runtime.lookupFunction(kSprite)))
             runtime.replaceFunction(kSprite, &sprite);
         // aimstate -> ok active=<0|1> shots=<shots down the camera ray so far> pellets=<shotgun pellets, the same>
-        // melee=<melee checks answered "no one"> (tools/controls_check.py)
+        // melee=<melee checks answered "no one"> raise=<gun raises moved sooner by Aim speed> (tools/controls_check.py)
         ps2control::addCommand("aimstate", [](const std::string &, ps2control::Reply reply) {
             char text[128];
-            std::snprintf(text, sizeof(text), "ok active=%d shots=%u pellets=%u melee=%u", g_active.load() ? 1 : 0,
-                          g_shots.load(), g_pellets.load(), g_meleeSkips.load());
+            std::snprintf(text, sizeof(text), "ok active=%d shots=%u pellets=%u melee=%u raise=%u", g_active.load() ? 1 : 0,
+                          g_shots.load(), g_pellets.load(), g_meleeSkips.load(), g_raiseSkips.load());
             reply(text);
         });
     }
@@ -654,6 +820,16 @@ namespace vcs::aim
                          ped ? rd32(ped + kPedState) : 0u, ped ? rd32(ped + 0x35Cu) & 0xFFu : 0u,
                          target ? (rd32(target + kEntityFlags) & 0xEu) : 0u, ped && freeAimBit(ped) ? 1 : 0, out.r1 ? 1 : 0,
                          out.l3 ? 1 : 0, out.own ? 1 : 0);
+            if (ped) // the camera (TheCamera's matrix: +0x10 forward, +0x30 position) from Vic, his heading (+0x10)
+            {
+                const float dx = rdf(kTheCamera + 0x30) - rdf(ped + kPedPos), dy = rdf(kTheCamera + 0x34) - rdf(ped + kPedPos + 4);
+                std::fprintf(stderr, "[aim-log] cam mode=%u blend=%u dist=%.2f h=%.2f look=%.1f,%.1f vic=%.1f aim=%.1f\n",
+                             rd32(activeCam()) & 0xFFFFu, g_rdram[kTransition], std::hypot(dx, dy),
+                             rdf(kTheCamera + 0x38) - rdf(ped + kPedPos + 8),
+                             std::atan2(rdf(kTheCamera + 0x14), rdf(kTheCamera + 0x10)) * 57.29578f,
+                             std::asin(std::clamp(rdf(kTheCamera + 0x18), -1.0f, 1.0f)) * 57.29578f,
+                             std::atan2(rdf(ped + 0x14), rdf(ped + 0x10)) * 57.29578f, g_yaw * 57.29578f);
+            }
         }
     }
 

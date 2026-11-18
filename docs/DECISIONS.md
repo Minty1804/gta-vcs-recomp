@@ -1640,3 +1640,13 @@ choices:
   top of Draw distance 300 %) changed nothing at the airport: what is drawn there is limited by the world's streamed
   cells, not by LOD distances (game-internals.md 6b). Drawing more of them means streaming more cells - a larger
   change, left for later.
+
+## 2026-11-18 - Fences: split at 0x60; Aim speed
+
+- The far-fence split's threshold went from 0x40 to 0x60 after the player still saw the fence's sky specks: the
+  filtered wire's edges between 0x40 and 0x60 wrote depth. 0x78 thins the fence; 0x60 is the middle. The texture pack
+  is not the cause (turned off, the far fence looks the same), so it is left on.
+- **Aim speed** is an option (Original / Fast / Faster), Original by default. It moves the game's own jump of the raise
+  animation sooner and doubles the limb steps, rather than skipping the raise: the arm's IK and the animation stay the
+  game's. Faster waits for the torso to turn: jumping at once with fast steps left the arm pointing aside (the arm
+  stops the torso when it takes over). The steps are x2, not x3: x3 with the early jump showed the same fault.

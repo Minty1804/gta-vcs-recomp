@@ -1801,13 +1801,17 @@ gone. Found with the free camera at (-705.85, -1318.16, 12.07), heading 293, FOV
   through a faint fence. The emulated path (`PS2X_HLE=0`) is the same picture: it is the game's own draw order and
   state, not the native renderer.
 - **The user's texture pack** (PCSX2 format, 6,279 images) replaces this texture with a 128x128 one; its thinner wire
-  makes it worse.
+  makes it a little worse, but turning the pack off hardly changes the far fence (compared side by side, 2026-11-18):
+  the sky comes from the draw order, not from the image.
 - Graphics > **See-through far fences** (`display.cutout_fix`, off by default, `PS2X_HW_CUTOUT_SPLIT=0|1`;
   `gsHwSetCutOutSplit`): a draw of that state (GEQUAL / GREATER below 0x40, AFAIL KEEP, Z written, blended) with a
   texture that has holes (a twentieth of its texels under a tenth of its top alpha: `hasHoles`, worked out when the
-  texture is made - a pack's image too, when it is swapped in) is drawn in two passes: alpha 0x40 and above with
-  depth, the rest (the inverted test) blended without depth. Fences and leaves keep their look up close (their solid
-  texels are far above 0x40) and stop hiding what is behind them far away. Checked at that view: the hangar shows
+  texture is made - a pack's image too, when it is swapped in; and its top alpha at least 0x70, so its solid texels
+  pass pass 1) is drawn in two passes: alpha 0x60 and above with depth, the rest (the inverted test) blended without
+  depth. Fences and leaves keep their look up close (their solid texels are far above 0x60) and stop hiding what is
+  behind them far away. The first version split at 0x40: the filtered wire's edges just above it still wrote depth and
+  left sky-coloured specks along the fence (the player: "still a little noticeable"); 0x60 removes most of them, 0x78
+  thins the fence itself (`PS2X_HW_CUTOUT_REF=<n>` tries others for one run). Checked at that view: the hangar shows
   through the fence; nothing else in the picture changes. Costs one more draw call per such draw.
 
 ## 7. Textures: `.XTX`
@@ -3181,6 +3185,30 @@ hidden run (rig `peek` / `poke`, snapshots diffed).
     w / h - the sprite scale at that depth. Enhancements > Combat > **Aiming circle** (`enhance.aim_circle`,
     `VCS_AIM_CIRCLE`; Original by default): Small = half size; Spread = a 7-pixel dot for guns, a shotgun's circle as
     wide as its fan at the aim's distance (tan(half angle) x depth x w, 7-64 pixels).
+  - **Aim start: raising the gun** (2026-11-18, the player: aiming should start faster). Timed with `VCS_AIM_LOG=1`
+    at 30 fps, the pistol, R1 at 0: free aim locks at frame 1, the camera blends frames 2-5 (`kBlendInMs`, 100 ms),
+    the arm aims at **+198 ms**. What decides it is not the IK's speed (steps x3 left it at +198) but
+    `FUN_001D06A0`, run every frame while he aims: it gets the weapon's aim animation (`FUN_002159A8` -> id remap
+    `FUN_002156C0` -> RpAnimBlendClumpGetAssociation `FUN_001787E8`: the list at `*(clump + 0x18)`, next at +0, the id
+    an int16 at +0x30; the pistol's is 214), and once its time (+0x28) passes **0.4 x the weapon's loop start**
+    (info +0x44; the crouched animation's +0x50, chosen when +0x24 is negative) it jumps it to the loop start
+    (SetCurrentTime `FUN_0018EB70`) and sets CPedIK (ped +0x330) flag 4 at `0x1D07FC`, "aims with the arm". The
+    pistol's loop start is 0.367 s, so the arm waits for 0.147 s of the raise animation.
+    - **CPedIK** in VCS: +0xC / +0x10 the torso's yaw / pitch, +0x2C the flags (1 the torso turned, 2, 4 aims with
+      the arm). The limb tables are VC's (radians: max yaw, min yaw, yaw step, max pitch, min pitch, pitch step): head
+      `0x4881A8` (90 / -90 / 15, 45 / -45 / 8 deg), head restore `0x4881C0`, torso `0x4881D8` (50 / -50 / 8,
+      45 / -45 / 5), upper arm `0x4881F0` (5 / -120 / 20, 70 / -70 / 20), lower arm `0x488208`; read by
+      `FUN_002EE188`, `002EE4C0`, `002EE6F0` (torso / point the gun), `002EEA28` (arm), `002EEED0` (a0 the CPedIK, its
+      +0 the ped). The steps are per frame: a higher frame rate already turns the limbs faster (+160 ms at 144 fps).
+    - **The arm takes over from the torso**: once flag 4 is set the torso stops where it is. Set before the torso
+      has turned (a jump at once with fast steps), the arm - its yaw only 5 / -120 deg - cannot reach and points aside
+      of the circle for as long as he aims.
+    - Enhancements > Combat > **Aim speed** (`enhance.aim_speed`, `VCS_AIM_SPEED`; Original by default): the player's
+      limb steps twice as fast per second as at 30 fps (never slower than the original at the frame rate played), and
+      the animation's time moved to the jump sooner (vcs_aim.cpp `getAssoc`, the lookup done on the host): Fast at half
+      the wait, Faster as soon as the torso has turned (flag 1, or its yaw still for a frame; half the wait at the
+      latest). Measured at 30 fps: Original +198 ms, Fast +132, Faster +99 (no turn) / +132 (a 70 deg turn); at 144
+      fps +160 / +96 / +48-96. The pose checked in pictures for the pistol and the SPAS (`aimstate`'s `raise=` counts).
 
 ### 12d. Population: density, caps, spawn chance (2026-11-07, Enhancements > World)
 

@@ -518,7 +518,7 @@ namespace
     }
 
     // [gta-recomp] A texture with holes - a twentieth of its texels or more clear (under a tenth of its top alpha), the
-    // top at least a quarter of opaque: gsHwSetCutOutSplit's draws (thin fence wire has few solid texels, so isCutOut
+    // top nearly opaque (0x70): gsHwSetCutOutSplit's draws (thin fence wire has few solid texels, so isCutOut
     // passes it by). Large images by every step-th texel.
     bool hasHoles(const std::vector<uint32_t> &base, uint32_t w, uint32_t h)
     {
@@ -529,7 +529,7 @@ namespace
         uint32_t top = 0;
         for (size_t i = 0; i < all; i += step)
             top = std::max(top, base[i] >> 24);
-        if (top < 0x20u)
+        if (top < 0x70u) // its solid texels must pass pass 1's 0x60, or nothing of it would write depth
             return false;
         size_t clear = 0, n = 0;
         for (size_t i = 0; i < all; i += step, ++n)
@@ -2934,12 +2934,14 @@ namespace
             // depth for its half-covered pixels too - at a distance, where a fence's wires blur into its gaps, nearly all of
             // them - and what stands behind it, drawn later, is hidden there: the sky drawn before showed through Fort
             // Baxter's fence instead of the hangar (the user's report, 2026-11-18). Pass 1 writes depth where the alpha is at
-            // least half; pass 2 (the inverted test) blends the rest without depth.
+            // least 0x60 (3/4: 0x40 left sky-coloured specks; PS2X_HW_CUTOUT_REF tries others); pass 2 (the inverted test) blends
+            // the rest without depth.
             if (s.tme && s.ate && (s.atst == 5u || s.atst == 6u) && s.afail == 0u && zwrite && b.enable && s.aref < 0x40u &&
                 cutOutSplit() && m_cutOutTextures.count(s.texKey))
             {
                 c.atstArefAfailRt[0] = 5;
-                c.atstArefAfailRt[1] = 0x40;
+                static const int splitRef = std::getenv("PS2X_HW_CUTOUT_REF") ? std::atoi(std::getenv("PS2X_HW_CUTOUT_REF")) : 0x60;
+                c.atstArefAfailRt[1] = splitRef;
                 submit(drawPipeline(b, mask, depthOn, s.ztst, zwrite, s.mode, drawSampleMode(c)));
                 c.atstArefAfailRt[2] = 1;
                 submit(drawPipeline(b, mask, depthOn, s.ztst, false, s.mode, drawSampleMode(c)));
