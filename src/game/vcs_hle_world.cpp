@@ -2855,9 +2855,9 @@ namespace
     }
 
     // "Solid far palms" (vcs::hleworld::setSolidFarFoliage): the palm LODs and other far vegetation fade out with
-    // distance through their prelit colour scale's alpha (qword 0x9c .w, which the EE sets per instance: 0.502 = 128/255
-    // opaque, down to 0 at the end of the fade; grey .xyz where buildings carry the day's tint) - game-internals.md 7b.
-    // On, the alpha scale is raised back to the grey colour scale before the packet is drawn, natively or on the VU1.
+    // distance through their prelit colour scale's alpha (qword 0x9c .w, which the EE sets per instance: 1.0 solid, 0.502
+    // for the nearest palms - half transparent - down to 0 at the end of the fade; grey .xyz where buildings carry the
+    // day's tint) - game-internals.md 7b. On, a grey scale's alpha is raised to 1.0 before the packet is drawn.
     std::atomic<bool> g_solidFoliage{false};
     std::atomic<uint64_t> g_solidFoliageRaised{0};
 
@@ -2869,7 +2869,9 @@ namespace
             return;
         float cs[4];
         std::memcpy(cs, c.vuData + 0x9Cu * 16u, 16);
-        const float opaque = bitsToFloat(0x3F008081u); // 128 / 255: vertex alpha 255 -> 0x80
+        // 1.0: what solid world models carry (the meshes' vertex alpha is 0x80; 0.502 is half transparent, the value the
+        // nearest fading palms reach - logged at the airport, 2026-11-18)
+        const float opaque = 1.0f;
         if (cs[0] == cs[1] && cs[1] == cs[2] && cs[3] < opaque)
         {
             std::memcpy(c.vuData + 0x9Cu * 16u + 12u, &opaque, 4);

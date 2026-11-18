@@ -1563,7 +1563,8 @@ choices:
 - **Far palms: an option, off by default** (Enhancements > World > Solid far palms; game-internals.md 7b): the
   palms that still looked like ghosts at 200 % draw distance are the game's own distance fade (the PS2 draws them the
   same way), so authentic stays the default and the player's vcs.ini has it on. It works on the VU1 constants the EE
-  wrote for the packet (the grey colour scale's alpha), before the packet is drawn: no guest code changed, and the same
+  wrote for the packet (the grey colour scale's alpha, raised to 1.0 - the solid models' value; 0.502, the first
+  version's target, is half transparent), before the packet is drawn: no guest code changed, and the same
   values reach the native draw and the VU1. The test is the grey .xyz the palms carry - buildings' tinted scales and
   their alpha of 1 never match. Not under PS2X_HLE=0 (the hook is the native draw's).
 - **Character shadows: an option, on by default** (game-internals.md 12d): the three shadow stores return early for

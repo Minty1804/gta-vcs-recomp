@@ -28,4 +28,8 @@ namespace vcs::freecam
         float fov = 70;           // degrees
     };
     Pose pose(); // any thread: as of the last camera update
+
+    // Any thread: put the free camera at a pose from its next update on (tests: `trainer freecam x y z yaw pitch [fov]`,
+    // the same spot and view every run; yaw / pitch in radians as Pose has them).
+    void place(float x, float y, float z, float yaw, float pitch, float fov);
 }

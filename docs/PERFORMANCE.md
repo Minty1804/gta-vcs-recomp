@@ -986,6 +986,11 @@ shared across threads.
 **What is left**: one or two frames of ~45-56 ms in a drive - the busiest texture bursts and the level swap's ~40 ms
 frame, which is the game's (the same without the pack).
 
+**At 30 fps locked** (the player's setting, 2026-11-18; their vcs.ini: pack, MSAA 2x, aniso 16x, draw distance 200 %,
+peds 124 %, car distance 150 %; `cruise.py run --fps 30`): 4,161 frames over 138.7 s, p50 33.3, p95 33.4, p99 33.7,
+p99.9 40.8, max 50.6 ms; one frame over 50 ms, no hitch (0 ms lost a minute). The player's own log of that session had
+no watchdog or VU fallback line.
+
 ## Next
 
 - **The heavy views (~120 fps)**: the game thread's chain submission there (1.4-1.6 ms: the VIF1 chain copy, the walker

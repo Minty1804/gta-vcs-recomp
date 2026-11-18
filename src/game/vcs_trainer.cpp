@@ -877,8 +877,12 @@ namespace vcs::trainer
                     return reply(listReply(missions(false)));
                 return reply("error usage: trainer list vehicles|weapons|loadouts|landmarks|weathers|story|jobs");
             }
-            if (verb == "freecam") // the free camera as of its last update
+            if (verb == "freecam") // the free camera as of its last update; with x y z yaw pitch [fov]: placed there
             {
+                if (w.size() >= 6)
+                    freecam::place(std::strtof(w[1].c_str(), nullptr), std::strtof(w[2].c_str(), nullptr),
+                                   std::strtof(w[3].c_str(), nullptr), std::strtof(w[4].c_str(), nullptr),
+                                   std::strtof(w[5].c_str(), nullptr), w.size() >= 7 ? std::strtof(w[6].c_str(), nullptr) : 70.0f);
                 const freecam::Pose p = freecam::pose();
                 return reply(fmt("ok active=%d x=%.2f y=%.2f z=%.2f yaw=%.4f pitch=%.4f fov=%.1f speed=%d hud=%u",
                                  p.active ? 1 : 0, p.x, p.y, p.z, p.yaw, p.pitch, p.fov, freeCameraSpeed(),

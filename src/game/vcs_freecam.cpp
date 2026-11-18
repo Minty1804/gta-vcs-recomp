@@ -44,6 +44,8 @@ namespace vcs::freecam
 
         std::mutex g_poseMutex;
         Pose g_pose;
+        bool g_placePending = false; // under g_poseMutex: place() asked for g_place
+        Pose g_place;
 
         float rdf(const uint8_t *ram, uint32_t a)
         {
@@ -95,6 +97,16 @@ namespace vcs::freecam
             const float dt = std::clamp(std::chrono::duration<float>(now - g_last).count(), 0.0f, 0.1f);
             g_last = now;
             const input::FreeCamInput in = input::takeFreeCameraInput();
+            {
+                std::lock_guard<std::mutex> lock(g_poseMutex);
+                if (g_placePending) // place(): a test's pose
+                {
+                    g_placePending = false;
+                    g_x = g_place.x, g_y = g_place.y, g_z = g_place.z, g_yaw = g_place.yaw;
+                    g_pitch = std::clamp(g_place.pitch, -kPitchLimit, kPitchLimit);
+                    g_fov = std::clamp(g_place.fov, 20.0f, 110.0f);
+                }
+            }
 
             g_yaw = std::remainder(g_yaw + in.turn + in.turnRate * kTurnRate * dt, 6.2831855f);
             g_pitch = std::clamp(g_pitch + in.tilt + in.tiltRate * kTurnRate * dt, -kPitchLimit, kPitchLimit);
@@ -159,5 +171,12 @@ namespace vcs::freecam
     {
         std::lock_guard<std::mutex> lock(g_poseMutex);
         return g_pose;
+    }
+
+    void place(float x, float y, float z, float yaw, float pitch, float fov)
+    {
+        std::lock_guard<std::mutex> lock(g_poseMutex);
+        g_place = {true, x, y, z, yaw, pitch, fov};
+        g_placePending = true;
     }
 }

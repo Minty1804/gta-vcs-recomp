@@ -1807,13 +1807,19 @@ PaletteKeyHash, TextureName) and another VCS port that loads PCSX2 packs (its gs
   the nearest, in step with the fog value - so far instances are invisible and the band before them half clear). The
   alpha comes from the prelit world table's colour scale, **qword 0x9c .w** of VU1 memory (colour = 0x9d + 0x9c x
   vertex colour, stage 0x2700), which the EE sets per instance: the palms (and other far vegetation) carry a grey
-  scale .xyz = 0.502 (128 / 255) and .w = 0.502 x fade, 0 .. 0.48 in a city frame (logged at each MSCAL); buildings
-  carry a tinted .xyz with .w = 1. Not RenderAtomicWithAlpha (FUN_0036DBF8: 1,200 calls in a run, nearly all alpha
+  scale .xyz (0.502 = 128 / 255 by day, 0.24 at night) and a .w of at most 0.502, falling to 0 with distance (logged
+  at each MSCAL); buildings carry a tinted .xyz, and solid models .w = 1.0. **0.502 is half transparent, not solid**
+  (2026-11-18, the player: "the far ones still have very little opacity"): the meshes' vertex alpha is 0x80, so .w = 1
+  gives 0x80 (solid) and the nearest palms' 0.502 gives 0x40 - the game draws even its nearest palms half see-through
+  (the same on the emulated path). Not RenderAtomicWithAlpha (FUN_0036DBF8: 1,200 calls in a run, nearly all alpha
   224-255, from 0x36EBBC / 0x36DCB4), not the m_alpha ramp (model info +0x39, +16 a frame in SetupEntityVisibility
   FUN_0035EFD8), and not the fading list (0x6F40D0 / 0x6F4118, rendered by FUN_0036EFA8 -> FUN_0035D610(ent, 1)).
   Enhancements > World > **Solid far palms** (`enhance.solid_far_palms`, off by default, `VCS_SOLID_FAR_PALMS`;
   vcs_hle_world.cpp `solidFoliage`): before a world packet runs (native or on the VU1), a grey scale whose .w is below
-  0.502 gets .w = 0.502 - the palms drawn solid at every distance they are drawn at. Only with the native draw (the
+  1.0 gets .w = 1.0 - the palms drawn solid at every distance they are drawn at (the first version raised them to
+  0.502 only: more palms showed, all of them half transparent). Checked: at the airport the palms come out solid and
+  nothing else in the picture moves; in 12 views over four city spots at 13:00 / 20:40 / 23:00 at 16:9 the option on
+  and off give the same picture (no other world model uses a grey fading scale there). Only with the native draw (the
   default; not under PS2X_HLE=0). `worlddetail` counts the packets raised (foliage=).
 
 ### 7c. The world's camera in VU1 memory, and Project2DFX's distant lights (2026-11-17, Enhancements > World)

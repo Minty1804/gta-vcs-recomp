@@ -99,6 +99,9 @@ The switches are not saved: every start is the original game (DECISIONS.md 2026-
   (the user's report, 2026-10-30; game-internals.md 12b). No script runs per frame. The pad reads give the
   game a pad left alone meanwhile (`src/game/vcs_input.cpp`) and the mouse is left for the camera; the trainer menu
   open, the camera holds still. `VCS_FREECAM=0` leaves the game's camera code alone (the switch does nothing).
+  For tests, `gamectl.py trainer freecam X Y Z YAW PITCH [FOV]` (radians, FOV 20-110, default 70) puts the flying camera
+  at that pose from its next update (`freecam::place`): the same view in every run (the palms, sky and car checks of
+  2026-11-18).
 - **Missions** are listed from MAIN.SCM, read from the disc at start (`vcs::trainer::setMissionScript`): each
   mission opens with `LOAD_MISSION_TEXT "<name>"` (0x033A) or `SCRIPT_NAME` (0x0238), and a story mission's title is
   the text key of that name with a two-digit number (`JER_A1` -> `JER_A01` "Soldier"). A launch is refused while a
