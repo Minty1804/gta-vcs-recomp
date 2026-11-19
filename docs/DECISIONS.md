@@ -1685,5 +1685,10 @@ code.
   so the fog keeps its depth and its time-of-day colour on every path. A screen overlay would lose both (their reason,
   kept). Their fork is far behind upstream, so the file was copied rather than merged: only the section number of the
   doc reference changed.
+- **Fog above 100 %** (ours, 2026-11-19): the player asked to push the fog further without breaking the game. The fog's
+  end is the far plane, and moving that shows the world's edge (6o). So Fog distance goes up to 175 %, and above 100 %
+  it curves the fog (thinner in the middle distance, still total at the far plane) instead of moving the range. One
+  setting keeps one meaning: the fog's half point at that percentage of the original. The curve is in the GS pixel
+  shader, so every path gets it, and at 100 % the original bits are untouched.
 - **Credits**: every import keeps its author on the commit and gets a line in the fork README's Credits section (the
   user's rule, AGENTS.md).

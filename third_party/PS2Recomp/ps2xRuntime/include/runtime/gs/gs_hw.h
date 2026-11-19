@@ -194,6 +194,11 @@ struct GSHwReplacement
 // depth - what lies behind it and is drawn later still shows through the gaps (docs/game-internals.md 6q). Off: the
 // GS's one pass (the original). Any thread, any time; PS2X_HW_CUTOUT_SPLIT=0|1 overrides.
 void gsHwSetCutOutSplit(bool on);
+// [gta-recomp] The fog curve: a fogged pixel's fog amount (255 - F) / 255 is raised to this exponent before it blends
+// with FOGCOL - above 1 the fog thins out in the middle distance and is still total where F reaches 0. 1 (the default):
+// the GS's linear fog, the original bits. Any thread, any time (Graphics > Fog above 100 %, docs/game-internals.md 6r).
+void gsHwSetFogCurve(float exponent);
+float gsFogCurve();
 // [gta-recomp] The renderer's mip chain of a w x h RGBA8 image (box filter + the alpha coverage kept), for a pack's loader
 void gsHwBuildMipChain(const std::vector<uint32_t> &base, uint32_t w, uint32_t h, std::vector<uint32_t> &out);
 class GSHwTexturePack

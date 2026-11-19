@@ -397,7 +397,11 @@ PSOut ps_main(VSOut i)
     c = clamp(floor(c), 0.0, 255.0);
     if (linearIipFgeAte.z == 1)
     {
-        const float f = floor(i.fog * 255.0 + 0.5);
+        float f = floor(i.fog * 255.0 + 0.5);
+        // [gta-recomp] gsHwSetFogCurve: the fog amount (255 - F) / 255 raised to fogColor.w - thinner in the middle
+        // distance, still total where the GS's F reaches 0 (the far plane). 1 or less: the GS's linear fog, untouched.
+        if (fogColor.w > 1.0)
+            f = floor(255.0 - 255.0 * pow((255.0 - f) / 255.0, fogColor.w) + 0.5);
         c.rgb = floor((c.rgb * f + fogColor.rgb * (255.0 - f)) / 255.0);
     }
     bool passed = true;

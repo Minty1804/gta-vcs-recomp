@@ -16,6 +16,8 @@
 #include <iostream>
 #include <stdexcept>
 
+float gsFogCurve(); // [gta-recomp] gs_hw.cpp (gs_hw.h gsHwSetFogCurve)
+
 using namespace GSInternal;
 
 namespace
@@ -908,6 +910,9 @@ void GSCpuBackend::WritePixel(const GSDrawState &state, int x, int y, int z, uin
 
     if (state.prim.fge)
     {
+        // [gta-recomp] gsHwSetFogCurve (gs_hw.h): the same curve as gs_draw.hlsl; 1 is the GS's linear fog
+        if (const float curve = gsFogCurve(); curve > 1.0f)
+            fog = static_cast<uint8_t>(std::floor(255.0f - 255.0f * std::pow((255.0f - fog) / 255.0f, curve) + 0.5f));
         const uint32_t inverseFog = 255u - fog;
         auto applyFog = [&](uint8_t input, uint8_t fogColor) -> uint8_t
         {

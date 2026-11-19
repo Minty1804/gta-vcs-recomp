@@ -1843,6 +1843,21 @@ module `src/game/vcs_fog.cpp` was brought in as it is (docs/FORK_IMPORTS.md item
   - Checks:
     - `tools/fog_check.py` sets each setting and reads qword 53 back.
     - Outdoors at 40 %, 54.95 .. 2000 went in as 21.98 .. 800.
+- **Above 100 %** (our addition, 2026-11-19): moving the fog's end past 2000 would only work with the far plane
+  moved too, and that shows the world's edge (6o, `VCS_FAR_CLIP`). Raising Fog start to 300 % changes almost nothing:
+  with the end fixed, the start is only 3 % of the range. So above 100 %, the range stays the game's and the fog's
+  **curve** changes instead.
+  - The fog amount a = (255 - F) / 255 is raised to a power p, in the pixel shader (gs_draw.hlsl, `fogColor.w`) and
+    in the CPU GS backend (`gsHwSetFogCurve`, PS2RECOMP_PATCHES.md).
+  - p is chosen so the fog is half way at distance% of the game's half-way depth, (start + end) / 2. The half point is
+    capped at 0.9 of the range: p is about 1.66 at 130 %, 2.6 at 150 %, and 6.4 at 175 % (the maximum) at noon.
+  - The fog is still total at the far plane, so nothing past it shows: no edge, no dark patches.
+  - The curve applies to the interpolated F of each pixel, on every path that draws through the GS shader: native,
+    and `PS2X_HLE=0`, checked.
+  - At 100 % the shader skips it. Before and after the change, 45 of 645,120 pixels differ (the clock moved 2 minutes).
+  - The cost could not be seen in the timings: gs_ms 3.1 at 100 % and at 175 % (Ocean Beach, 30 fps).
+  - Checked at noon and at 21:00 from two views over Ocean Beach. The city and the tower at the end of the beach show
+    clearly at 175 %, and the far land still fades out.
 - Switches: `VCS_FOG_DISTANCE` and `VCS_FOG_START` set the two settings for one run. `VCS_FOG_HOOK=0` leaves the
   setter alone. `VCS_TRACE_FOG=1` logs the ranges the game asks for, every 5 s.
 

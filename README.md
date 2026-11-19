@@ -35,7 +35,7 @@ option or can be switched off, and everything else is the same as upstream.
 | **Aim after a jump or sprint** | The aim could come up to a second late after a jump, or after sprinting with the button held | It comes the frame the sprint or the landing ends (the animations play whole) |
 | **GPS route** | No route: only the blip to follow | A line along the roads to the mission's target and a red one to the target you set on the pause map, on the radar and the map (Enhancements → Radar, off by default; olaftnt's work) |
 | **Quick save** | Saving only at a safehouse | F12 opens the game's Save menu anywhere outside a mission; loading puts you back there, in your car or next to it, with your wanted level (Enhancements → Saving, off by default; olaftnt's work, with three load fixes of ours) |
-| **Fog distance / start** | The game's fog as it is | Graphics → Fog: bring the time of day's own fog closer for a hazier city, or keep the near streets clear (100% / 100% by default, the original; willzmkv's work) |
+| **Fog distance / start** | The game's fog as it is | Graphics → Fog: bring the time of day's own fog closer for a hazier city, or up to 175% to see the city further with the edge of the world still hidden (100% / 100% by default, the original; willzmkv's work, the part above 100% ours) |
 | **Free aim up close** | Firing at a man right next to you swung the gun instead of shooting; shotgun pellets left from the gun, not through the circle, and missed close targets | Every gun fires up close, and shotgun pellets spread around the circle |
 | **Aiming circle** | The game's large circle | Original, Small, or Spread: a small dot for guns (they hit its centre), the pellet spread for shotguns (Enhancements → Combat, Original by default) |
 | **Character shadows** | Always on under Vic and everyone on foot | Can be turned off (option, on by default) |
@@ -309,7 +309,8 @@ Vulkan on Linux -, sound and streaming run on the PC, and the movies are decoded
   menu also comes up by itself after a mission is passed. A normal save in the usual slots and format
   ([docs/mods/QUICKSAVE.md](docs/mods/QUICKSAVE.md)).
 - **Fog distance / start** (*Graphics > Fog*; `VCS_FOG_DISTANCE`, `VCS_FOG_START`): where the game's distance fog
-  swallows the city (10-100% of the original) and where it begins (0-300% of the original start). It is the game's own
+  swallows the city (10-175% of the original; above 100% the fog thins out in the middle distance but still hides the
+  edge of the world) and where it begins (0-300% of the original start). It is the game's own
   fog, so it follows every surface's depth and keeps the time of day's colour.
 
 ## Updating

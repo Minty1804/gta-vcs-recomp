@@ -17,11 +17,13 @@
 #include "ps2_runtime.h"
 #include "ps2_runtime_macros.h"
 #include "runtime/ps2_control.h"
+#include "runtime/gs/gs_hw.h"
 #include "settings/settings.h"
 
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <map>
@@ -37,6 +39,10 @@ namespace vcs::fog
         PS2Runtime::RecompiledFunction g_original = nullptr;
         std::atomic<int> g_distance{100}; // percent of the game's end distance (and its start with it)
         std::atomic<int> g_start{100};    // percent of the game's start, on top of the distance
+        // [Minty1804 fork] Fog distance above 100 %: the fog curve (gs_hw.h gsHwSetFogCurve); the half point stops at
+        // this fraction of the range, so the last stretch before the far plane still fogs over smoothly
+        constexpr float kMaxHalfWay = 0.9f;
+        std::atomic<float> g_curve{1.0f};
 
         // the last call, for `fogstate`: the game's (start, end) and what went in
         std::mutex g_lastMutex;
@@ -63,13 +69,27 @@ namespace vcs::fog
             if (g_trace)
                 trace(start, end);
             const int distance = g_distance.load(std::memory_order_relaxed), first = g_start.load(std::memory_order_relaxed);
+            // [Minty1804 fork] above 100 % the range stays the game's (its end is the far plane: further would show
+            // the world's edge, game-internals.md 6o) and the fog's curve moves its half point out instead
+            const float scale = static_cast<float>(std::min(distance, 100)) / 100.0f;
+            float curve = 1.0f;
             if ((distance != 100 || first != 100) && end > start)
             {
-                const float e = end * (static_cast<float>(distance) / 100.0f);
-                const float s = start * (static_cast<float>(distance) / 100.0f) * (static_cast<float>(first) / 100.0f);
+                const float e = end * scale;
+                const float s = start * scale * (static_cast<float>(first) / 100.0f);
                 ctx->f[12] = std::min(s, e * 0.95f); // the setter divides by end - start
                 ctx->f[13] = e;
             }
+            if (distance > 100 && ctx->f[13] > ctx->f[12])
+            {
+                // the fog half way at distance% of the game's half-way depth: amount t^p is 1/2 at that t
+                const float s = ctx->f[12], e = ctx->f[13];
+                const float half = (start + end) * 0.5f * (static_cast<float>(distance) / 100.0f);
+                const float t = std::clamp((half - s) / (e - s), 0.5f, kMaxHalfWay);
+                curve = std::log(0.5f) / std::log(t);
+            }
+            gsHwSetFogCurve(curve);
+            g_curve.store(curve, std::memory_order_relaxed);
             {
                 std::lock_guard<std::mutex> lock(g_lastMutex);
                 g_last[0] = start;
@@ -90,10 +110,11 @@ namespace vcs::fog
         s.section = "Fog";
         s.label = "Fog distance";
         s.help = "Where the game's distance fog swallows the city, percent of the original (100). Lower is thicker fog, "
-                 "closer to the camera, in the time of day's own fog colour.";
+                 "closer to the camera, in the time of day's own fog colour. Above 100 the fog thins out in the middle "
+                 "distance so the city shows further, and still closes in before the edge of the world.";
         s.type = Type::Integer;
         s.min = 10;
-        s.max = 100;
+        s.max = 175; // [Minty1804 fork] above 100: the fog curve (was 100)
         s.format = "%d%%";
         s.defaultValue = 100;
         s.env = "VCS_FOG_DISTANCE";
@@ -140,7 +161,8 @@ namespace vcs::fog
                 std::copy(g_last, g_last + 4, last);
             }
             char text[128];
-            std::snprintf(text, sizeof(text), "ok game=%.3f,%.3f used=%.3f,%.3f", last[0], last[1], last[2], last[3]);
+            std::snprintf(text, sizeof(text), "ok game=%.3f,%.3f used=%.3f,%.3f curve=%.3f", last[0], last[1], last[2],
+                          last[3], g_curve.load(std::memory_order_relaxed));
             reply(text);
         });
     }

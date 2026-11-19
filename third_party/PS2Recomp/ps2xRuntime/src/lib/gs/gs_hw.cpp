@@ -2899,6 +2899,7 @@ namespace
             c.fogColor[0] = s.fogR;
             c.fogColor[1] = s.fogG;
             c.fogColor[2] = s.fogB;
+            c.fogColor[3] = gsFogCurve(); // [gta-recomp] gsHwSetFogCurve (1: the GS's linear fog)
 
             GsBlend b;
             if (!gsBlend(s, b))
@@ -6126,6 +6127,21 @@ std::string gsHwDrawSourceReport(bool reset) // [gta-recomp]
 void gsHwSetCutOutSplit(bool on) // [gta-recomp]
 {
     g_cutOutSplit.store(on ? 1 : 0, std::memory_order_relaxed);
+}
+
+namespace
+{
+    std::atomic<float> g_fogCurve{1.0f}; // [gta-recomp] gsHwSetFogCurve
+}
+
+void gsHwSetFogCurve(float exponent) // [gta-recomp]
+{
+    g_fogCurve.store(exponent > 1.0f ? exponent : 1.0f, std::memory_order_relaxed);
+}
+
+float gsFogCurve() // [gta-recomp]
+{
+    return g_fogCurve.load(std::memory_order_relaxed);
 }
 
 // [gta-recomp] texture packs' loaders build the chain once, off the renderer (gs_hw.h)
