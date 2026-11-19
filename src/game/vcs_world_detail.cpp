@@ -146,19 +146,19 @@ namespace vcs::world
         uint32_t rd32(const uint8_t *ram, uint32_t a)
         {
             uint32_t v;
-            std::memcpy(&v, ram + (a & 0x01FFFFFFu), 4);
+            std::memcpy(&v, ram + (a & PS2_RAM_MASK), 4);
             return v;
         }
         float rdf(const uint8_t *ram, uint32_t a)
         {
             float v;
-            std::memcpy(&v, ram + (a & 0x01FFFFFFu), 4);
+            std::memcpy(&v, ram + (a & PS2_RAM_MASK), 4);
             return v;
         }
         void wr32(uint8_t *ram, uint32_t a, uint32_t v)
         {
             if (rd32(ram, a) != v)
-                std::memcpy(ram + (a & 0x01FFFFFFu), &v, 4);
+                std::memcpy(ram + (a & PS2_RAM_MASK), &v, 4);
         }
         void wrf(uint8_t *ram, uint32_t a, float f)
         {
@@ -169,9 +169,9 @@ namespace vcs::world
 
         PS2_GUEST_CC void worldRemove(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
-            if (const uint32_t pool = rd32(rdram, kVehiclePool) & 0x01FFFFFFu)
+            if (const uint32_t pool = rd32(rdram, kVehiclePool) & PS2_RAM_MASK)
             {
-                const uint32_t entries = rd32(rdram, pool) & 0x01FFFFFFu, e = GPR_U32(ctx, 4) & 0x01FFFFFFu;
+                const uint32_t entries = rd32(rdram, pool) & PS2_RAM_MASK, e = GPR_U32(ctx, 4) & PS2_RAM_MASK;
                 const uint32_t size = rd32(rdram, pool + 8);
                 if (size <= 256 && e >= entries && e < entries + size * 0x8C0u && (e - entries) % 0x8C0u == 0)
                     g_removedBy[(e - entries) / 0x8C0u] = GPR_U32(ctx, 31);
@@ -192,7 +192,7 @@ namespace vcs::world
             if (!flags || size <= 0 || size > 4096)
                 return -1;
             int spare = 0;
-            const uint8_t *f = ram + (flags & 0x01FFFFFFu);
+            const uint8_t *f = ram + (flags & PS2_RAM_MASK);
             for (int i = 0; i < size; ++i)
                 spare += (f[i] & 0x80) ? 1 : 0;
             if (used)
@@ -229,14 +229,14 @@ namespace vcs::world
         {
             count = 0;
             mean = farthest = 0.0f;
-            const uint32_t pool = rd32(ram, cars ? kVehiclePool : kPedPool) & 0x01FFFFFFu;
+            const uint32_t pool = rd32(ram, cars ? kVehiclePool : kPedPool) & PS2_RAM_MASK;
             if (!pool)
                 return;
-            const uint32_t entries = rd32(ram, pool) & 0x01FFFFFFu, flags = rd32(ram, pool + 4) & 0x01FFFFFFu;
+            const uint32_t entries = rd32(ram, pool) & PS2_RAM_MASK, flags = rd32(ram, pool + 4) & PS2_RAM_MASK;
             const int size = std::min(static_cast<int>(rd32(ram, pool + 8)), 256);
-            uint32_t player = rd32(ram, kPlayers) & 0x01FFFFFFu;
+            uint32_t player = rd32(ram, kPlayers) & PS2_RAM_MASK;
             if (cars)
-                player = player ? rd32(ram, player + kPedVehicle) & 0x01FFFFFFu : 0u;
+                player = player ? rd32(ram, player + kPedVehicle) & PS2_RAM_MASK : 0u;
             const float cx = rdf(ram, kCamera + 0x30), cy = rdf(ram, kCamera + 0x34);
             for (int i = 0; i < size && entries && flags; ++i)
             {
@@ -442,9 +442,9 @@ namespace vcs::world
                 return;
             }
             float k = 1.0f;
-            const uint32_t index = rdram[kPlayerIndex & 0x01FFFFFFu];
-            const uint32_t ped = rd32(rdram, kPlayers + index * kPlayerSize) & 0x01FFFFFFu;
-            if (const uint32_t vehicle = ped ? rd32(rdram, ped + kPedVehicle) & 0x01FFFFFFu : 0u)
+            const uint32_t index = rdram[kPlayerIndex & PS2_RAM_MASK];
+            const uint32_t ped = rd32(rdram, kPlayers + index * kPlayerSize) & PS2_RAM_MASK;
+            if (const uint32_t vehicle = ped ? rd32(rdram, ped + kPedVehicle) & PS2_RAM_MASK : 0u)
             {
                 const float vx = rdf(rdram, vehicle + 0x140), vy = rdf(rdram, vehicle + 0x144);
                 k = std::min(std::max(std::sqrt(vx * vx + vy * vy) - 0.1f + 1.0f, 1.0f), 1.5f);
@@ -460,8 +460,8 @@ namespace vcs::world
             if (half > 1)
                 return 0;
             const uint32_t start = kPackets + 0x20 + half * kPacketHalf;
-            const uint32_t cursor = rd32(ram, kPackets + 0x18) & 0x01FFFFFFu;
-            const uint32_t data = rd32(ram, kPackets + 0x1C) & 0x01FFFFFFu;
+            const uint32_t cursor = rd32(ram, kPackets + 0x18) & PS2_RAM_MASK;
+            const uint32_t data = rd32(ram, kPackets + 0x1C) & PS2_RAM_MASK;
             const uint32_t end = start + kPacketHalf;
             if (cursor < start - 0x10 || cursor > end || data < start || data > end || cursor > data + 0x10)
                 return 0;
@@ -796,14 +796,14 @@ namespace vcs::world
             g_stCarMean.store(mean, std::memory_order_relaxed);
             g_stCarFar.store(farthest, std::memory_order_relaxed);
         }
-        if (const uint32_t player = rd32(rdram, 0x004E4910u) & 0x01FFFFFFu)
+        if (const uint32_t player = rd32(rdram, 0x004E4910u) & PS2_RAM_MASK)
         {
             const float p[3] = {rdf(rdram, player + 0x30), rdf(rdram, player + 0x34), rdf(rdram, player + 0x38)};
             g_stPlayerInView.store(inView(rdram, p, 0.5f) ? 1 : 0, std::memory_order_relaxed);
         }
         // ---- the vanish detector: a car in view last frame, within the distance cars are drawn at, whose slot is free
         // or reused now (not across a camera cut or teleport: the camera moving more than 30 m in a frame)
-        if (const uint32_t pool = rd32(rdram, kVehiclePool) & 0x01FFFFFFu)
+        if (const uint32_t pool = rd32(rdram, kVehiclePool) & PS2_RAM_MASK)
         {
             static float lastCam[2] = {0, 0};
             const float cam[2] = {rdf(rdram, kCamera + 0x30), rdf(rdram, kCamera + 0x34)};
@@ -811,7 +811,7 @@ namespace vcs::world
             lastCam[0] = cam[0];
             lastCam[1] = cam[1];
             const float drawn = 160.0f * rdf(rdram, kGenerationDist) * std::max(1.0f, draw / 100.0f);
-            const uint32_t entries = rd32(rdram, pool) & 0x01FFFFFFu, flags = rd32(rdram, pool + 4) & 0x01FFFFFFu;
+            const uint32_t entries = rd32(rdram, pool) & PS2_RAM_MASK, flags = rd32(rdram, pool + 4) & PS2_RAM_MASK;
             const int size = std::min(static_cast<int>(rd32(rdram, pool + 8)), 256);
             for (int i = 0; i < size && entries && flags; ++i)
             {

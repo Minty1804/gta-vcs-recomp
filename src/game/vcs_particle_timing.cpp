@@ -293,13 +293,13 @@ namespace vcs
         T rd(const uint8_t *rdram, uint32_t addr)
         {
             T v;
-            std::memcpy(&v, rdram + (addr & 0x1FFFFFFu), sizeof(T));
+            std::memcpy(&v, rdram + (addr & PS2_RAM_MASK), sizeof(T));
             return v;
         }
         template <typename T>
         void wr(uint8_t *rdram, uint32_t addr, T v)
         {
-            std::memcpy(rdram + (addr & 0x1FFFFFFu), &v, sizeof(T));
+            std::memcpy(rdram + (addr & PS2_RAM_MASK), &v, sizeof(T));
         }
 
         // the frame's share of a PS2 frame; 1 at about 30 fps and below (the game's own amounts)

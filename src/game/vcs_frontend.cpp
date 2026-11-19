@@ -43,7 +43,7 @@ namespace vcs::frontend
 {
     namespace
     {
-        constexpr uint32_t kRamMask = 0x01FFFFFFu;
+        constexpr uint32_t kRamMask = PS2_RAM_MASK;
         constexpr uint32_t kManager = 0x00729480u;      // the menu manager (above)
         constexpr uint32_t kManagerBuilt = 0x004CD7B0u; // FUN_00471400's "made" flag
         constexpr uint32_t kFrameCounter = 0x004CD124u; // CTimer::m_FrameCounter (runs in the menu too)
@@ -69,7 +69,7 @@ namespace vcs::frontend
         uint8_t *g_rdram = nullptr;
         bool g_mouseOn = true; // VCS_MENU_MOUSE
 
-        bool inRam(uint32_t a, uint32_t n = 4) { return a >= 0x100000u && (a & kRamMask) + n <= 0x02000000u; }
+        bool inRam(uint32_t a, uint32_t n = 4) { return a >= 0x100000u && (a & kRamMask) + n <= PS2_RAM_SIZE; }
         uint32_t rd32(uint32_t a)
         {
             uint32_t v = 0;
@@ -281,7 +281,7 @@ namespace vcs::frontend
             for (uint32_t slot : {0x14u, 0x2Cu})
             {
                 const uint32_t fn = rd32(vtable + slot);
-                if (fn < 0x100000u || fn >= 0x02000000u || g_hookCount >= kSlots)
+                if (fn < 0x100000u || fn >= PS2_RAM_SIZE || g_hookCount >= kSlots)
                     continue;
                 bool known = false;
                 for (int i = 0; i < g_hookCount; ++i)
@@ -344,7 +344,7 @@ namespace vcs::frontend
                 return;
             const uint32_t verts = GPR_U32(ctx, 5) & kRamMask;
             const uint32_t n = GPR_U32(ctx, 6);
-            if (n == 0u || n > 4096u || verts + n * 16u > 0x02000000u)
+            if (n == 0u || n > 4096u || verts + n * 16u > PS2_RAM_SIZE)
                 return;
             auto it = std::find_if(g_drawing.begin(), g_drawing.end(), [](const Drawn &d) { return d.item == g_item; });
             if (it == g_drawing.end())

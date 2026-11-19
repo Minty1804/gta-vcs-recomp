@@ -1281,6 +1281,10 @@ Python scripts still usable on their own. docs/LAUNCHER.md has the whole of it; 
 | `VCS_LODLIGHTS_FILE=<path>` | The light table to read (default `project2dfx/lodl.c` next to vcs.exe, fetched by the build) |
 | `VCS_LODLIGHTS_FARCLIP=m`, `VCS_LODLIGHTS_RADIUS=x`, `VCS_LODLIGHTS_INTENSITY=x` | The lights' range (1000 m), size factor (1.5) and strength (1) |
 | `VCS_LODLIGHTS_LOG=1\|2` | Every 5 s: lights in range / drawn a frame, the cost, the camera and its matrices; 2: the cameras of each world chain |
+| `VCS_HD_RADIUS=0..3` | Enhancements > World > Detailed city distance for this run (0 Original, 1 ~450 m, 2 ~580 m, 3 ~720 m; read at boot for the packet heap, live otherwise; game-internals.md 6t) |
+| `VCS_HD_PROBE=x,y,r`, `VCS_HD_TWINS=1`, `VCS_HD_DUPES=1`, `VCS_HD_OSC=1`, `VCS_HD_LATE=1` | Detailed city analysis: what each list build does with every record near a point; low-detail twins kept; detailed sectors drawn twice; sectors flipping state; detail first drawn close (willzmkv's, game-internals.md 6t) |
+| `VCS_HD_DRAWCHECK=1`, `VCS_HD_PKTDEBUG=1`, `VCS_HD_DRAWMODE=n`, `VCS_HD_NODRAW=1`, `VCS_HD_FADE=<s>` | Detailed city packet checks (each drawn sector's packets walked; CALL targets checked against the free ring), draw-mode bisection, the extra sectors not drawn, the fade's length (1 s; 0: none) |
+| `memstate`, `hdworld`, `hdpairs`, `hdcompare`, `skipextra`, `keeplod` (gamectl / rig commands) | The sector packet heap (base, size, in use, moved); the detailed city's state, its pairs, a comparison with the game's list, sector ids left out / low-detail kept (game-internals.md 6t) |
 | `VCS_QUICK_FIRST_SHOT=0` | The instant first shot off for this run (always on otherwise since 2026-11-17, no menu option: the Mac 10's and Micro SMG's attack started at the loop start; game-internals.md 12c) |
 | `VCS_AIM_LOG=1` | a line per frame while aiming or firing (`[aim-log]`: fire, clip, state, target) and the player's SetFinishCallback calls - for timing the first shot |
 | `PS2X_HW_MIP_COVERAGE=0` | mip chains as plain averages: cut-out textures' alpha not histogram-matched to the base (far palms see-through again; game-internals.md 7b) |

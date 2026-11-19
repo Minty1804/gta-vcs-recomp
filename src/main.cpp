@@ -36,6 +36,8 @@
 #include "game/vcs_prompts.h"
 #include "game/vcs_volume.h"
 #include "game/vcs_world_detail.h"
+#include "game/vcs_memory.h"
+#include "game/vcs_world_hd.h"
 #include "game/vcs_texture_pack.h"
 #include "platform/platform.h"
 #include "render/presenter.h"
@@ -781,6 +783,7 @@ namespace
         vcs::input::registerSettings(); // the Keyboard & mouse and Gamepad pages (game/vcs_input.h)
         vcs::prompts::registerSettings(); // the Enhancements page: button prompts by device (game/vcs_prompts.h)
         vcs::world::registerSettings();   // Enhancements > World: density, draw distance (game/vcs_world_detail.h)
+        vcs::world_hd::registerSettings(); // Enhancements > World: Detailed city distance (game/vcs_world_hd.h)
         vcs::lodlights::registerSettings(); // Enhancements > World: distant lights (game/vcs_lod_lights.h)
         vcs::texpack::registerSettings(); // Graphics > Texture packs (game/vcs_texture_pack.h)
         vcs::fog::registerSettings();     // Graphics > Fog: the game's fog distance / start (game/vcs_fog.h; willzmkv's)
@@ -1038,6 +1041,8 @@ int main(int argc, char *argv[])
         vcs::gameinfo::install(runtime); // the F3 overlay's game-state panel, the `gameinfo` command (debug/game_info.h)
         vcs::texpack::install(runtime, exeDirectory()); // texture packs for the renderer (game/vcs_texture_pack.h)
         vcs::lodlights::install(runtime, exeDirectory()); // Distant lights' table and camera (game/vcs_lod_lights.h)
+        vcs::memory::install(runtime);   // the sector packet heap above the game's 32 MB (game/vcs_memory.h)
+        vcs::world_hd::install(runtime); // the detailed city further (game/vcs_world_hd.h)
         // setting <key> [value] -> ok <value>: a setting read or changed (a hidden run never writes vcs.ini)
         ps2control::addCommand("setting", [](const std::string &args, ps2control::Reply reply) {
             const size_t space = args.find(' ');

@@ -69,7 +69,7 @@ namespace vcs::driveby
         uint32_t rd32(const uint8_t *ram, uint32_t a)
         {
             uint32_t v;
-            std::memcpy(&v, ram + (a & 0x01FFFFFFu), 4);
+            std::memcpy(&v, ram + (a & PS2_RAM_MASK), 4);
             return v;
         }
 
@@ -77,8 +77,8 @@ namespace vcs::driveby
         {
             if (g_mode.load(std::memory_order_relaxed) == Gun && type < 64)
             {
-                if (const uint32_t table = rd32(ram, kWeaponInfo) & 0x01FFFFFFu)
-                    if (const uint32_t info = rd32(ram, table + 4) & 0x01FFFFFFu)
+                if (const uint32_t table = rd32(ram, kWeaponInfo) & PS2_RAM_MASK)
+                    if (const uint32_t info = rd32(ram, table + 4) & PS2_RAM_MASK)
                     {
                         const int32_t rate = static_cast<int32_t>(rd32(ram, info + type * 0x70u + 0xCu));
                         if (rate > 0 && rate <= 5000)
@@ -94,7 +94,7 @@ namespace vcs::driveby
             if (ra == kFromCar || ra == kFromOther)
             {
                 const uint32_t weapon = GPR_U32(ctx, 4), ped = GPR_U32(ctx, 5);
-                const uint32_t base = rd32(rdram, rd32(rdram, kPedPool) & 0x01FFFFFFu);
+                const uint32_t base = rd32(rdram, rd32(rdram, kPedPool) & PS2_RAM_MASK);
                 const uint32_t slot = (ped - base) / kPedSize;
                 if (weapon && ped >= base && slot < 256 && (ped - base) % kPedSize == 0)
                 {

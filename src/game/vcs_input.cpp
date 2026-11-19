@@ -306,7 +306,7 @@ namespace vcs::input
         }
 
         // ---- The game (game-internals.md 12, 12b) --------------------------------------------------------------------
-        constexpr uint32_t kRamMask = 0x01FFFFFFu;
+        constexpr uint32_t kRamMask = PS2_RAM_MASK;
         constexpr uint32_t kPlayerPed = 0x004E4910u;   // CWorld::Players[0].m_pPed
         constexpr uint32_t kPedVehicle = 0x480u;       // the vehicle it is in (0 on foot)
         constexpr uint32_t kPedState = 0x8C4u;         // 0x37 driving

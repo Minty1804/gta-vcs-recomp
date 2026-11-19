@@ -255,7 +255,7 @@ struct Ps2WriteWatch
 inline Ps2WriteWatch g_ps2WriteWatch{};
 // [gta-recomp] The generated code's loads / stores below these guest addresses go straight to RDRAM (one compare,
 // ps2_runtime_macros.h); the rest - and everything while a watch is armed (limit 0) - through the checked path.
-inline constexpr uint32_t PS2_FAST_RAM_LIMIT = 0x01FFFFF0u; // main RAM, room for a 16-byte access
+inline constexpr uint32_t PS2_FAST_RAM_LIMIT = PS2_RAM_SIZE - 0x10u; // [gta-recomp] all of RAM (128 MB: the port's too), room for a 16-byte access
 inline uint32_t g_ps2FastReadLimit = PS2_FAST_RAM_LIMIT;
 inline uint32_t g_ps2FastWriteLimit = PS2_FAST_RAM_LIMIT;
 void ps2WriteWatchHit(uint32_t guestAddr, uint32_t size, uint64_t value, const char *op, const R5900Context *ctx);

@@ -1,5 +1,6 @@
 // [gta-recomp] Native IOP services - see runtime/ps2_iop_native.h.
 #include "runtime/ps2_iop_native.h"
+#include "runtime/ps2_memory.h" // [gta-recomp] PS2_RAM_SIZE
 
 #include <algorithm>
 #include <atomic>
@@ -125,7 +126,7 @@ namespace ps2_iop_native
         const uint8_t *guestBytes(const uint8_t *rdram, uint32_t address, uint32_t size)
         {
             address &= 0x1FFFFFFFu;
-            return rdram && address && size && address + size <= 0x2000000u ? rdram + address : nullptr;
+            return rdram && address && size && address + size <= PS2_RAM_SIZE ? rdram + address : nullptr; // [gta-recomp] the host RAM's size
         }
     }
 

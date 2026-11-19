@@ -67,7 +67,7 @@ namespace vcs
             }
             for (uint32_t i = 0; i < kStreams; ++i)
             {
-                uint8_t *count = rdram + ((manager + kRecordCount + i * kRecordSize) & 0x01FFFFFFu);
+                uint8_t *count = rdram + ((manager + kRecordCount + i * kRecordSize) & PS2_RAM_MASK);
                 uint32_t v;
                 std::memcpy(&v, count, sizeof(v));
                 v += add;

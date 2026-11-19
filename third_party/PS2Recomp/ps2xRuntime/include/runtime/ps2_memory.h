@@ -24,8 +24,13 @@
 
 class GS;
 
-constexpr uint32_t PS2_RAM_SIZE = 32u * 1024u * 1024u; // 32MB
-constexpr uint32_t PS2_RAM_MASK = PS2_RAM_SIZE - 1u;   // Mask for 32MB alignment
+// [gta-recomp] The host holds 128 MB of EE RAM; the game sees the PS2's 32 MB (PS2_GUEST_RAM_SIZE: what the kernel
+// reports and where it puts the main thread's stack), so its own layout is the PS2's. The upper 96 MB are the port's
+// (src/game/vcs_world_hd.cpp: the detailed city's extra cells and the sector packet heap; willzmkv's T10). Addresses
+// are masked to 128 MB, so the uncached / KSEG mirrors (0x20000000, 0x30000000, 0x80000000) still reach RAM.
+constexpr uint32_t PS2_RAM_SIZE = 128u * 1024u * 1024u;      // host RAM: 128MB
+constexpr uint32_t PS2_RAM_MASK = PS2_RAM_SIZE - 1u;         // Mask for the host RAM
+constexpr uint32_t PS2_GUEST_RAM_SIZE = 32u * 1024u * 1024u; // the PS2's 32MB, as the game sees it
 constexpr uint32_t PS2_RAM_BASE = 0x00000000;          // Physical base of RDRAM
 constexpr uint32_t PS2_SCRATCHPAD_BASE = 0x70000000;
 constexpr uint32_t PS2_SCRATCHPAD_ALIAS_BASE = 0xF0000000;

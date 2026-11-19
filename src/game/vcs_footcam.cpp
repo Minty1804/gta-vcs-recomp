@@ -18,7 +18,7 @@ namespace vcs::footcam
 {
     namespace
     {
-        constexpr uint32_t kRamMask = 0x01FFFFFFu;
+        constexpr uint32_t kRamMask = PS2_RAM_MASK;
         constexpr uint32_t kFollowPed = 0x0029DAB0u; // the follow camera on foot (mode 4), a0 the CCam
         constexpr uint32_t kTheCamera = 0x006F44D0u;
         constexpr uint32_t kActiveCam = kTheCamera + 0x50u; // byte: which of Cams[3] is active

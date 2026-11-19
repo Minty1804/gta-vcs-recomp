@@ -1832,8 +1832,8 @@ maths, then checked in the game (`tools/world_check.py`, the free camera).
   scales LOD distances (models, props, cars), which these baked lists do not use. Wrong conclusion first drawn from
   it (ff8f740: "drawing more cells draws the far city twice, not fixable"): willzmkv's fork does exactly this - the
   low-detail sectors left out where neighbour cells' lists have detailed sectors inside them, and those drawn instead
-  (their game-internals 9j, FORK_IMPORTS.md row 21) - being brought over (DECISIONS.md 2026-11-19, "Detailed city
-  further").
+  (their game-internals 9j, FORK_IMPORTS.md row 21) - brought over as Detailed city distance (6t; DECISIONS.md
+  2026-11-19, "Detailed city further").
 - `FUN_00240ED8(level, sector entry)`: entry +2 = u16 model index into the level's table (`*(level+0x1C)`, 12-byte
   entries: +0 the model, +4 its cached packet block), +0xC = matrix pointer (0: the matrix is inline at +0x10).
   `VCS_SECTOR_PROBE=<file>` (analysis) reads a command from the file every 200 ms: `list` logs the sector entries
@@ -1980,6 +1980,57 @@ After willzmkv's (dejot) Exposure in their fork (02a6d4c, b5edbaf; docs/FORK_IMP
   - The radar's disc changes by +6 (it is translucent) and the health bar by +0.4.
   - Cost: gs_ms 3.0 → 3.1 and 2.8 → 3.0 (noise level).
 - Switch: `VCS_EXPOSURE=<percent>` sets the setting for one run.
+
+### 6t. The detailed city further: cells, the geometry table, extra cells' lists (2026-11-19, Enhancements > World > Detailed city distance)
+
+Found by willzmkv (dejot) in their fork (their game-internals 9j, 2026-11-11 to 11-17; `src/game/vcs_world_hd.cpp` and
+`vcs_memory.cpp` come from there, FORK_IMPORTS.md row 21). Summarised here with what we checked; their 9j has every
+measurement and the tools behind it.
+
+- **Cells and slots.** The level (`0x750340`) is a hex grid of cells (125 x 108.25 m) grouped in areas of 3x3. Three
+  cell slots (`level + 0x2C / 0xCC / 0x16C`, 0xA0 each) are pointed to by `+0x248` (current), `+0x250` (previous /
+  next) and `+0x258` (being read), and rotate. Three area slots (0x14 each at `+0x20C`) by `+0x24C / 0x254 / 0x25C`. A
+  cell slot: `+8 / +0xC` cell x / y, `+0x10` its buffer, `+0x14` the z its records are shifted by, `+0x1C` piece
+  count, `+0x20..` the pieces - the first holds the cell's list of sector records (header: pairs, nine bucket pointers
+  of 0x50-byte records, conditional pieces {kind, value, piece} chosen by a mission switch `level + 0x418 + kind * 4`
+  or by the hour).
+- **The geometry table** `**(level + 0x1C)`, 0xC per gid: +0 geometry, +4 the cached DMA packet (built on the first
+  draw into the heap `0x6F3DB8`, 512 KB), +8 the owner. Changing cell enters the new slot's (and area's) pairs and marks
+  hidden (`0x8000`) the records whose entry has no geometry; `FUN_0023CED0` clears what a dropped slot still holds.
+  Packets are freed two frames late through a ring (`FUN_0023B830` pushes, `FUN_0023C5B0` frees).
+- **A cell's list is the whole view from that cell**: its own and its area's detailed sectors (ids below 3500) and
+  low-detail sectors (ids from 5500) for everything further, the far skyline among them (6o: gid 4102 from cell 13,7).
+  A list leaves out the low-detail sectors its own detailed ones lie inside. So the detail band ends at the cell
+  boundary, whatever the distance, and loading more pieces alone shows nothing.
+- **What the option does** (`vcs_world_hd.cpp`): reads the cells within the chosen reach into the port's memory above
+  the game's 32 MB (`0x4000000`, 48 MB; host EE RAM is 128 MB, `PS2_GUEST_RAM_SIZE` 32 - runtime/ps2_memory.h), enters
+  their pairs into empty table entries only, and at the world draw (`FUN_0023E748`) points the current slot's first
+  piece to a list built from the game's records plus the extra cells' detailed sectors, moved to the slot's z: each
+  sector id once (all its records: multi-part sectors such as the Little Havana crane), a low-detail one left out where a
+  loaded list has detailed sectors inside it. The game's pointer is put back at the entry of everything else that reads
+  the list (the chooser `FUN_0023C820`, `FUN_0023C188`, the swap `FUN_0023D740`, `FUN_0023CED0`, `FUN_002418F0`). The
+  sector packet heap is built at `0x7000000` with 8 MB instead (`vcs_memory.cpp`, the hook on `FUN_002BB768`) while the
+  option is on at boot. Radius 0 (Original) passes every hook straight through.
+- **What drawing more lists broke, and their fixes** (each found from a player's report; `[VU1 reserved lower]` lines
+  in the log were the measure):
+  - the translucent list is an array inside the level object (`level + 0x32B4..`, ~40 entries used, no bound): moved to
+    a buffer of 8192 entries while the option is on;
+  - the game never clears an area's table entries on unload: stale entries are taken back with our copy;
+  - a cached packet holds DMA CALLs into other entries' packets (its textures') and REFs into slot buffers: packets
+    whose targets went through the ring, or point into a buffer that has started a read, are freed (rebuilt);
+  - mission-switched buildings (Phil's warehouse 3167 / 6285 in Boomshine Blowout, kinds 1, 3, 9, 11, 12, 32) and a
+    low-detail twin on a detailed sector's sphere are never replaced: the game's flags decide; a neighbour's twin is
+    never drawn;
+  - conditional pieces by the hour (lit windows) are checked once a second and a cell read again when they change;
+  - an entry emptied by a slot drop is taken with our copy at the build (models flipping between detail levels);
+  - extra sectors beyond 250 m fade in and out through the game's own cross-fade (`FUN_0023E548`), opaque buckets only.
+- **At the user's spot** (the floating roof, 6o: -739,-1158 heading 273.6 at 18:41): their build at radius 3 draws
+  the tower detailed with its lit windows, no slab, and the buildings beside it (2026-11-19, `build/lod/roof_ref3`
+  against `roof_ref0` in their build).
+- Switches: `VCS_HD_RADIUS=0..3` (the setting for one run). Analysis: `VCS_HD_PROBE=x,y,r`, `VCS_HD_TWINS=1`,
+  `VCS_HD_DUPES=1`, `VCS_HD_OSC=1`, `VCS_HD_LATE=1`, `VCS_HD_DRAWCHECK=1`, `VCS_HD_PKTDEBUG=1`, `VCS_HD_DRAWMODE`;
+  control-channel commands `hdworld`, `hdpairs`, `hdcompare`, `skipextra`, `keeplod`, `memstate`; tools
+  `hd_world_verify.py`, `hd_overlap_scan.py`, `hdworld_missions.py`.
 
 ## 7. Textures: `.XTX`
 

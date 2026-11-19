@@ -17,7 +17,7 @@ namespace vcs::carcam
 {
     namespace
     {
-        constexpr uint32_t kRamMask = 0x01FFFFFFu;
+        constexpr uint32_t kRamMask = PS2_RAM_MASK;
         constexpr uint32_t kFollowCar = 0x0029FAF0u; // the camera behind a vehicle (modes 18 / 22), a0 the CCam
         constexpr uint32_t kTheCamera = 0x006F44D0u;
         constexpr uint32_t kActiveCam = kTheCamera + 0x50u; // byte: which of Cams[3] is active

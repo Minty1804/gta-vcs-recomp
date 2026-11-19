@@ -102,6 +102,12 @@ python tools/saves.py [OUT]                                   # save / Load Game
 python tools/soak.py [OUT] --hours 3                          # hours of autodrive: crash / hang / leak / falling
 python tools/memcheck.py [OUT] [--minutes 15]                 # memory over a route that streams a lot must level off
                                                               # (the RSL recordings' limit, GitHub issue 115)
+python tools/hd_world_verify.py                               # the detailed city's hooks present (static check of
+                                                              # vcs_world_hd.cpp, game-internals.md 6t)
+python tools/hd_overlap_scan.py [OUT] [--step 250]            # Detailed city 3 vs Original over a map grid: near the
+                                                              # camera the pictures must match (no building drawn twice)
+python tools/hdworld_missions.py [OUT]                        # every mission-switched building, Detailed city 3 vs 0,
+                                                              # both switch states (willzmkv's tools, game-internals.md 6t)
 python tools/shakedown.py [OUT]                               # mission 50: cutscene + shop entry (the "Loading..." hang)
 python tools/haze_check.py [OUT] [--timing 1 --fps 144]       # mission 94 at 60 fps: the cutscene that stuck on "Loading...",
                                                               # the haze across a 16:9 picture

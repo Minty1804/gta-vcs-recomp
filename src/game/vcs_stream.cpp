@@ -75,8 +75,8 @@ namespace vcs
                 }
                 const auto start = ps2x::hostNow();
                 IPS2DiscImage *disc = ps2_disc::image();
-                const uint32_t dest = request.dest & 0x01FFFFFFu;
-                const uint32_t bytes = std::min<uint32_t>(request.bytes, 0x02000000u - dest);
+                const uint32_t dest = request.dest & PS2_RAM_MASK;
+                const uint32_t bytes = std::min<uint32_t>(request.bytes, PS2_RAM_SIZE - dest);
                 if (!disc || !disc->readBytes(static_cast<uint64_t>(request.lsn) * 2048u, bytes, r.rdram + dest))
                     std::fprintf(stderr, "[stream] read of %u bytes at LSN 0x%x failed\n", bytes, request.lsn);
                 r.reads.fetch_add(1, std::memory_order_relaxed);

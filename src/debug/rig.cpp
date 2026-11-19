@@ -29,7 +29,7 @@ namespace vcs::rig
 {
     namespace
     {
-        constexpr uint32_t kRamSize = 0x02000000u; // 32 MB EE RAM
+        constexpr uint32_t kRamSize = PS2_RAM_SIZE; // the host's EE RAM (the game's 32 MB and the port's above)
         constexpr uint32_t kRamMask = kRamSize - 1u;
 
         uint8_t *g_rdram = nullptr;
@@ -237,11 +237,11 @@ namespace vcs::rig
                 }
                 reply(out);
             });
-            // dump <path> [addr len] -> RAM (all 32 MB by default) to a file, taken on the game thread between frames.
+            // dump <path> [addr len] -> RAM (the game's 32 MB by default, up to 128 MB with addr / len) to a file, taken on the game thread between frames.
             // Game memory: keep dumps under build/analysis/ (never committed).
             ps2control::addCommand("dump", [](const std::string &args, ps2control::Reply reply) {
                 const auto w = words(args);
-                uint32_t addr = 0, len = kRamSize;
+                uint32_t addr = 0, len = PS2_GUEST_RAM_SIZE;
                 if (w.empty() || (w.size() >= 3 && (!parseU32(w[1], addr) || !parseU32(w[2], len))))
                     return reply("error usage: dump <path> [addr len]");
                 addr &= kRamMask;

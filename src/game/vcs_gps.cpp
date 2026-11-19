@@ -119,24 +119,24 @@ namespace vcs::gps
         uint32_t rd32(uint32_t a)
         {
             uint32_t v;
-            std::memcpy(&v, g_ram + (a & 0x01FFFFFFu), 4);
+            std::memcpy(&v, g_ram + (a & PS2_RAM_MASK), 4);
             return v;
         }
         uint16_t rd16(uint32_t a)
         {
             uint16_t v;
-            std::memcpy(&v, g_ram + (a & 0x01FFFFFFu), 2);
+            std::memcpy(&v, g_ram + (a & PS2_RAM_MASK), 2);
             return v;
         }
         float rdf(uint32_t a)
         {
             float v;
-            std::memcpy(&v, g_ram + (a & 0x01FFFFFFu), 4);
+            std::memcpy(&v, g_ram + (a & PS2_RAM_MASK), 4);
             return v;
         }
-        uint8_t rd8(uint32_t a) { return g_ram[a & 0x01FFFFFFu]; }
-        void wr32(uint32_t a, uint32_t v) { std::memcpy(g_ram + (a & 0x01FFFFFFu), &v, 4); }
-        void wrf(uint32_t a, float v) { std::memcpy(g_ram + (a & 0x01FFFFFFu), &v, 4); }
+        uint8_t rd8(uint32_t a) { return g_ram[a & PS2_RAM_MASK]; }
+        void wr32(uint32_t a, uint32_t v) { std::memcpy(g_ram + (a & PS2_RAM_MASK), &v, 4); }
+        void wrf(uint32_t a, float v) { std::memcpy(g_ram + (a & PS2_RAM_MASK), &v, 4); }
         float bits(uint32_t u)
         {
             float f;
@@ -210,8 +210,8 @@ namespace vcs::gps
                 std::memcpy(entry + 0x24, &scale, 4);
                 entry[0x28] = 1;
                 entry[0x29] = kTargetSprite;
-                std::memcpy(g_ram + (e & 0x01FFFFFFu), entry, 0x20);
-                std::memcpy(g_ram + ((e + 0x24) & 0x01FFFFFFu), entry + 0x24, 0x0C);
+                std::memcpy(g_ram + (e & PS2_RAM_MASK), entry, 0x20);
+                std::memcpy(g_ram + ((e + 0x24) & PS2_RAM_MASK), entry + 0x24, 0x0C);
                 wr32(e + 0x20, flags); // the in-use flag last
                 g_targetRoute = {};
                 return;

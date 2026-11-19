@@ -55,7 +55,7 @@ namespace vcs::prompts
 {
     namespace
     {
-        constexpr uint32_t kRamMask = 0x01FFFFFFu;
+        constexpr uint32_t kRamMask = PS2_RAM_MASK;
         constexpr uint32_t kExpandKey = 0x003AFD78u;     // (src after "~k~ ", out): the C<n><ACTION> text into out
         constexpr uint32_t kFontRender = 0x00261BE8u;    // render(font, string, x, y, colour, rect, ?, shadow)
         constexpr uint32_t kIm2DRender = 0x002FBE08u, kIm2DRenderIndexed = 0x002FBE68u;
@@ -128,7 +128,7 @@ namespace vcs::prompts
         }
         void wr16(uint32_t a, uint16_t v) { std::memcpy(g_rdram + (a & kRamMask), &v, 2); }
         void wr32(uint32_t a, uint32_t v) { std::memcpy(g_rdram + (a & kRamMask), &v, 4); }
-        bool inRam(uint32_t a, uint32_t n = 4) { return a >= 0x00100000u && a + n <= 0x02000000u; }
+        bool inRam(uint32_t a, uint32_t n = 4) { return a >= 0x00100000u && a + n <= PS2_RAM_SIZE; }
 
         // ---- glyph specs: what each control looks like in each set ----------------------------------------------------
         int setting(const std::string &key) { return settings::value(key); }
@@ -810,7 +810,7 @@ namespace vcs::prompts
         void captureFontBatch(uint8_t *rdram, R5900Context *ctx)
         {
             const uint32_t verts = GPR_U32(ctx, 5) & kRamMask, n = GPR_U32(ctx, 6);
-            if (n < 4 || n > 4096 || verts + n * 16u > 0x02000000u)
+            if (n < 4 || n > 4096 || verts + n * 16u > PS2_RAM_SIZE)
                 return;
             for (uint32_t q = 0; q + 4 <= n; q += 4)
             {
@@ -882,7 +882,7 @@ namespace vcs::prompts
             if (index >= static_cast<int>(g_resolved.size()) || !g_resolved[index].valid)
                 return;
             const uint32_t verts = GPR_U32(ctx, 5) & kRamMask, n = GPR_U32(ctx, 6);
-            if (n < 3 || n > 4 || verts + n * 16u > 0x02000000u)
+            if (n < 3 || n > 4 || verts + n * 16u > PS2_RAM_SIZE)
                 return;
             Drawn d;
             for (uint32_t i = 0; i < n; ++i)

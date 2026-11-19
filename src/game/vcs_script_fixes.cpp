@@ -33,7 +33,7 @@ namespace vcs
 {
     namespace
     {
-        constexpr uint32_t kRamMask = 0x01FFFFFFu;
+        constexpr uint32_t kRamMask = PS2_RAM_MASK;
         constexpr uint32_t kScriptSpace = 0x0048741Cu;    // -> MAIN.SCM in memory; an IP is an offset from it
         constexpr uint32_t kMissionStart = 0x004CD3D8u;   // IP of the loaded mission's first byte
         constexpr uint32_t kMissionRunning = 0x004CD3E7u; // u8

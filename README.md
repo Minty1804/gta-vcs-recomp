@@ -395,6 +395,9 @@ is listed here (the full list of candidates, done or not: [docs/FORK_IMPORTS.md]
 - **Fog distance / start**: [willzmkv](https://github.com/willzmkv) (dejot), from their fork (commit 0d63f27).
 - **Exposure**: after [willzmkv](https://github.com/willzmkv)'s (dejot) Exposure (commits 02a6d4c, b5edbaf), re-done
   on the picture before the HUD.
+- **Detailed city distance** (the detailed buildings of neighbour cells instead of the low-detail city, and the memory
+  above the PS2's 32 MB it lives in): [willzmkv](https://github.com/willzmkv) (dejot), from their fork's HD world
+  (branch hd-world-merge, last commit 266838d).
 - **Additive cull** (the helicopter dust's GPU cost): [PerikiyoXD](https://github.com/PerikiyoXD) (upstream PR #178).
 - **PC keyboard control scheme**: [SkipperSkipTR](https://github.com/SkipperSkipTR) (upstream PR #78), merged with our
   Reload key added to both schemes.

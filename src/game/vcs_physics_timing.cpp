@@ -102,13 +102,13 @@ namespace vcs
         float rdF(const uint8_t *rdram, uint32_t addr)
         {
             float v;
-            std::memcpy(&v, rdram + (addr & 0x1FFFFFFu), 4);
+            std::memcpy(&v, rdram + (addr & PS2_RAM_MASK), 4);
             return v;
         }
         uint32_t rdU(const uint8_t *rdram, uint32_t addr)
         {
             uint32_t v;
-            std::memcpy(&v, rdram + (addr & 0x1FFFFFFu), 4);
+            std::memcpy(&v, rdram + (addr & PS2_RAM_MASK), 4);
             return v;
         }
         float dot3(const uint8_t *rdram, uint32_t a, uint32_t b)
@@ -129,7 +129,7 @@ namespace vcs
                 return;
             const uint32_t veh = GPR_U32(ctx, 4);
             int16_t model;
-            std::memcpy(&model, rdram + ((veh + 0x56u) & 0x1FFFFFFu), 2);
+            std::memcpy(&model, rdram + ((veh + 0x56u) & PS2_RAM_MASK), 2);
             if (model != logModel)
                 return;
             auto f = [&](uint32_t off) { return rdF(rdram, veh + off); };
@@ -219,7 +219,7 @@ namespace vcs
         };
         CannonClock g_cannons[kCannonCount];
 
-        void wrU(uint8_t *rdram, uint32_t addr, uint32_t v) { std::memcpy(rdram + (addr & 0x1FFFFFFu), &v, 4); }
+        void wrU(uint8_t *rdram, uint32_t addr, uint32_t v) { std::memcpy(rdram + (addr & PS2_RAM_MASK), &v, 4); }
 
         PS2_GUEST_CC void cannonUpdate(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {

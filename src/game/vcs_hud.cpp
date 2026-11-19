@@ -125,7 +125,7 @@ namespace vcs
         {
             if (!traceNow())
                 return;
-            const uint32_t verts = GPR_U32(ctx, 5) & 0x01FFFFFFu;
+            const uint32_t verts = GPR_U32(ctx, 5) & PS2_RAM_MASK;
             std::fprintf(stderr, "[im2d] %s ra %08x prim %u n %u%s%s", indexed ? "idx" : "prim", GPR_U32(ctx, 31), GPR_U32(ctx, 4),
                          GPR_U32(ctx, 6), g_inHud ? " hud" : "", indexed ? "" : "\n");
             if (indexed)
@@ -135,9 +135,9 @@ namespace vcs
             static const bool stack = std::getenv("VCS_TRACE_IM2D_STACK") != nullptr;
             if (stack)
             {
-                const uint32_t sp = GPR_U32(ctx, 29) & 0x01FFFFFFu;
+                const uint32_t sp = GPR_U32(ctx, 29) & PS2_RAM_MASK;
                 std::fprintf(stderr, "[im2d]   stack:");
-                for (uint32_t off = 0; off < 0x400u && sp + off + 4u <= 0x02000000u; off += 4u)
+                for (uint32_t off = 0; off < 0x400u && sp + off + 4u <= PS2_RAM_SIZE; off += 4u)
                 {
                     uint32_t w;
                     std::memcpy(&w, rdram + sp + off, 4);
@@ -252,9 +252,9 @@ namespace vcs
             g_maskBar = false;
             if (!g_anchoring.load(std::memory_order_relaxed) || g_prims.size() >= 8192u)
                 return;
-            const uint32_t verts = GPR_U32(ctx, 5) & 0x01FFFFFFu;
+            const uint32_t verts = GPR_U32(ctx, 5) & PS2_RAM_MASK;
             const uint32_t n = GPR_U32(ctx, 6);
-            if (n == 0u || n > 1024u || verts + n * 16u > 0x02000000u)
+            if (n == 0u || n > 1024u || verts + n * 16u > PS2_RAM_SIZE)
                 return;
             if (!(g_inHud || g_inMenu || g_inLoading || maskBar))
                 return noteOther(rdram, verts, n);
@@ -264,9 +264,9 @@ namespace vcs
             else if (g_hazeFill && GPR_U32(ctx, 31) == kSpriteUvReturn)
             {
                 // the sprite routine's caller (its saved return address): the tunnel vision's draw
-                const uint32_t sp = GPR_U32(ctx, 29) & 0x01FFFFFFu;
+                const uint32_t sp = GPR_U32(ctx, 29) & PS2_RAM_MASK;
                 uint32_t caller = 0;
-                if (sp + 12u <= 0x02000000u)
+                if (sp + 12u <= PS2_RAM_SIZE)
                     std::memcpy(&caller, rdram + sp + 8u, 4);
                 if (caller >= kTunnelVision && caller < kTunnelVisionEnd)
                     p.part = Part::Screen;
@@ -480,9 +480,9 @@ namespace vcs
         {
             if (!g_inHud || g_zTest) // depth-tested HUD draws keep their z (the radar is masked to its circle by depth)
                 return;
-            const uint32_t verts = GPR_U32(ctx, 5) & 0x01FFFFFFu;
+            const uint32_t verts = GPR_U32(ctx, 5) & PS2_RAM_MASK;
             const uint32_t n = GPR_U32(ctx, 6);
-            if (n == 0u || n > 1024u || verts + n * 16u > 0x02000000u)
+            if (n == 0u || n > 1024u || verts + n * 16u > PS2_RAM_SIZE)
                 return;
             for (uint32_t i = 0; i < n; ++i)
             {
@@ -554,9 +554,9 @@ namespace vcs
         // right of the middle to clear the 4:3 radar; with the radar at the screen edge they go to the middle too.
         PS2_GUEST_CC void fontRender(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
-            const uint32_t font = GPR_U32(ctx, 4) & 0x01FFFFFFu, rect = GPR_U32(ctx, 9) & 0x01FFFFFFu;
+            const uint32_t font = GPR_U32(ctx, 4) & PS2_RAM_MASK, rect = GPR_U32(ctx, 9) & PS2_RAM_MASK;
             g_textCentred = false;
-            if (font + 0x2Cu <= 0x02000000u && rect + 16u <= 0x02000000u)
+            if (font + 0x2Cu <= PS2_RAM_SIZE && rect + 16u <= PS2_RAM_SIZE)
             {
                 uint32_t justify;
                 float r[4];
@@ -589,9 +589,9 @@ namespace vcs
         {
             const uint32_t ra = GPR_U32(ctx, 31);
             const float s = g_squeeze.load(std::memory_order_relaxed);
-            const uint32_t rect = GPR_U32(ctx, 4) & 0x01FFFFFFu;
+            const uint32_t rect = GPR_U32(ctx, 4) & PS2_RAM_MASK;
             if ((ra == kMaskLeftReturn || ra == kMaskRightReturn) && s < 0.999f && g_anchoring.load(std::memory_order_relaxed) &&
-                rect + 16u <= 0x02000000u)
+                rect + 16u <= PS2_RAM_SIZE)
             {
                 float r[4];
                 std::memcpy(r, rdram + rect, 16);

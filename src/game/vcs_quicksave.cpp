@@ -77,7 +77,7 @@ namespace vcs::quicksave
 {
     namespace
     {
-        constexpr uint32_t kRamMask = 0x01FFFFFFu;
+        constexpr uint32_t kRamMask = PS2_RAM_MASK;
         constexpr uint32_t kScriptSpacePtr = 0x0048741Cu; // 0 until the script engine runs; global n at +4n
         constexpr uint32_t kPlayerPed = 0x004E4910u;      // CWorld::Players[0].m_pPed
         constexpr uint32_t kTimeMs = 0x004CD104u;         // CTimer ms: stands still while the game is paused
