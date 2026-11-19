@@ -24,6 +24,7 @@
 #include "game/vcs_display.h"
 #include "game/vcs_driveby.h"
 #include "game/vcs_aim.h"
+#include "game/vcs_gps.h"
 #include "game/vcs_lod_lights.h"
 #include "game/vcs_effects_timing.h"
 #include "game/vcs_framerate.h"
@@ -743,6 +744,7 @@ namespace
         vcs::texpack::registerSettings(); // Graphics > Texture packs (game/vcs_texture_pack.h)
         vcs::driveby::registerSettings(); // Enhancements > Combat: drive-by fire rate (game/vcs_driveby.h)
         vcs::aim::registerSettings();     // the instant first shot (always on; VCS_QUICK_FIRST_SHOT=0 turns it off)
+        vcs::gps::registerSettings();     // Enhancements > Radar: GPS route (game/vcs_gps.h)
         vcs::registerEffectsSettings();   // Enhancements > Effects: Reduce Post Processing Effects (game/vcs_effects_timing.h)
 
         s = {};
