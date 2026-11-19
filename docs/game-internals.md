@@ -3480,7 +3480,7 @@ probes in the game (rig, `worlddetail`).
   city drawn far the parked cars (a hospital's ambulance, the cars at a Pay 'n' Spray) appeared 160 m ahead. Patched
   (game/vcs/overrides.toml and vcs.toml; `build.py --recompile`) to `lui $at, 8; lwc1 $fN, -0xB4 / -0xB0($at)`: guest RAM
   `0x7FF4C` / `0x7FF50`, written before every call by vcs_world_detail.cpp with the game's values times Car distance
-  squared (the game's own at 100 %, also with VCS_WORLD_DETAIL_HOOKS=0). Checked (tools/world_check.py cargen, at a city spot): 9 generators in range at 100 %, 19 at 200 %, 9 again back at 100 %; the whole check passes.
+  squared (the game's own at 100 %, also with VCS_WORLD_DETAIL_HOOKS=0). Checked (tools/world_check.py cargen, at a city spot): 9 generators in range at 100 %, 19 at 200 %, 9 again back at 100 %; the whole check passes. Not seen here: an extra parked car. A generator entering the range spawns only when `(rand & 0x64) <` the halfword at the player ped + 0x91C (0x40ABB8; the word is only ever set to 0 or 1, by FUN_00402E70 and others): 0 throughout the player's save tested (on foot, driving, any hour), so no generator rolled at all, at 100 % either. What sets it is not known yet; the fix is hoped to show where it is 1.
   Their fork also kept the police's spawn ring at the game's distance while wanted (57d661f): there the population
   distance scaled the out-of-view ring (60 / 90 / 70 m), here Car distance only scales GenerationDistMultiplier (the
   in-view spot 110 m x it ahead and the removal), so the police come from where they did on the PS2 already.
