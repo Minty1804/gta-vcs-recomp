@@ -1055,3 +1055,74 @@ AMD's driver costs far more per call (their 14-15 ms), so the saving there shoul
 - The F2 menu (Dear ImGui) opens and closes with the game right after it.
 
 Vulkan and Metal are untouched.
+
+### 35. Native draws joined: half the draw calls (2026-11-19)
+
+After willzmkv's (dejot) commit 0bc5067 in their fork (docs/FORK_IMPORTS.md item 7), re-done in our `gs_hw.cpp`
+`SubmitNative`.
+
+**Before:** every VU1 batch was its own native draw. About half of them have the same state, texture, kind and
+constants as the draw before them: they are the batches of one mesh of one model. Each still went through the whole
+draw path and a driver call.
+
+**Now** consecutive native draws with the same state and constants, with nothing else recorded between them, become one
+draw. Their strips are linked by repeated vertices: the triangles through them have no area and draw nothing, and
+every backend draws with culling off. The joined mesh is cached by its parts' keys. `PS2X_HW_NATIVE_MERGE=0` draws one
+draw per batch again (the reference); `PS2X_HW_NATIVE_MERGE_LOG=1` prints the counts every 600 frames.
+
+Ours on top of theirs. Their commit predates the cut-out split (2026-11-18), and joining as they did would change what is
+drawn:
+- **Two passes.** The fences' cut-out split and AFAIL other than KEEP draw a draw in two passes. Joined, part B's first
+  pass would come before part A's second. The recorder cannot tell: whether a texture has holes is known on the main
+  thread, and nearly every world draw has the split's state (97% when the recorder refused them all). So the recorder
+  joins them anyway and keeps where each part's strip starts, and the executor draws such a group part by part
+  (`nativeDrawnInParts`, a superset of `draw()`'s own conditions). The parts are ranges of the joined mesh, so nothing is
+  kept twice.
+- **Render-target reads.** A draw that reads a render target is drawn in parts as well: reading its own target, each
+  draw reads a copy made just before it.
+- **Strip parity.** After an odd strip one more vertex is repeated, so every part starts at an even vertex as it did on
+  its own. Every triangle keeps its winding and its provoking vertex (the flat colour).
+- **Bounds.**
+  - The mesh cache is bounded by bytes (192 MB) as well as by count. A joined mesh is several meshes in one, so the
+    count alone no longer bounds the memory (issue 115's class).
+  - One joined strip is limited to 32,768 vertices.
+  - The open group is tied to its frame by index, because frames are recycled.
+
+**Measured** (RX 6950 XT, 1x, the user's settings; perf `draws` = draws recorded per frame, `gl_ms` = the main thread's
+submit time):
+
+| view | draws off | draws on | gl_ms off | gl_ms on |
+|---|---|---|---|---|
+| Fort Baxter, the player | ~1,000 | ~270-290 | 0.4-0.5 | 0.3 |
+| Ocean Beach from 90 m, noon | ~1,270 | ~770 | 0.6 | 0.5 |
+| the city from 60 m, noon | ~2,055 | ~1,060 | 0.8 | 0.6 |
+| the beach at street level, peds | ~2,055-2,505 | ~900 | 0.8-1.0 | 0.8-0.9 |
+| the city at night | ~2,134 | ~1,106 | 0.8 | 0.7 |
+
+In the counts, about half of the native draws join, and a fifth to two fifths of the joined groups are drawn in parts
+(the textures with holes).
+
+Cruise (`cruise.py run --fps 0`, one run each, merge on vs off):
+
+| | fps | p50 | p95 | p99 | p99.9 | max | hitches | ms lost / min |
+|---|---|---|---|---|---|---|---|---|
+| off | 183.8 | 4.98 | 8.34 | 10.39 | 17.13 | 77.7 | 93 | 575.9 |
+| on | 181.6 | 5.07 | 8.28 | 9.33 | 13.19 | 49.3 | 44 | 269.1 |
+
+The mean is the same within noise: on this machine the main thread is not the limit. The tail is what improves. The
+worst frames, where the city streams in, have 5,000-11,000 draws and wait on the main thread (`wait` 44-61 ms off,
+17-20 ms on). willzmkv measured on AMD's slower D3D11 driver with VC car mods, where the gain was larger: 130.9 ->
+138.0 fps, hitches 199 -> 44.
+
+**Checked:**
+- **Pictures** (same build, merge on vs off, fixed free-camera views with the clock frozen and the HUD hidden):
+  - The city at night: one run with the join and one without are identical pixel for pixel (1,106 against 2,134
+    draws).
+  - Fort Baxter's fence at 2x: identical (10,062 groups drawn in parts in that run).
+  - The same fence from further back: 381 pixels differ by 1, all in the player's head (idle breathing).
+  - Elsewhere the differences are those between two runs of the same setting: the sky and clouds in the top rows,
+    walking peds.
+- **The D3D11 debug layer** (`PS2X_RHI_DEBUG=1`): no messages.
+- **Memory:** `memcheck.py` (15 minutes) passes. Memory levels off at ~1,450 MB, against ~1,470 MB without the join; the rise over the second half is 2.4 MB a minute (limit 8). A 12-minute run had failed at 10.5 MB a minute: there the climb came later on the route, and its window caught it before the level (minutes 7-11 were flat).
+- **The mesh cache:** it fills to its bound and stays there. It made 0-500 meshes a 600 frames in steady views, and up
+  to ~9,000 while driving through the city.

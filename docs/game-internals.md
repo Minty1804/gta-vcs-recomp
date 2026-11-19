@@ -1193,6 +1193,12 @@ game:
   view FBP 280. Copying uploads into targets block by block (`PS2X_HW_PATCH_TARGETS=1`) is exact but costs ~200 ms
   a frame with VCS's upload rate; it needs lazy patching (resolve only when the target is read) - milestone 3.
 
+**The batches of one mesh (2026-11-19).** A model's mesh reaches the VU1 in batches: each is one native draw,
+and the ones in a row share state, texture and constants. About half the native draws are such continuations (counted
+with `PS2X_HW_NATIVE_MERGE_LOG=1`: in the city at 60 m, ~2,055 draws a frame, ~1,060 after joining them). Nearly every
+world draw is alpha-tested GEQUAL at a low reference with blending, the cut-out split's state. Of the joined groups,
+those whose texture has holes (a fifth to two fifths) are the ones drawn in two passes (PERFORMANCE.md 35).
+
 ### 6h. The VU1 clipper and native drawing (GON_C3, 2026-10-23)
 
 Found by the full mission smoke test: in mission 94 (`GON_C3`) the poolside cutscene showed the ground as black /

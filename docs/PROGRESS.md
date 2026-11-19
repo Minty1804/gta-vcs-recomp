@@ -1361,6 +1361,7 @@ Python scripts still usable on their own. docs/LAUNCHER.md has the whole of it; 
 | `VCS_RHI=d3d11\|vulkan\|null` | the renderer for one run (Graphics > Graphics API when the build has two; docs/LINUX.md) |
 | `PS2X_RHI_DEBUG=1` | the API's validation layer: D3D11 debug layer / Vulkan's Khronos validation; their messages in the log (`[rhi] d3d11` once per kind, `[rhi] vulkan`) |
 | `VCS_D3D11_STATE_CACHE=0` | D3D11: every state call reaches the driver, as before the state cache (its reference; PERFORMANCE.md 34) |
+| `PS2X_HW_NATIVE_MERGE=0`, `PS2X_HW_NATIVE_MERGE_LOG=1` | One native draw per VU1 batch, as before the join (its reference) / the join's counts every 600 frames: draws in and out, groups drawn whole and in parts, meshes made and cached (PERFORMANCE.md 35) |
 | `PS2X_RHI_WARP=1` | D3D11 on WARP, Windows' software rasteriser: a third implementation for a picture that differs between GPU vendors (a few frames a second) |
 | `PS2X_RHI_STATS=1` | Vulkan: draws, descriptor writes, passes, suspended passes, barriers, uploads, CPU waits per frame, and input to GPU done (avg / p50 / p95) every 5 s; gs_hw: the input delay by stage |
 | `PS2X_RHI_GPU_TIME=1` | Vulkan: GPU time of the passes and the whole frame (`PS2X_GPU_TIMING=1`: per draw, breaking passes) |

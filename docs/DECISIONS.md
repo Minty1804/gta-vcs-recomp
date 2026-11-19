@@ -1708,6 +1708,12 @@ code.
   - the exposure pictures (same bits on the sand).
   On this machine it gains little (game-internals.md 6j). The PR's own bound only covers screen-linear u, v.
   Extending it to perspective triangles would be work of our own, left for later and not done here.
+- **Native draws joined** (after willzmkv's 0bc5067): re-done, not copied. Their commit predates our cut-out split.
+  Joined as they did, a fence's two passes would interleave between parts. Only the main thread knows which textures
+  have holes, so refusing at record time would refuse nearly every world draw. So the recorder always joins and keeps
+  the parts, and the executor draws a group whose state takes two passes, or that reads a render target, part by part.
+  That is exact by construction. Strip parity is kept (winding, provoking vertex), and the mesh cache is bounded by
+  bytes. `PS2X_HW_NATIVE_MERGE=0` is the reference (PERFORMANCE.md 35).
 - **D3D11 state cache** (after willzmkv's 4fc7828): re-done in our backend rather than copied. Our backend differs
   from theirs: a blend constant set outside the pipeline, plus the viewport and scissor, which our renderer sets for
   every draw. Their approach and their reference switch (`VCS_D3D11_STATE_CACHE=0`) are kept. It is checked with the

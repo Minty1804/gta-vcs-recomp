@@ -16,7 +16,7 @@ The items are in the order we go through them, one at a time. Status: open / don
 | 4 | Exposure on the shown picture | willzmkv 02a6d4c, b5edbaf | S | re-do in the presenter | done 2026-11-19, re-done before the HUD with a highlight roll-off (game-internals 6s) |
 | 5 | GS: additive pixels that add nothing skipped (the hovercraft's glow) | PerikiyoXD, PR #178 | S | merge; conflict in gs_hw.cpp | done 2026-11-19: merged by hand, two guards of ours (packs, HUD layer); little gain here (game-internals 6j) |
 | 6 | D3D11: state reaches the driver only when it changes (we set the whole pipeline every draw) | willzmkv 4fc7828 | S-M | re-do in rhi_d3d11.cpp | done 2026-11-19: re-done with viewport / scissor / blend constant cached too; city view 1.2 -> 0.7 ms on the main thread (PERFORMANCE.md 34) |
-| 7 | Native draws joined: draws of one mesh with the same state as one (half the draw calls) | willzmkv 0bc5067 | M | re-do in gs_hw.cpp SubmitNative | open |
+| 7 | Native draws joined: draws of one mesh with the same state as one (half the draw calls) | willzmkv 0bc5067 | M | re-do in gs_hw.cpp SubmitNative | done 2026-11-19: re-done. Groups that take two passes (cut-out split, AFAIL) or read a render target are drawn as their parts, strip parity kept, the mesh cache bounded by bytes. Draws 2,055 -> 1,060 in the city; pictures identical on vs off (PERFORMANCE.md 35) |
 | 8 | The game from a CHD image | KenRylo-One, PR #201 | S | merge; docs conflicts | open |
 | 9 | Button prompts with a translated GXT (controls by key, not English words) | SkipperSkipTR, PR #181 | S | merge; only matters with a translated text | open |
 
