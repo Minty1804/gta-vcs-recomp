@@ -111,6 +111,8 @@ python tools/hose_check.py [OUT] [--step 144]                 # Hose the Hoes at
 python tools/trainer_check.py [OUT] [--vehicles all]          # every trainer feature, checked in the game's memory
 python tools/finale_check.py [OUT] [--story] [--full]         # Last Stand's end from the trainer: final cutscene, credits
 python tools/controls_check.py [OUT]                          # bindings, presets, reset, vibration, volume levels; menu screenshots
+python tools/pc_scheme_check.py [OUT]                         # the keyboard's PC scheme: every default key by situation (on
+                                                              # foot, fighting, in a vehicle, pause), keys shared by situation
 python tools/hud_check.py [OUT]                               # HUD at the screen edges: radar left, centred text in the middle
 python tools/menu_check.py [OUT]                              # the pause menu: Escape / Enter, the mouse (hover, click, sliders,
                                                               # map drag), the gamepad as before

@@ -129,7 +129,8 @@ class Check:
         self.keys("Escape@3", "Right", "Right", "Shift@2", "Shift@3", "Down", "Shift@3", "Up", "Shift@25")
         s = self.sound()
         with open(g.log_path, encoding="utf-8", errors="replace") as f:
-            loaded = "the game sets the music level 80 (ra=0x3add90): the player's 32" in f.read()
+            # (the level the save holds: 80 in the Fort Baxter save, another in a player's card)
+            loaded = re.search(r"the game sets the music level \d+ \(ra=0x3add90\): the player's 32", f.read()) is not None
         self.ok("a save load keeps the player's levels", loaded and s.get("music") == "32" and s.get("effects") == "64",
                 "%s, load %s" % (s, "seen" if loaded else "not seen"))
         # the pause menu's Audio page shows them (2 and 4 bars) and its slider changes the setting

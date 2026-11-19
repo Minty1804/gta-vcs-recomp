@@ -29,7 +29,7 @@ The items are in the order we go through them, one at a time. Status: open / don
 
 | # | What | From | Size | How | Status |
 |---|---|---|---|---|---|
-| 19 | Keyboard: PC control scheme as in VC / SA on PC, keys shared per situation | SkipperSkipTR PR #78 | M | merge; conflicts with our vcs_input.cpp | open |
+| 19 | Keyboard: PC control scheme as in VC / SA on PC, keys shared per situation | SkipperSkipTR PR #78 | M | merge; conflicts with our vcs_input.cpp | done 2026-11-19: merged, our Reload key in both schemes (on foot only in the PC one: R is the radio in a car); tools/pc_scheme_check.py |
 | 20 | Mouse free aim while driving; the wheel cycles the car's weapons | ChrisM-Pek (European fork) 741d6a6, a90845f | M | re-do (their base is the PAL disc) | open |
 
 ## D. The world further

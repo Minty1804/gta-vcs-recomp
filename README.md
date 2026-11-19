@@ -20,6 +20,7 @@ option or can be switched off, and everything else is the same as upstream.
 | | Upstream | This fork |
 |---|---|---|
 | **Texture packs** | Not supported | HD texture packs made for PCSX2 work as they are: PNG or DDS (BC1 / BC3 / BC7) |
+| **Keyboard controls** | A key per PS2 button (Shift for Cross, Q for L1...) | The PC games' scheme by default: an action per key, by situation (W walks on foot and accelerates in a car, Shift sprints / honks), Vice City's default keys; Keyboard → **Control scheme** (PC / PS2 buttons) (SkipperSkipTR's work) |
 | **Reload key** | None: the gun reloads only when the clip runs out | **R** reloads the gun in hand, with the game's own reload animation |
 | **Reload in a vehicle** | The clip refills only while you are not firing | The reload key fills the clip at once, even during a drive-by |
 | **Walk on a diagonal** | *Walk* + two direction keys (Alt + W + D) left Vic standing still | He walks diagonally, as he does in one direction |
@@ -391,6 +392,8 @@ is listed here (the full list of candidates, done or not: [docs/FORK_IMPORTS.md]
 - **Exposure**: after [willzmkv](https://github.com/willzmkv)'s (dejot) Exposure (commits 02a6d4c, b5edbaf), re-done
   on the picture before the HUD.
 - **Additive cull** (the helicopter dust's GPU cost): [PerikiyoXD](https://github.com/PerikiyoXD) (upstream PR #178).
+- **PC keyboard control scheme**: [SkipperSkipTR](https://github.com/SkipperSkipTR) (upstream PR #78), merged with our
+  Reload key added to both schemes.
 - **D3D11 state cache** (less driver time per draw): after [willzmkv](https://github.com/willzmkv)'s (dejot) commit 4fc7828.
 - **Native draws joined** (half the draw calls, fewer hitches): after [willzmkv](https://github.com/willzmkv)'s (dejot)
   commit 0bc5067, re-done so that fences' two-pass draws and render-target reads draw exactly as before.
