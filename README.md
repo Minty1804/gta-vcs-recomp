@@ -299,6 +299,13 @@ Vulkan on Linux -, sound and streaming run on the PC, and the movies are decoded
   target blip's colour. A second, red line leads to your own target (the red square you place on the pause map).
   It avoids water, picks the right level where roads run over each other, and recomputes as you drive
   ([docs/mods/GPS_ROUTE.md](docs/mods/GPS_ROUTE.md)).
+- **Quick save** (*Saving > Quick save*: Off / Enabled / Enabled + prompt after mission; the key: Keyboard > Menus,
+  F12; `VCS_QUICKSAVE=0/1/2`): the key opens the
+  game's own Save menu anywhere outside a mission, on foot or in a vehicle - choose a slot or Cancel. The save keeps
+  where you are (inside a safehouse or an Empire building too), your vehicle (the same model) or the one you left
+  parked nearby, your wanted level and the time of day; Load Game brings you back there. With the prompt, the Save
+  menu also comes up by itself after a mission is passed. A normal save in the usual slots and format
+  ([docs/mods/QUICKSAVE.md](docs/mods/QUICKSAVE.md)).
 
 ## Updating
 

@@ -26,6 +26,7 @@
 #include "game/vcs_aim.h"
 #include "game/vcs_gps.h"
 #include "game/vcs_lod_lights.h"
+#include "game/vcs_quicksave.h"
 #include "game/vcs_effects_timing.h"
 #include "game/vcs_framerate.h"
 #include "game/vcs_movie.h"
@@ -745,6 +746,7 @@ namespace
         vcs::driveby::registerSettings(); // Enhancements > Combat: drive-by fire rate (game/vcs_driveby.h)
         vcs::aim::registerSettings();     // the instant first shot (always on; VCS_QUICK_FIRST_SHOT=0 turns it off)
         vcs::gps::registerSettings();     // Enhancements > Radar: GPS route (game/vcs_gps.h)
+        vcs::quicksave::registerSettings(); // Enhancements > Saving + Keyboard > Menus: quick save, F12 (game/vcs_quicksave.h)
         vcs::registerEffectsSettings();   // Enhancements > Effects: Reduce Post Processing Effects (game/vcs_effects_timing.h)
 
         s = {};
@@ -937,6 +939,8 @@ int main(int argc, char *argv[])
                                     [](PS2Runtime &, void *) {
                                         altEnter();
                                         screenshotKey();
+                                        vcs::quicksave::onHostFrame(ui::settingsMenuOpen() || ui::trainerMenuBlocksInput() ||
+                                                                    ui::settingsMenuWaitingForKey()); // the quick save key
                                         followWindowAspect();
                                         ui::drawSettingsMenu();
                                         ui::drawTrainerMenu();
