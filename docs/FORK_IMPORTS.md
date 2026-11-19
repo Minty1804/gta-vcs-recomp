@@ -17,27 +17,18 @@ The items are in the order we go through them, one at a time. Status: open / don
 | 5 | GS: additive pixels that add nothing skipped (the hovercraft's glow) | PerikiyoXD, PR #178 | S | merge; conflict in gs_hw.cpp | done 2026-11-19: merged by hand, two guards of ours (packs, HUD layer); little gain here (game-internals 6j) |
 | 6 | D3D11: state reaches the driver only when it changes (we set the whole pipeline every draw) | willzmkv 4fc7828 | S-M | re-do in rhi_d3d11.cpp | done 2026-11-19: re-done with viewport / scissor / blend constant cached too; city view 1.2 -> 0.7 ms on the main thread (PERFORMANCE.md 34) |
 | 7 | Native draws joined: draws of one mesh with the same state as one (half the draw calls) | willzmkv 0bc5067 | M | re-do in gs_hw.cpp SubmitNative | done 2026-11-19: re-done. Groups that take two passes (cut-out split, AFAIL) or read a render target are drawn as their parts, strip parity kept, the mesh cache bounded by bytes. Draws 2,055 -> 1,060 in the city; pictures identical on vs off (PERFORMANCE.md 35) |
-| 8 | The game from a CHD image | KenRylo-One, PR #201 | S | merge; docs conflicts | open |
-| 9 | Button prompts with a translated GXT (controls by key, not English words) | SkipperSkipTR, PR #181 | S | merge; only matters with a translated text | open |
 
 ## B. Texture packs and mods (each builds on the one before)
 
 | # | What | From | Size | How | Status |
 |---|---|---|---|---|---|
 | 10 | Pack DDS uploaded compressed (BC1-BC7, ~1/4 of the memory, no decode) - except textures that need our alpha-coverage mips (the palms: the pack's stored mips lose them, measured) | willzmkv 37c9194, 5f1b1c2 | M-L | re-do: RHI BC formats in D3D11 / Vulkan / Metal, a hybrid in vcs_texture_pack.cpp | open |
-| 11 | Several packs at once with priorities, switched live in F2 (mod folders, Mod Loader's modloader.ini) | willzmkv a8a8587, cc86fcc, 9091a8e | M | re-do on our texpack | open |
-| 12 | Dump as DDS (for pack makers) | willzmkv 5f1b1c2 | S | re-do | open |
-| 13 | Game files from mods: GTA3PS2.IMG entries, GXT, MAIN.SCM, larger than the disc's | willzmkv 96edbbe, eed27a2, 69d3d21 | L | re-do | open |
 | 14 | Streaming memory past the PS2's 32 MB (5.4 MB heap -> up to 30 MB) | willzmkv 58a854f | L | re-do; touches guest memory size | open |
-| 15 | PC Vice City car mods (.dff + .txd converted to VCS's models) | willzmkv T9 (afb87df, 6e5f8d9, d177a70...) | XL | re-do with their tools (dff2mdl, txd2xtx) | open |
-| 16 | PC weapon mods (VC and SA) | willzmkv T11, spartaque12 (Immersive Weapons) | L | re-do | open |
 
 ## C. Controls
 
 | # | What | From | Size | How | Status |
 |---|---|---|---|---|---|
-| 17 | DualSense: lightbar, adaptive triggers (a feel per gun), a gun's kick, voices on its speaker | TomRous PR #96, willzmkv 946e1a9, 6d476bf, 40a9d4b | M | merge #96 (conflicts in vcs_input.cpp, platform_sdl3.cpp) + re-do the rest | open |
-| 18 | Gamepad: L1 / R1 look sideways while driving, aim assist, D-pad look behind, "GTA V buttons" | willzmkv 3a13a3b, 6d476bf | M | re-do | open |
 | 19 | Keyboard: PC control scheme as in VC / SA on PC, keys shared per situation | SkipperSkipTR PR #78 | M | merge; conflicts with our vcs_input.cpp | open |
 | 20 | Mouse free aim while driving; the wheel cycles the car's weapons | ChrisM-Pek (European fork) 741d6a6, a90845f | M | re-do (their base is the PAL disc) | open |
 
@@ -54,28 +45,34 @@ The items are in the order we go through them, one at a time. Status: open / don
 
 | # | What | From | Size | How | Status |
 |---|---|---|---|---|---|
-| 25 | Subtitles in Oswald (OFL) with size, shadow, background and colour options | willzmkv 6e14daa, d85fc1e, 27a4a9c | M | re-do | open |
 | 26 | Cutscenes: the sky no longer dark during the fade-in; the PS2's framing as an option | willzmkv ab1a765, 477cfd0 | S-M | check ours, re-do | open |
 | 27 | Sniper scope mask bars keep their corners in widescreen | willzmkv ab6d89c | S | check ours, re-do | open |
 
-## F. spartaque12's mods (VCS-mods repository; their fork is 160 commits behind)
+## Later (set aside 2026-11-19, the user's choice: maybe later)
 
-| # | What | Size | Status |
+Taken out of the working order; each keeps its number and can come back to it.
+
+| # | What | From | Size |
 |---|---|---|---|
-| 28 | First person on foot and in vehicles, viewmodel while aiming, reloads in view | L | open |
-| 29 | Death ragdolls (Jolt Physics) | XL | open |
-| 30 | Vegetation wind sway | M | open |
-| 31 | Shadow maps / ambient occlusion (RenderHook-style) | XL | open |
-| 32 | DLL (.asi) mod API | L | open |
-| 33 | Head shots (PedSkills) | M | open |
-
-## G. Menus and launcher
-
-| # | What | From | Size | Status |
-|---|---|---|---|---|
-| 34 | A native main menu / game menu (VC Definitive Edition's layout) | rofhima13 PR #26, willzmkv T12 | L | open |
-| 35 | Launcher: graphics presets from the PC's hardware, shader warm-up, controls on a picture of the pad | willzmkv 283bb56, 9c01e8f | L | open |
-| 36 | Direct3D 12 backend | willzmkv ae6c99e, 28ef950, d9f73ed | XL | open (little gain on our NVIDIA: D3D11 is past 100 fps) |
+| 8 | The game from a CHD image | KenRylo-One, PR #201 | S |
+| 9 | Button prompts with a translated GXT (controls by key, not English words) | SkipperSkipTR, PR #181 | S |
+| 11 | Several packs at once with priorities, switched live in F2 (mod folders, Mod Loader's modloader.ini) | willzmkv a8a8587, cc86fcc, 9091a8e | M |
+| 12 | Dump as DDS (for pack makers) | willzmkv 5f1b1c2 | S |
+| 13 | Game files from mods: GTA3PS2.IMG entries, GXT, MAIN.SCM, larger than the disc's | willzmkv 96edbbe, eed27a2, 69d3d21 | L |
+| 15 | PC Vice City car mods (.dff + .txd converted to VCS's models) | willzmkv T9 (afb87df, 6e5f8d9, d177a70...) | XL |
+| 16 | PC weapon mods (VC and SA) | willzmkv T11, spartaque12 (Immersive Weapons) | L |
+| 17 | DualSense: lightbar, adaptive triggers (a feel per gun), a gun's kick, voices on its speaker | TomRous PR #96, willzmkv 946e1a9, 6d476bf, 40a9d4b | M |
+| 18 | Gamepad: L1 / R1 look sideways while driving, aim assist, D-pad look behind, "GTA V buttons" | willzmkv 3a13a3b, 6d476bf | M |
+| 25 | Subtitles in Oswald (OFL) with size, shadow, background and colour options | willzmkv 6e14daa, d85fc1e, 27a4a9c | M |
+| 28 | First person on foot and in vehicles, viewmodel while aiming, reloads in view | spartaque12 (VCS-mods) | L |
+| 29 | Death ragdolls (Jolt Physics) | spartaque12 (VCS-mods) | XL |
+| 30 | Vegetation wind sway | spartaque12 (VCS-mods) | M |
+| 31 | Shadow maps / ambient occlusion (RenderHook-style) | spartaque12 (VCS-mods) | XL |
+| 32 | DLL (.asi) mod API | spartaque12 (VCS-mods) | L |
+| 33 | Head shots (PedSkills) | spartaque12 (VCS-mods) | M |
+| 34 | A native main menu / game menu (VC Definitive Edition's layout) | rofhima13 PR #26, willzmkv T12 | L |
+| 35 | Launcher: graphics presets from the PC's hardware, shader warm-up, controls on a picture of the pad | willzmkv 283bb56, 9c01e8f | L |
+| 36 | Direct3D 12 backend | willzmkv ae6c99e, 28ef950, d9f73ed | XL |
 
 ## Not for us
 
