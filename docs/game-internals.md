@@ -938,6 +938,14 @@ Found from frame dumps (`PS2X_HW_DUMP`, draw lists with depth) during the widesc
   bars and the screen effects keep their anchors whatever the sky did (willzmkv's ab6d89c): with the camera looking up
   through the sniper scope they lost the corners otherwise, and fell back to their 4:3 places (the world in the strips
   beside the scope, `regress.py scopemask`).
+- **2D drawn after the HUD in the same frame** (2026-11-19, the user's report: "the top-right HUD shows doubled or
+  with artefacts for a moment"). Not all of a frame's 2D is in the HUD context's capture: after the HUD the game
+  draws screen-space rain drops (small sprites, more in rain), radar blips and lines (some depth-tested), sprites by
+  the bars or the weapon and fades that start at alpha 1-9. Their positions match no HUD anchor, so the renderer saw
+  them as the next frame's scene and dropped the HUD drawn so far: one frame without the money or with half the HUD
+  (`PS2X_HW_HUD_WATCH=1` caught each one). Ruled out first: anchors from the previous frame (62 matches against 90k
+  from the current one) and a pixel of rounding (a 3x3 neighbourhood changed nothing). Now drawn over the HUD in its
+  layer (NATIVE_RENDERER.md "HUD layer", `hudOverDraw`).
 - The colour filter / trails effect is drawn as **strips that sample the frame** itself (textures
   inside render targets, `texIsRt`), plus an alpha-only quad (FBMSK 0xFFFFFF) over x 80..560 at
   z = 0.

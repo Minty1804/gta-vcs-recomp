@@ -1229,6 +1229,7 @@ namespace
         void execute(const Frame &f, bool logDraws)
         {
             m_execWide = f.shown != 0; // [gta-recomp] the shape the frame's drawing is for (shapeOf)
+            ++m_execSerial;            // [gta-recomp] which frame a HUD layer was drawn in (HudLayer::frame)
             m_dev.pushMarker("gs frame");
             const size_t bytes = f.vertices.size() * sizeof(HwVertex);
             if (bytes)
@@ -1367,11 +1368,16 @@ namespace
                     HudLayer &layer = m_hud[d.s.fbp];
                     if (layer.stale || layer.closed)
                     {
+                        if (hudWatch() && layer.stale && layer.frame == m_execSerial && !layer.draws.empty())
+                            std::fprintf(stderr, "[hud-watch] fbp %u: the layer restarts within its frame (%zu draws, %zu "
+                                                 "vertices dropped)\n",
+                                         d.s.fbp, layer.draws.size(), layer.vertices.size());
                         layer.vertices.clear();
                         layer.draws.clear();
                         layer.stale = layer.closed = false;
                     }
                     appendHudDraw(layer, f, d);
+                    layer.frame = m_execSerial;
                     break;
                 }
                 case CmdType::DepthFill:
@@ -1385,7 +1391,10 @@ namespace
                     // copies, screen effects), 2 skips untextured full-screen draws, 4 skips everything but native draws
                     static const unsigned skip = std::getenv("PS2X_HW_SKIP") ? std::strtoul(std::getenv("PS2X_HW_SKIP"), nullptr, 0) : 0u;
                     const HwState &ds = f.draws[c.index].s;
+                    if (hudOverDraw(f, f.draws[c.index]))
+                        break;
                     hudOnDraw(ds);
+                    hudWatchLog(f, f.draws[c.index], "scene");
                     if (skip && (((skip & 1u) && ds.texIsRt) || (skip & 4u)))
                         break;
                     // [gta-recomp] PS2X_HW_SKIP_KEYS=<hex>,<hex>... (diagnostics): skips the draws of those texture keys
@@ -1531,6 +1540,18 @@ namespace
                 auto it = m_hud.find(f.displayFbp);
                 if (f.displayFromRt && it != m_hud.end() && !it->second.stale && !it->second.draws.empty())
                     layer = &it->second;
+                if (hudWatch()) // [gta-recomp] a shown frame's HUD layer: its size, or why there is none
+                {
+                    static size_t lastDraws = 0;
+                    const size_t draws = layer ? layer->draws.size() : 0u;
+                    if (draws != lastDraws)
+                        std::fprintf(stderr, "[hud-watch] shown fbp %u (frame %llu): HUD layer %zu draws (was %zu)%s%s%s\n",
+                                     f.displayFbp, static_cast<unsigned long long>(m_execSerial), draws, lastDraws,
+                                     !f.displayFromRt ? " - not from a target" : "",
+                                     it == m_hud.end() ? " - none for this buffer" : "",
+                                     it != m_hud.end() && it->second.stale ? " - stale" : "");
+                    lastDraws = draws;
+                }
                 static const bool rtLog = std::getenv("PS2X_HW_RT_LOG") != nullptr; // [gta-recomp] the targets, every 5 s
                 static auto rtLast = ps2x::hostNow();
                 if (rtLog && ps2x::hostNow() - rtLast > std::chrono::seconds(5))
@@ -2082,7 +2103,19 @@ namespace
             std::vector<DrawCmd> draws;
             bool stale = false;  // the buffer has new drawing: this HUD is gone
             bool closed = false; // copied out as a finished frame: still shown from the copy, the next HUD replaces it
+            uint64_t frame = 0; // [gta-recomp] the execute() its last HUD draw came in (m_execSerial)
         };
+        uint64_t m_execSerial = 0; // [gta-recomp] counts execute() calls (frames run)
+        // [gta-recomp] PS2X_HW_HUD_WATCH=1 (diagnostics): a HUD layer made stale by a draw of the same frame that drew
+        // it, or restarted within its frame
+        static bool hudWatch()
+        {
+            static const bool on = [] {
+                const char *e = std::getenv("PS2X_HW_HUD_WATCH");
+                return e && e[0] == '1';
+            }();
+            return on;
+        }
         struct LayerTarget // where draw() puts a HUD layer draw, or a native post-effect pass (see nativePost)
         {
             rhi::Texture *color = nullptr, *depth = nullptr; // null color: the draw's own render target
@@ -2680,6 +2713,38 @@ namespace
         // the HUD layers' bookkeeping for a draw into the frame's buffers: a new scene makes the target's layer stale; a
         // plain copy of another buffer takes its HUD along (VCS draws into one buffer and copies the finished frame into
         // the displayed one at the start of the next)
+        // [gta-recomp] A draw after the HUD in the frame that drew it goes over the HUD, into its layer, in order - as on
+        // the PS2, where it lands on the HUD's pixels (the user's report, 2026-11-19: the top-right HUD vanished for a
+        // frame every so often, or came back in part with a piece of it in the middle of the screen). Before, any such
+        // draw made the layer stale, as the next frame's scene does, and the next HUD draw started it afresh: everything
+        // drawn into it so far was gone from that frame. Screen-space sprites the HUD classifier does not know (rain
+        // drops on the screen, a radar blip or a sprite by the bars at a fraction of a pixel) are drawn among the HUD's
+        // own draws, and a fade starts at an alpha of 1 / 128 over it - each emptied the HUD for a frame. Depth-tested
+        // ones too: the radar's lines are masked by the radar's depth, which is drawn into the layer. Draws that read a
+        // render target (a frame copy, a screen effect) still end the layer.
+        // PS2X_HW_HUD_OVER=0: as before (to compare).
+        bool hudOverDraw(const Frame &f, const DrawCmd &d)
+        {
+            static const bool on = [] {
+                const char *e = std::getenv("PS2X_HW_HUD_OVER");
+                return !(e && e[0] == '0');
+            }();
+            const HwState &ds = d.s;
+            if (!on || m_hud.empty() || ds.texIsRt)
+                return false;
+            auto it = m_hud.find(ds.fbp);
+            if (it == m_hud.end())
+                return false;
+            HudLayer &layer = it->second;
+            if (layer.stale || layer.closed || layer.frame != m_execSerial || layer.draws.empty())
+                return false;
+            m_shapeOf[ds.fbp] = m_execWide;
+            appendHudDraw(layer, f, d);
+            ++m_hudOverDraws;
+            return true;
+        }
+        uint64_t m_hudOverDraws = 0; // [gta-recomp] (hudOverDraw) for the watch
+
         void hudOnDraw(const HwState &ds)
         {
             hudSceneDraw(ds.fbp);
@@ -2696,12 +2761,37 @@ namespace
                 }
         }
 
+        // a draw into the buffer outside the HUD (and not over it, hudOverDraw): the next frame's scene, the layer is stale
         void hudSceneDraw(uint32_t fbp)
         {
             m_shapeOf[fbp] = m_execWide; // [gta-recomp] drawn for the executing frame's shape
             if (!m_hud.empty())
                 if (auto it = m_hud.find(fbp); it != m_hud.end())
+                {
+                    if (hudWatch() && !it->second.stale && !it->second.closed && it->second.frame == m_execSerial &&
+                        !it->second.draws.empty())
+                        m_hudWatchStale = fbp + 1u; // logged by the draw that did it (hudWatchLog)
                     it->second.stale = true;
+                }
+        }
+        uint32_t m_hudWatchStale = 0; // [gta-recomp] fbp + 1 of a layer the current draw made stale within its frame
+        void hudWatchLog(const Frame &f, const DrawCmd &d, const char *kind)
+        {
+            if (!m_hudWatchStale)
+                return;
+            m_hudWatchStale = 0;
+            float x0 = 1e9f, y0 = 1e9f, x1 = -1e9f, y1 = -1e9f;
+            for (uint32_t i = 0; i < d.count && d.first + i < f.vertices.size(); ++i)
+            {
+                const HwVertex &v = f.vertices[d.first + i];
+                x0 = std::min(x0, v.x), x1 = std::max(x1, v.x), y0 = std::min(y0, v.y), y1 = std::max(y1, v.y);
+            }
+            const HwVertex *v0 = d.count && d.first < f.vertices.size() ? &f.vertices[d.first] : nullptr;
+            std::fprintf(stderr, "[hud-watch] fbp %u: HUD layer made stale in its own frame by a %s draw: %u vertices at "
+                                 "%.2f..%.2f x %.2f..%.2f, tex %llx %ux%u%s%u%s rgba %u,%u,%u,%u (frame %llu)\n",
+                         d.s.fbp, kind, d.count, x0, x1, y0, y1, static_cast<unsigned long long>(d.s.tme ? d.s.texKey : 0u),
+                         d.s.tw, d.s.th, d.s.texIsRt ? " rt=" : " ", d.s.texIsRt ? d.s.rtFbp : 0u, d.s.abe ? " blend" : "",
+                         v0 ? v0->r : 0u, v0 ? v0->g : 0u, v0 ? v0->b : 0u, v0 ? v0->a : 0u, static_cast<unsigned long long>(m_execSerial));
         }
 
         // the layer over m_display, which shows the buffer from PS2 pixel (displayX, displayY)

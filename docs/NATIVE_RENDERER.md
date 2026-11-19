@@ -371,6 +371,15 @@ The HUD, text and radar are drawn over the shown picture at the window's size in
   copy of a buffer takes its layer along: VCS copies its finished frame (FBP 140) into the displayed buffer (FBP 0)
   at the start of the next frame. The copy also closes the source's layer (the next HUD draw replaces it): the pause
   menu draws nothing else into FBP 140, so its layer grew by a frame's menu every frame before.
+- **2D drawn after the HUD** (2026-11-19, `[Minty1804 fork]`): a draw the classifier does not name that comes after
+  HUD draws in the same frame (the executor counts frames, `m_execSerial`) and reads no render target is appended to
+  the layer in order (`hudOverDraw`): over the HUD, as on the PS2. Before, it made the layer stale like the next
+  frame's scene, and the frame was shown with the HUD missing or half drawn - the user's "top-right HUD doubled for a
+  moment". Those draws are the game's screen-space rain drops, radar blips and lines (depth-tested), sprites by the
+  bars and fades starting at alpha 1-9. Measured over a 3.5-minute walk and drive with rain: 15 frames with the HUD
+  under 20 draws before, 0 after (the only gaps left are loading screens, where the game draws no HUD); 65
+  consecutive frames all with the HUD. `PS2X_HW_HUD_OVER=0` = as before; `PS2X_HW_HUD_WATCH=1` logs every layer
+  made stale or restarted within its own frame and every shown layer that shrank.
 - **Drawing.** `composeDisplay` makes the picture at the output size (`gsHwSetOutputSize`: the window's letterboxed
   area, set by the runtime each host frame), blits the displayed buffer into it (bilinear, as the presenter scaled it
   before) and draws the displayed buffer's layer on top with the same draw shaders, textures and blend modes: target

@@ -206,6 +206,7 @@ namespace vcs
         // runtime/ps2_render_worker.h) in order with the frame's display list, read there by classify
         std::shared_ptr<const AnchorMap> g_anchors = std::make_shared<AnchorMap>();
         int g_traceKeys = 0;                             // VCS_TRACE_HUDKEY=<n>
+        bool g_traceNear = false;                        // VCS_TRACE_HUDKEY_NEAR=1
 
         uint32_t positionKey(int x, int y) { return uint32_t(uint16_t(x)) | (uint32_t(uint16_t(y)) << 16); } // whole pixels
 
@@ -424,7 +425,36 @@ namespace vcs
                     it = anchors.find(positionKey(xs[k & 1], ys[k >> 1]));
                 if (it == anchors.end())
                 {
-                    if (g_traceKeys > 0)
+                    // VCS_TRACE_HUDKEY_NEAR=1: only small misses with a HUD vertex within 6 pixels (does a HUD
+                    // primitive land a pixel off its captured position? Checked 2026-11-19: no, the misses are the
+                    // game's other 2D - rain, radar blips, fades; gs_hw.cpp hudOverDraw)
+                    int nearDx = 99, nearDy = 99;
+                    float bx0 = 1e9f, bx1 = -1e9f, by0 = 1e9f, by1 = -1e9f;
+                    for (uint32_t j = 0; j < count; ++j)
+                        bx0 = std::min(bx0, xy[2 * j]), bx1 = std::max(bx1, xy[2 * j]), by0 = std::min(by0, xy[2 * j + 1]),
+                        by1 = std::max(by1, xy[2 * j + 1]);
+                    const bool small = bx0 >= 0.0f && by0 >= 0.0f && bx1 <= 640.0f && by1 <= 448.0f && bx1 - bx0 < 100.0f &&
+                                       by1 - by0 < 100.0f;
+                    if (g_traceNear && g_traceKeys > 0 && small)
+                        for (int dy = -6; dy <= 6; ++dy)
+                            for (int dx = -6; dx <= 6; ++dx)
+                                if (std::abs(dx) + std::abs(dy) < std::abs(nearDx) + std::abs(nearDy) &&
+                                    anchors.count(positionKey(xs[0] + dx, ys[0] + dy)))
+                                    nearDx = dx, nearDy = dy;
+                    if (g_traceNear && nearDx != 99 && g_traceKeys > 0)
+                    {
+                        --g_traceKeys;
+                        std::string all;
+                        for (uint32_t j = 0; j < count; ++j)
+                        {
+                            char b[40];
+                            std::snprintf(b, sizeof(b), " %.3f,%.3f", xy[2 * j], xy[2 * j + 1]);
+                            all += b;
+                        }
+                        std::fprintf(stderr, "[hud-key] near miss (vertex %u of %u, nearest HUD vertex %+d,%+d px):%s\n", i,
+                                     count, nearDx, nearDy, all.c_str());
+                    }
+                    else if (g_traceKeys > 0 && !g_traceNear)
                     {
                         --g_traceKeys;
                         std::fprintf(stderr, "[hud-key] miss %.4f,%.4f (vertex %u of %u)\n", x, y, i, count);
@@ -627,6 +657,8 @@ namespace vcs
         const bool on = !(rw && rw[0] == '0');
         if (const char *keys = std::getenv("VCS_TRACE_HUDKEY"))
             g_traceKeys = std::atoi(keys);
+        if (const char *tr = std::getenv("VCS_TRACE_HUDKEY_NEAR"))
+            g_traceNear = tr[0] == '1';
         if (const char *frames = std::getenv("VCS_TRACE_HUDANCHOR"))
             g_traceAnchors = std::atoi(frames);
         if (const char *f = std::getenv("VCS_TRACE_HUDFLICKER"))
