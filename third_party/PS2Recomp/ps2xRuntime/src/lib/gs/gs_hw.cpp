@@ -38,6 +38,7 @@ namespace
     std::atomic<float> g_hudSqueeze{1.0f}; // [gta-recomp] gsHwSetHudSqueeze
     std::atomic<GSHwAnchorFn> g_hudClassifier{nullptr}; // [gta-recomp] gsHwSetHudClassifier
     std::atomic<bool> g_hudLayer{false};                // [gta-recomp] gsHwSetHudLayer
+    std::atomic<float> g_exposure{0.0f};                // [gta-recomp] gsHwSetExposure (0: none)
     std::atomic<GSHwGlyphFn> g_glyphClassifier{nullptr}; // [gta-recomp] gsHwSetGlyphClassifier
     // [gta-recomp] gsHwSetGlyphAtlas: the atlas the GS stage was handed last (that thread only) and its number
     struct GlyphAtlas
@@ -311,6 +312,10 @@ namespace
 void gsHwSetHudSqueeze(float factor) { g_hudSqueeze.store(factor, std::memory_order_relaxed); }
 void gsHwSetHudClassifier(GSHwAnchorFn fn) { g_hudClassifier.store(fn, std::memory_order_relaxed); }
 void gsHwSetHudLayer(bool on) { g_hudLayer.store(on, std::memory_order_relaxed); }
+void gsHwSetExposure(float exposure) // [gta-recomp]
+{
+    g_exposure.store(exposure > 0.0f && exposure != 1.0f ? exposure : 0.0f, std::memory_order_relaxed);
+}
 void gsHwSetGlyphClassifier(GSHwGlyphFn fn) { g_glyphClassifier.store(fn, std::memory_order_relaxed); }
 void gsHwSetGlyphAtlas(uint32_t width, uint32_t height, std::shared_ptr<const std::vector<uint32_t>> pixels)
 {
@@ -1480,7 +1485,9 @@ namespace
                 const float x0 = f.displayX * rs.x, y0 = f.displayY * rs.y;
                 const float sw = m_displayW * rs.x, sh = m_displayH * rs.y;
                 const bool scaled = std::fabs(w - sw) > 0.5f || std::fabs(h - sh) > 0.5f;
-                blit(shown, {x0 / tw, y0 / th, (x0 + sw) / tw, (y0 + sh) / th}, *m_display, 0, 0, w, h, scaled, true);
+                // [gta-recomp] gsHwSetExposure: on the game's picture, before the native HUD layer goes over it
+                blit(shown, {x0 / tw, y0 / th, (x0 + sw) / tw, (y0 + sh) / th}, *m_display, 0, 0, w, h, scaled, true,
+                     g_exposure.load(std::memory_order_relaxed));
                 if (layer)
                     drawHudLayer(*layer, f.displayX, f.displayY);
             }
@@ -1496,7 +1503,8 @@ namespace
                 auto tmp = m_dev.createTexture({f.cpuDisplayW, f.cpuDisplayH, rhi::Format::RGBA8, rhi::UsageSampled, "gs cpu display"},
                                                f.cpuDisplay.data(), f.cpuDisplayW * 4u);
                 if (tmp)
-                    blit(*tmp, {0.0f, 0.0f, 1.0f, 1.0f}, *m_display, 0, 0, w, h, true, true);
+                    blit(*tmp, {0.0f, 0.0f, 1.0f, 1.0f}, *m_display, 0, 0, w, h, true, true,
+                         g_exposure.load(std::memory_order_relaxed)); // [gta-recomp] gsHwSetExposure
             }
             else
             {
@@ -1652,7 +1660,7 @@ namespace
 
         // src (uv rect, 0..1) -> dst pixel rect, point or bilinear; opaque: alpha written as 1
         void blit(rhi::Texture &src, std::array<float, 4> uv, rhi::Texture &dst, uint32_t x, uint32_t y, uint32_t w, uint32_t h,
-                  bool linear, bool opaque)
+                  bool linear, bool opaque, float exposure = 0.0f)
         {
             bindPass(&dst, nullptr);
             QuadConstants q{};
@@ -1660,6 +1668,7 @@ namespace
                     static_cast<float>(dst.desc().width), static_cast<float>(dst.desc().height), q.rect);
             std::memcpy(q.uvRect, uv.data(), sizeof(q.uvRect));
             q.params[1] = opaque ? 1.0f : 0.0f;
+            q.params[2] = exposure; // [gta-recomp] gsHwSetExposure (0: none)
             m_dev.setScissor(0, 0, static_cast<int>(dst.desc().width), static_cast<int>(dst.desc().height));
             m_dev.setPipeline(*m_blit);
             m_dev.updateBuffer(*m_quadCb, &q, sizeof(q));

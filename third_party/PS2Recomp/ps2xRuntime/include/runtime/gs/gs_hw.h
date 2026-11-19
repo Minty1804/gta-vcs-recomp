@@ -124,6 +124,10 @@ uint64_t gsHwOverlayTriangles();
 // the displayed picture at the output size (gsHwSetOutputSize) - sharp at any window size, in its aspect. The displayed
 // buffer's latest HUD is drawn; a new scene in that buffer starts the next one. Any thread.
 void gsHwSetHudLayer(bool on);
+// [gta-recomp] Exposure of the displayed picture (Graphics > Image quality > Exposure): the game's frame is scaled in
+// linear light as it is copied to the output - before the native HUD layer, so the HUD keeps its colours - with a
+// highlight roll-off above 1 (gs_util.hlsl exposed). 1: none, the original bits. Any thread.
+void gsHwSetExposure(float exposure);
 // [gta-recomp] Widescreen: how much wider than 4:3 the game's 640-wide frame is shown (display aspect / (4/3)); the
 // native post effects widen their buffers by it so blur and warp keep their 4:3 proportions on screen. Any thread.
 void gsHwSetAspectWidening(float widening);

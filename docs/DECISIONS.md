@@ -1690,5 +1690,12 @@ code.
   it curves the fog (thinner in the middle distance, still total at the far plane) instead of moving the range. One
   setting keeps one meaning: the fog's half point at that percentage of the original. The curve is in the GS pixel
   shader, so every path gets it, and at 100 % the original bits are untouched.
+  **175 % is the default** (the player's choice, 2026-11-19), a choice the player made against the project's
+  "authentic by default" rule; 100 % gives the original fog back.
+- **Exposure** (after willzmkv's 02a6d4c / b5edbaf): re-done, not copied (the user's rule: no shortcuts). Theirs
+  multiplies the finished picture, HUD included, and clips the highlights. Ours scales the game's picture in linear
+  light as it is copied to the output, before the native HUD layer, with a shoulder that keeps white at white
+  (game-internals.md 6s). It is one setting with no Post-processing toggle: there is nothing else to toggle yet.
+  Default 100 % (the original). Credit: Co-Authored-By dejot on the commit, README Credits, FORK_IMPORTS.
 - **Credits**: every import keeps its author on the commit and gets a line in the fork README's Credits section (the
   user's rule, AGENTS.md).

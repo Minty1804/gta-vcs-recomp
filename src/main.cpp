@@ -681,6 +681,24 @@ namespace
         s.onChange = [](int v) { setEnv("PS2X_HW_ANISO", std::to_string(v)); };
         settings::add(s);
 
+        // Exposure (docs/game-internals.md 6s): after willzmkv's (dejot) Exposure in their fork (02a6d4c, b5edbaf),
+        // re-done on the game's picture before the HUD, in linear light with a highlight roll-off (gs_hw.h)
+        s = {};
+        s.key = "graphics.exposure";
+        s.page = "Graphics";
+        s.section = "Image quality";
+        s.label = "Exposure";
+        s.help = "Brightness of the game's picture, percent (100 = the original). Above 100 the shadows open up while "
+                 "white stays white; below it the picture darkens. The HUD keeps its colours.";
+        s.type = Type::Integer;
+        s.min = 50;
+        s.max = 200;
+        s.format = "%d%%";
+        s.defaultValue = 100;
+        s.env = "VCS_EXPOSURE";
+        s.onChange = [](int v) { gsHwSetExposure(static_cast<float>(v) / 100.0f); };
+        settings::add(s);
+
         // Fences and leaves at a distance (docs/game-internals.md 6q): their faint, filtered edges write depth and hide
         // what is drawn behind them later - the sky shows through a far fence instead of the building behind it. Always
         // on, no setting (the user's choice, DECISIONS.md 2026-11-18); PS2X_HW_CUTOUT_SPLIT=0 brings the original back

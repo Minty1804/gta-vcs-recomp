@@ -1854,12 +1854,41 @@ module `src/game/vcs_fog.cpp` was brought in as it is (docs/FORK_IMPORTS.md item
   - The fog is still total at the far plane, so nothing past it shows: no edge, no dark patches.
   - The curve applies to the interpolated F of each pixel, on every path that draws through the GS shader: native,
     and `PS2X_HLE=0`, checked.
-  - At 100 % the shader skips it. Before and after the change, 45 of 645,120 pixels differ (the clock moved 2 minutes).
+  - The default is 175 % (the player's choice; DECISIONS.md). At 100 % the shader skips it. Before and after the change, 45 of 645,120 pixels differ (the clock moved 2 minutes).
   - The cost could not be seen in the timings: gs_ms 3.1 at 100 % and at 175 % (Ocean Beach, 30 fps).
   - Checked at noon and at 21:00 from two views over Ocean Beach. The city and the tower at the end of the beach show
     clearly at 175 %, and the far land still fades out.
 - Switches: `VCS_FOG_DISTANCE` and `VCS_FOG_START` set the two settings for one run. `VCS_FOG_HOOK=0` leaves the
   setter alone. `VCS_TRACE_FOG=1` logs the ranges the game asks for, every 5 s.
+
+### 6s. Exposure of the shown picture (2026-11-19, Graphics > Image quality > Exposure)
+
+After willzmkv's (dejot) Exposure in their fork (02a6d4c, b5edbaf; docs/FORK_IMPORTS.md item 4).
+- **Their version** is a Post-processing toggle plus an Exposure setting. The presenter's last pass multiplies the
+  finished picture by e². That brightens the HUD with the scene, and anything bright clips to white.
+- **Ours** re-does it where the game's picture is copied to the output: `composeDisplay` in gs_hw.cpp, the blit from
+  the displayed frame buffer into the display texture. That copy comes after the game's own post effects (bloom,
+  motion blur) and **before the native HUD layer** is drawn over it (`gsHwSetHudLayer`, on by default). So the HUD
+  keeps its colours. Its translucent parts, such as the radar's disc, show the changed scene through them.
+  - The PS2 frame buffer also holds what the game draws into it: the pause menu, fades and loading screens. These
+    change with the scene.
+  - With `VCS_HUD_NATIVE=0` the HUD is in the frame buffer too, so it changes as well.
+- **The curve** (gs_util.hlsl `exposed`, `params.z` of the blit): exposure e is a gain in linear light (gamma 2.2).
+  - Below 1, it is a plain gain.
+  - Above 1, it is the full gain up to a knee (half the light). Above the knee, a shoulder s·u / (1 + (s - 1)·u)
+    takes the gained white e to exactly 1. Here u runs from the knee to e, s = (e - knee) / (1 - knee), and the slope
+    at the knee is 1. So white stays white, nothing clips and the shadows open up.
+  - The first try, an extended Reinhard curve with its white at e, compressed the darks too: 200% at night hardly
+    showed.
+- **One setting**, 50-200%, default 100% (the original). At 100% the blit skips the curve: the sand region came out
+  the same bits before and after.
+  - The exposure applies to every blit into the display texture: the frame from a render target, and a picture from
+    CPU VRAM (loading screens).
+- **Measured** at Ocean Beach at night, 200% against 100%:
+  - The sand is +30.8 levels (of 255) and the sky +2.4.
+  - The radar's disc changes by +6 (it is translucent) and the health bar by +0.4.
+  - Cost: gs_ms 3.0 → 3.1 and 2.8 → 3.0 (noise level).
+- Switch: `VCS_EXPOSURE=<percent>` sets the setting for one run.
 
 ## 7. Textures: `.XTX`
 

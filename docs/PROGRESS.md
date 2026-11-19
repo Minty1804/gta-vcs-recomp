@@ -1130,6 +1130,7 @@ Python scripts still usable on their own. docs/LAUNCHER.md has the whole of it; 
 | `VCS_AIM_CIRCLE=0\|1\|2` | Enhancements > Combat > Aiming circle (Original / Small / Spread) for one run |
 | `VCS_QUICKSAVE=0\|1\|2`, `VCS_QUICKSAVE_HOOKS=0` | Enhancements > Saving > Quick save for one run (Off / the key / the key + the menu after a mission); no hook at all (game-internals.md 12f; `quicksave` command, `tools/quicksave_check.py`) |
 | `VCS_FOG_DISTANCE=10..175`, `VCS_FOG_START=0..300`, `VCS_FOG_HOOK=0`, `VCS_TRACE_FOG=1` | Graphics > Fog for one run (percent of the game's fog end / start; above 100 the fog curve, `gsHwSetFogCurve`); the game's fog-range setter left alone; log the ranges the game asks for every 5 s (willzmkv's; game-internals.md 6r; `fogstate` command, `tools/fog_check.py`) |
+| `VCS_EXPOSURE=50..200` | Graphics > Image quality > Exposure for one run (percent; 100 the original): the game's picture before the HUD, in linear light, white kept (game-internals.md 6s; `gsHwSetExposure`) |
 | `VCS_GPS=0\|1\|2`, `VCS_GPS_HOOKS=0` | Enhancements > Radar > GPS route (Off / In a vehicle / Always) for one run; no GPS hook at all (game-internals.md 12e; `gps` command) |
 | `VCS_AIM_SPEED=1\|2\|3` | Enhancements > Combat > Aim speed (Original / Fast / Faster) for one run |
 | `VCS_AIM_LOG=1` | free aim per frame: camera, IK flags / torso, the raise animation's time (`[aim-log]`) |

@@ -35,7 +35,8 @@ option or can be switched off, and everything else is the same as upstream.
 | **Aim after a jump or sprint** | The aim could come up to a second late after a jump, or after sprinting with the button held | It comes the frame the sprint or the landing ends (the animations play whole) |
 | **GPS route** | No route: only the blip to follow | A line along the roads to the mission's target and a red one to the target you set on the pause map, on the radar and the map (Enhancements → Radar, off by default; olaftnt's work) |
 | **Quick save** | Saving only at a safehouse | F12 opens the game's Save menu anywhere outside a mission; loading puts you back there, in your car or next to it, with your wanted level (Enhancements → Saving, off by default; olaftnt's work, with three load fixes of ours) |
-| **Fog distance / start** | The game's fog as it is | Graphics → Fog: bring the time of day's own fog closer for a hazier city, or up to 175% to see the city further with the edge of the world still hidden (100% / 100% by default, the original; willzmkv's work, the part above 100% ours) |
+| **Fog distance / start** | The game's fog as it is | Graphics → Fog: bring the time of day's own fog closer for a hazier city, or up to 175% to see the city further with the edge of the world still hidden (175% / 100% by default; 100% / 100% is the original; willzmkv's work, the part above 100% ours) |
+| **Exposure** | The game's brightness as it is | Graphics → Image quality: brighten or darken the game's picture; shadows open up while white stays white, the HUD keeps its colours (100% by default, the original; after willzmkv's Exposure) |
 | **Free aim up close** | Firing at a man right next to you swung the gun instead of shooting; shotgun pellets left from the gun, not through the circle, and missed close targets | Every gun fires up close, and shotgun pellets spread around the circle |
 | **Aiming circle** | The game's large circle | Original, Small, or Spread: a small dot for guns (they hit its centre), the pellet spread for shotguns (Enhancements → Combat, Original by default) |
 | **Character shadows** | Always on under Vic and everyone on foot | Can be turned off (option, on by default) |
@@ -312,6 +313,8 @@ Vulkan on Linux -, sound and streaming run on the PC, and the movies are decoded
   swallows the city (10-175% of the original; above 100% the fog thins out in the middle distance but still hides the
   edge of the world) and where it begins (0-300% of the original start). It is the game's own
   fog, so it follows every surface's depth and keeps the time of day's colour.
+- **Exposure** (*Graphics > Image quality > Exposure*, 50-200%; `VCS_EXPOSURE`): the game's picture brighter or
+  darker, in linear light with the highlights rolling off so nothing clips, applied before the HUD is drawn.
 
 ## Updating
 
@@ -385,6 +388,8 @@ is listed here (the full list of candidates, done or not: [docs/FORK_IMPORTS.md]
 - **GPS route**: [olaftnt](https://github.com/olaftnt) (upstream PR #183).
 - **Quick save**: [olaftnt](https://github.com/olaftnt) (upstream PR #184).
 - **Fog distance / start**: [willzmkv](https://github.com/willzmkv) (dejot), from their fork (commit 0d63f27).
+- **Exposure**: after [willzmkv](https://github.com/willzmkv)'s (dejot) Exposure (commits 02a6d4c, b5edbaf), re-done
+  on the picture before the HUD.
 - **Texture packs**: PCSX2's texture names, reproduced from [PCSX2](https://github.com/PCSX2/pcsx2)'s texture
   replacement code; BC1-BC7 decoding by [bcdec](https://github.com/iOrange/bcdec) (Sergii Kudlai, MIT).
 - **Distant lights**: the light table of Project2DFX's VCS version for PCSX2, from ThirteenAG's
