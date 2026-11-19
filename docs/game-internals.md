@@ -1545,6 +1545,23 @@ windowScale role there), a dropped or outgrown target's texture reused by the ne
 one), a dropped target re-made at the size it had. The drop itself stays (the reflection map starts from cleared each
 frame, as before).
 
+- **The additive cull** (PerikiyoXD, upstream PR #178, merged 2026-11-19; PS2RECOMP_PATCHES.md):
+  - Additive draws that add nothing are skipped: a primitive with colour 0, the pixels outside the lit texels' box
+    (a scissor), and a pixel whose source colour is 0.
+  - **This is only done where the target's alpha is never read.** Seen in every run here: fbp 140's alpha is only
+    copied into fbp 0, and nothing reads it.
+  - **Our two guards** (`[Minty1804 fork]`):
+    - No peak map for a texture pack's image, so its draws stay whole. A pack's lit texels may lie elsewhere than the
+      game's own.
+    - No cull on native HUD layer draws, which the layer squeezes later.
+  - **Measured here** (RX 6950 XT, 3x): the player's Maverick a few metres over Ocean Beach at night.
+    - Of about 380,000 dust triangles, 1,370 got a scissor. The rest are flat on the ground in perspective (q differs
+      per vertex), where the PR's bound does not hold, so they are drawn as they are.
+    - The dust costs about 0.1 ms of GPU with or without the cull. The PR's 13 -> 0.85 ms was the dust filling the
+      screen from above, at 4x with MSAA, on an RTX 4060.
+    - `PS2X_HW_CULL_NOOP=verify`: no magenta in the helicopter scene or in the eight reference scenes (boot, cutscene,
+      fly-over, HUD, pause map).
+
 ### 6k. Plane trails and RenderWare's Im3D line clipper (2026-10-30)
 
 Found from a user report: long thin white lines across the picture in the morning, starting at the white trails that

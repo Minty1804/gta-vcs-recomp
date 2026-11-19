@@ -14,7 +14,7 @@ The items are in the order we go through them, one at a time. Status: open / don
 | 2 | Quick save key: the game's Save menu outside missions (vehicle height, wanted level kept) | olaftnt, PR #184 | S | merge; main.cpp; its F12 is free here (our F12 dump is behind an env var) | done 2026-11-18, three load fixes of ours (game-internals 12f) |
 | 3 | Fog distance / fog start as settings (the game's RSL fog-range setter FUN_002F6008 scaled) | willzmkv 0d63f27 | S | re-do (vcs_fog.cpp) | done 2026-11-19: their file as it is (game-internals 6r), tools/fog_check.py; ours on top: above 100 % a fog curve |
 | 4 | Exposure on the shown picture | willzmkv 02a6d4c, b5edbaf | S | re-do in the presenter | done 2026-11-19, re-done before the HUD with a highlight roll-off (game-internals 6s) |
-| 5 | GS: additive pixels that add nothing skipped (the hovercraft's glow) | PerikiyoXD, PR #178 | S | merge; conflict in gs_hw.cpp | open |
+| 5 | GS: additive pixels that add nothing skipped (the hovercraft's glow) | PerikiyoXD, PR #178 | S | merge; conflict in gs_hw.cpp | done 2026-11-19: merged by hand, two guards of ours (packs, HUD layer); little gain here (game-internals 6j) |
 | 6 | D3D11: state reaches the driver only when it changes (we set the whole pipeline every draw) | willzmkv 4fc7828 | S-M | re-do in rhi_d3d11.cpp | open |
 | 7 | Native draws joined: draws of one mesh with the same state as one (half the draw calls) | willzmkv 0bc5067 | M | re-do in gs_hw.cpp SubmitNative | open |
 | 8 | The game from a CHD image | KenRylo-One, PR #201 | S | merge; docs conflicts | open |

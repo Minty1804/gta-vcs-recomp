@@ -1697,5 +1697,16 @@ code.
   light as it is copied to the output, before the native HUD layer, with a shoulder that keeps white at white
   (game-internals.md 6s). It is one setting with no Post-processing toggle: there is nothing else to toggle yet.
   Default 100 % (the original). Credit: Co-Authored-By dejot on the commit, README Credits, FORK_IMPORTS.
+- **Additive cull** (PerikiyoXD, upstream PR #178): merged with its author, by hand (conflict in gs_hw.cpp's texture
+  creation, which we restructured for texture packs). Two guards of ours, because of our own features:
+  - A pack's image has no peak map: the peaks would describe the game's texture, not the one drawn.
+  - Native HUD layer draws are left out, since the layer moves them after the scissor would be cut.
+  Checked as the user asked, "carefully, without breaking what came before":
+  - the reference scenes before / after, compared;
+  - verify mode over the scenes and the helicopter dust;
+  - fog_check;
+  - the exposure pictures (same bits on the sand).
+  On this machine it gains little (game-internals.md 6j). The PR's own bound only covers screen-linear u, v.
+  Extending it to perspective triangles would be work of our own, left for later and not done here.
 - **Credits**: every import keeps its author on the commit and gets a line in the fork README's Credits section (the
   user's rule, AGENTS.md).
