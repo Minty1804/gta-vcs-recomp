@@ -85,6 +85,10 @@ namespace settings
 
     void load(const std::filesystem::path &ini);
     void keepFile(); // after load: changes last for this run only, vcs.ini is never rewritten (hidden test runs)
+    // [Minty1804 fork] after load, for test runs (VCS_DEFAULT_CONTROLS=1, toolchain.test_window): every key binding and
+    // the gamepad's action buttons (pad.pc_*) at their defaults, whatever the player's vcs.ini says - the checks press
+    // the default keys. The player's other settings (free aim, the display) stay as loaded.
+    void defaultControls();
     void applyAll();
     void refresh(); // takes the live values of settings with `read` (the menu calls it when it opens)
 

@@ -1,19 +1,17 @@
 #!/usr/bin/env python3
-"""The keyboard's PC control scheme (Keyboard > Control scheme: PC, docs/CONTROLS.md, src/game/vcs_input.cpp): every
-default key, by situation, checked in the pad report it makes.
+"""The controls by action and situation (the Keyboard and Gamepad pages, docs/CONTROLS.md, src/game/vcs_input.cpp):
+every default key, by situation, checked in the pad report it makes.
 
     python tools/pc_scheme_check.py [OUT] [--port 47674]
 
-Loads the Fort Baxter rig save (a copy, hidden) with VCS_KEYS=1 (the PC scheme; the other test tools keep the PS2
-scheme), then: on foot, each default key gives its PS2 button or stick direction, and the vehicle-only keys give
+Loads the Fort Baxter rig save (a copy, hidden), then: on foot, each default key gives its PS2 button or stick direction, and the vehicle-only keys give
 nothing; unarmed with Target held the fighting keys win (Space a heavy attack, not a jump); in a vehicle the same keys
 mean the vehicle actions (W accelerates, Shift honks, R the radio) and the on-foot-only keys give nothing; Escape and P
 pause; a rebound on-foot key keeps its vehicle binding (keys shared by situation, as on PC), a clashing one takes it.
 In a helicopter (a Maverick) the Aircraft actions' keys (W climbs, Q / E turn, A / D bank) and nothing of the car's
 (H, the forks). The gamepad by action (Gamepad > Gamepad buttons, the default): each button its PS2 button at the
 defaults on foot, in a car and in the helicopter; an action's button rebound works in its situation only (RT
-accelerating in a car is still the next weapon on foot); in the pause menu the buttons are the PS2's; the PS2 layout
-(pad.scheme 0) gives each PS2 button's own button whatever the actions say.
+accelerating in a car is still the next weapon on foot); in the pause menu the buttons are the PS2's.
 Results: OUT/summary.txt. Default OUT: build/pc_scheme/<date-time>.
 """
 import argparse
@@ -41,13 +39,13 @@ CAR = [
     ("space", R1), ("mouseleft", CIRCLE), ("mouseright", R1), ("shift", L3), ("h", L3), ("r", L1),
     ("q", L2), ("e", R2), ("mousemiddle", L2 | R2), ("v", SELECT),
 ]  # F (exit) last, below
-CAR_NOTHING = ["c", "tab"]  # crouch, action: on foot only
+CAR_NOTHING = ["c", "tab"]  # manual aim, pick up: on foot only
 AIR = [
     ("w", CROSS), ("s", SQUARE), ("up", CROSS), ("down", SQUARE), ("q", L2), ("e", R2), ("a", ("lx", 0)),
     ("d", ("lx", 255)), ("left", ("lx", 0)), ("right", ("lx", 255)), ("mouseleft", CIRCLE), ("ctrl", CIRCLE),
     ("mouseright", R1), ("space", R1), ("r", L1), ("v", SELECT),
 ]  # F (exit) last
-AIR_NOTHING = ["h", "c", "tab", "shift"]  # horn, crouch, action: not in an aircraft
+AIR_NOTHING = ["h", "c", "tab", "shift"]  # horn, manual aim, pick up: not in an aircraft
 MAVERICK = 213
 # the gamepad (the injected one): its buttons and the PS2 button each gives at the defaults
 PAD = [("a", CROSS), ("x", SQUARE), ("y", TRIANGLE), ("b", CIRCLE), ("lb", L1), ("rb", R1), ("ls", L3), ("back", SELECT),
@@ -88,7 +86,6 @@ def run(c):
     g.prime()
     g.cmd("trainer toggle god 1")
     time.sleep(2.0)
-    c.ok("PC scheme in use", c.setting("keys.scheme") == "1", "keys.scheme=%s" % c.setting("keys.scheme"))
     # the keys' own buttons: with Free aim on (the player's vcs.ini) the right mouse button aims from a car's driver's
     # seat instead of R1 (tools/driver_aim_check.py)
     c.setting("mouse.free_aim", 0)
@@ -118,10 +115,10 @@ def run(c):
     else:
         c.ok("fighting: skipped (a weapon in hand, slot %d)" % slot, True)
 
-    # keys shared by situation: an on-foot key rebound to the horn's second key (H) crouches on foot, honks in a car
-    c.setting("keys.pc_crouch", KEY_H)
+    # keys shared by situation: an on-foot key rebound to the horn's second key (H) is manual aim on foot, honks in a car
+    c.setting("keys.pc_manual_aim", KEY_H)
     p = c.held("h")
-    c.ok("rebound on-foot key: H crouches on foot", p["buttons"] == L3 and c.setting("keys.pc_horn2") == str(KEY_H),
+    c.ok("rebound on-foot key: H is manual aim on foot", p["buttons"] == L3 and c.setting("keys.pc_horn2") == str(KEY_H),
          "h -> %04x, pc_horn2=%s" % (p["buttons"], c.setting("keys.pc_horn2")))
 
     # in a vehicle
@@ -141,15 +138,14 @@ def run(c):
     bad = ["%s -> %04x" % (k, p["buttons"]) for k in CAR_NOTHING for p in [c.held(k)] if not expect(p, 0)]
     c.ok("in a vehicle: on-foot-only keys do nothing", not bad, "; ".join(bad))
     p = c.held("h")
-    c.ok("in a vehicle: H honks (the crouch rebound to it on foot)", p["buttons"] == L3, "h -> %04x" % p["buttons"])
-    c.setting("keys.pc_crouch", KEY_C)
+    c.ok("in a vehicle: H honks (manual aim rebound to it on foot)", p["buttons"] == L3, "h -> %04x" % p["buttons"])
+    c.setting("keys.pc_manual_aim", KEY_C)
     p = c.held("f")
     time.sleep(3.0)
     c.ok("in a vehicle: F is Triangle, Vic gets out", p["buttons"] == TRIANGLE and g.u32(g.player()[0] + 0x8C4) != 0x37,
          "f -> %04x" % p["buttons"])
 
     # the gamepad by action: on foot (the PS2's buttons at the defaults), then an action rebound in its situation only
-    c.ok("gamepad: by action", c.setting("pad.scheme") == "1", "pad.scheme=%s" % c.setting("pad.scheme"))
     g.cmd("gamepad on")
     try:
         time.sleep(1.0)
@@ -200,7 +196,7 @@ def run(c):
     c.ok("in an aircraft: F is Triangle, Vic gets out", p["buttons"] == TRIANGLE and g.u32(g.player()[0] + 0x8C4) != 0x37,
          "f -> %04x" % p["buttons"])
 
-    # a car again: the gamepad's RT accelerates there (rebound above), and with the PS2 layout it is R2 again
+    # a car again: the gamepad's RT accelerates there (rebound above)
     g.teleport(-675.0, 1485.0, -100.0, 90.0)
     time.sleep(2.0)
     g.spawn_car(ahead=0.0)
@@ -217,10 +213,6 @@ def run(c):
         p = pad_held(c, "rt")
         c.ok("gamepad in a car: RT given to Accelerate is Cross (and still Look right)", p["buttons"] == CROSS | R2,
              "rt -> %04x" % p["buttons"])
-        c.setting("pad.scheme", 0)
-        p = pad_held(c, "rt")
-        c.ok("gamepad PS2 layout: RT is R2 alone", p["buttons"] == R2, "rt -> %04x" % p["buttons"])
-        c.setting("pad.scheme", 1)
         c.setting("pad.pc_accelerate", 0)
         p = pad_held(c, "y")  # last: Triangle, he gets out
         c.ok("gamepad in a car: Y is Exit vehicle (Triangle)", p["buttons"] == TRIANGLE, "y -> %04x" % p["buttons"])
@@ -262,8 +254,7 @@ def main():
     out = os.path.abspath(a.out or os.path.join(rig.ROOT, "build", "pc_scheme", time.strftime("%Y%m%d-%H%M%S")))
     os.makedirs(out, exist_ok=True)
     c = Check(out, a.port)
-    env = {"VCS_KEYS": "1"}
-    c.g = rig.Game.start(save=rig.default_save(), name="pc_scheme", env=env, data_dir=os.path.join(out, "data"),
+    c.g = rig.Game.start(save=rig.default_save(), name="pc_scheme", data_dir=os.path.join(out, "data"),
                          port=a.port)
     try:
         run(c)

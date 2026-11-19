@@ -923,7 +923,13 @@ int main(int argc, char *argv[])
         // a test run never changes the player's settings: hidden, or shown (VCS_KEEP_SETTINGS=1 from
         // toolchain.test_window when VCS_TEST_VISIBLE=1)
         if (const char *keep = std::getenv("VCS_KEEP_SETTINGS"); ps2control::hiddenMode() || (keep && keep[0] == '1'))
+        {
             settings::keepFile();
+            // [Minty1804 fork] the checks press the default keys: the player's own bindings left out of a test run
+            // (toolchain.test_window; before 2026-11-19 the tests used the PS2 layout's keys, which players rarely set)
+            if (const char *d = std::getenv("VCS_DEFAULT_CONTROLS"); d && d[0] == '1')
+                settings::defaultControls();
+        }
         settings::applyAll();
         restoreWindowPlacement();
         const fs::path isoPath = locateIso(argc, argv);

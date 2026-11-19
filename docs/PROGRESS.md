@@ -1166,7 +1166,7 @@ Python scripts still usable on their own. docs/LAUNCHER.md has the whole of it; 
 | `VCS_WALK_FIX=0` | Walk (hold) scales the stick as floats, as before 2026-11-16: a diagonal walk (W + D) stands still |
 | `VCS_FOOT_WALL=0` | on foot the mouse's turn does not ask the camera's update for the pull-in at walls: the camera stands at a wall's edge while its heading turns on, as before 2026-11-11 |
 | `VCS_FREEAIM=0` | free aim's hooks not installed (CGame::Process, CCamera::Process, the weapons' line test): the game's aiming untouched, the setting does nothing |
-| `VCS_PAD=0\|1` | Gamepad > Gamepad buttons for one run: 0 the PS2 layout (a gamepad button for each PS2 button), 1 by action and situation (the default since 2026-11-19; docs/CONTROLS.md) |
+| `VCS_DEFAULT_CONTROLS=1` | a test run (hidden, or `VCS_KEEP_SETTINGS=1`) with every key binding and the gamepad's action buttons at their defaults, whatever the player's vcs.ini says; `toolchain.test_window` sets it (the checks press the default keys; 2026-11-19) |
 | `VCS_INPUT_MAP=0` | the runtime's fixed built-in key / gamepad mapping instead of the player's bindings (`ps2_pad.cpp`; the reference) |
 | `VCS_VSYNC=0\|1\|2` | Vertical sync for one run: off, on, off with tearing allowed |
 | `VCS_REFLECTIONS=0\|1\|2` | Car reflections for one run: Original, Smooth, Auto (Smooth above 1x; always used otherwise, no setting) - game-internals.md 6g |

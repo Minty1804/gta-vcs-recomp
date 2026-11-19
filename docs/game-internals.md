@@ -2847,7 +2847,11 @@ timing at 60 fps; independent timing at 60 / 144 fps got through, by luck (below
   CVEIW **Select (camera view)**, PDBAK **R3 (look behind on foot)**, TGSUB **R3 (sub-missions, site attacks, buying
   sites, recruiting)**, **unarmed combat, locked on** (UCBT_01..03): PUNA Circle light attack, PUHA Cross heavy
   attack, PUBL Square block (held), PUGR Triangle grab ("making them defenseless to your attacks"), TAXJU L3, SWIMF Cross, SWIMO Square, AMBUY / AMEXI Cross / Triangle (shops), AMLEF / AMRIG
-  D-pad left / right. The keyboard's PC scheme presses these (src/game/vcs_input.cpp, docs/CONTROLS.md).
+  D-pad left / right. The controls' actions press these (src/game/vcs_input.cpp, docs/CONTROLS.md).
+  Checked in game (2026-11-19, the gamepad injected, `prompts text C0<key>`): **no crouch** - L3 on foot leaves ped
+  +0x1C8 bit 45 (crouched) clear standing, moving and aiming; the text has no crouch key. Held with a gun and R1, L3
+  puts the ped in **state 0x16** (manual aim: Vic aims where the stick points, the camera mode 11 - FREE1). `C0ANS`
+  reads "L button", the PSP's text left in the PS2's: the PS2 game answers its phone calls by itself.
 - **Vehicle types and the aircraft's buttons** (2026-11-19, `[Minty1804 fork]`, for the controls' Aircraft section). The
   vehicle's type is the u32 at **+0x354**, read in each vehicle spawned into (the rig's `spawn_car`, ped +0x480):
   0 cars (Sentinel), **1 boats** (Speeder - and the Skimmer, a seaplane to the player), 2 the jet ski, **4

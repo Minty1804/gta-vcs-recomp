@@ -205,7 +205,7 @@ def scenario_car(s):
     s.wait_sim(2.0)
     if os.environ.get("AUDIT_SHOTS"):
         s.g.cmd("screenshot " + os.path.join(os.environ["AUDIT_SHOTS"], "car_%d_a.png" % s.step))
-    s.key("Shift", True)
+    s.key("W", True)
     speeds = []  # (sim time, m/s from the car's own move speed - positions read apart from the clock are too noisy)
     try:
         t0 = s.clock()
@@ -218,7 +218,7 @@ def scenario_car(s):
     finally:
         if os.environ.get("AUDIT_SHOTS"):
             s.g.cmd("screenshot " + os.path.join(os.environ["AUDIT_SHOTS"], "car_%d_b.png" % s.step))
-        s.key("Shift", False)
+        s.key("W", False)
     s.in_car = False
 
     def at(t):
@@ -305,7 +305,7 @@ def vehicle_run(s, name, model, act, body_at=None, extra="", spot=CAR_SPOT):
         act(s)
     finally:
         g.cmd("trace off")
-        for k in ("Shift", "A", "D", "W", "S"):
+        for k in ("A", "D", "W", "S"):
             s.key(k, False)
     leave_vehicle(s)  # then both gone
     g.scm(S.op(DELETE_CAR, S.i(car)) + (S.op(DELETE_CHAR, S.i(ped)) if ped is not None else b""))
@@ -337,24 +337,24 @@ def deceleration(rows):
 
 
 def scenario_coast(s):
-    rows = vehicle_run(s, "coast", 211, held("Shift", 1.0, then=2.0))
+    rows = vehicle_run(s, "coast", 211, held("W", 1.0, then=2.0))
     return {"peak_m_s": max(speed(r) for r in rows), "decel_m_s2": deceleration(rows)}
 
 
 def scenario_runover(s):
-    rows = [r for r in vehicle_run(s, "runover", 211, held("Shift", 3.4), body_at=(14.0, 0.0)) if r[0] <= 3.4]
+    rows = [r for r in vehicle_run(s, "runover", 211, held("W", 3.4), body_at=(14.0, 0.0)) if r[0] <= 3.4]
     # rise: above the lowest point of the 0.6 s before (the road isn't level)
     rise = max(r[1 + 14] - min(q[1 + 14] for q in rows if r[0] - 0.6 <= q[0] <= r[0]) for r in rows)
     return {"rise_m": rise, "throw_m_s": max(r[1 + 21] for r in rows) * 50.0, "pitch_rate": max(abs(r[1 + 16]) for r in rows)}
 
 
 def scenario_bikebody(s):
-    rows = vehicle_run(s, "bikebody", BIKE, held("Shift", 0.25, then=4.0), body_at=(-0.8, 0.6))
+    rows = vehicle_run(s, "bikebody", BIKE, held("W", 0.25, then=4.0), body_at=(-0.8, 0.6))
     return {"nose_fwd_z": max(abs(r[1 + 6]) for r in rows), "end_up_z": rows[-1][1 + 10]}
 
 
 def scenario_bikecoast(s):
-    rows = vehicle_run(s, "bikecoast", BIKE, held("Shift", 0.4, then=2.0))
+    rows = vehicle_run(s, "bikecoast", BIKE, held("W", 0.4, then=2.0))
     return {"decel_m_s2": deceleration(rows)}
 
 
@@ -404,12 +404,12 @@ def scenario_bikelean(s):
     with more than 0.25 g. The peak lean followed how long the key was held (a frame at 30 fps is 13% of a short turn);
     the ratio doesn't. 0.6 at any frame rate; 0.49 at 144 fps with CBike's max(step, 0.5) unpatched."""
     def act(s):
-        s.key("Shift", True)
+        s.key("W", True)
         s.wait_sim(0.4)
         s.key("A", True)
         s.wait_sim(0.5)
         s.key("A", False)
-        s.key("Shift", False)
+        s.key("W", False)
         s.wait_sim(1.0)
     rows = vehicle_run(s, "bikelean", BIKE, act)
     ratios = []
@@ -657,12 +657,12 @@ def scenario_carcam(s):
     lag then). The camera's automatic turn was a speed of (heading change) / max(step, 1.0): above 50 fps step times too
     slow, ~0.35 s at 1/30 against ~1 s at 1/144."""
     def act(s):
-        s.key("Shift", True)
+        s.key("W", True)
         s.wait_sim(1.2)
         s.key("A", True)
         s.wait_sim(0.5)
         s.key("A", False)
-        s.key("Shift", False)
+        s.key("W", False)
         s.wait_sim(3.0)
     rows = vehicle_run(s, "carcam", 211, act, extra="0x%x 1" % CAM_BETA)
     half, lag = camera_catch_up([(r[0], r[1 + 4], r[1 + 5], r[1 + 24]) for r in rows], 1.7)
@@ -712,7 +712,7 @@ def scenario_heat(s):
         if any(0x3BEE <= sc[2] - base <= 0x3C40 for sc in g.scripts()):
             break
         if i % 6 == 3:
-            g.cmd("press Shift 150")
+            g.cmd("press Return 150")
         time.sleep(0.5)
     else:
         raise RuntimeError("PHI_A2 never reached its truck loop")

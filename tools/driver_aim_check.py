@@ -4,8 +4,7 @@ vehicle; src/game/vcs_aim.cpp, src/game/vcs_input.cpp; after ChrisM-Pek's fork, 
 
     python tools/driver_aim_check.py [OUT] [--port 47693]
 
-Loads the Fort Baxter rig save (a copy, hidden), gives Vic a pistol and an SMG and puts him in a car on the runway, then
-in the PS2 scheme and in the PC scheme (a run each): the aim key (the right mouse button) aims from the driver's seat (aimstate
+Loads the Fort Baxter rig save (a copy, hidden), gives Vic a pistol and an SMG and puts him in a car on the runway, then: the aim key (the right mouse button) aims from the driver's seat (aimstate
 driver=1) and the game sees no R1 (no handbrake), the handbrake's key still gives R1; the mouse turns the camera and it
 stays there; shots from each gun are counted down the camera ray and match the ammo used; the wheel switches between
 the guns; W / D still drive and steer; letting go ends the aim; the pause menu ends it; the free camera ends it. Free aim
@@ -28,7 +27,7 @@ PISTOL, SMG = 19, 25
 THE_CAMERA = 0x6F44D0
 
 
-def run(c, scheme):
+def run(c):
     g = c.g
     s = rig.Scm
     g.wait_ingame()
@@ -77,8 +76,7 @@ def run(c, scheme):
 
     c.setting("mouse.free_aim", 1)
     c.setting("mouse.wheel_vehicle", 1)
-    for name in (("PS2", "PC")[scheme],):
-        c.ok("%s scheme in use" % name, c.setting("keys.scheme") == str(scheme), c.setting("keys.scheme"))
+    for name in ("keys",):
         c.ok("%s: weapons ready" % name, to_weapon(SMG), "weapon %d" % weapon()[0])
         mode, front = cam_front()
         g.cmd("key mouseright down")
@@ -208,14 +206,11 @@ def main():
     out = os.path.abspath(a.out or os.path.join(rig.ROOT, "build", "driver_aim", time.strftime("%Y%m%d-%H%M%S")))
     os.makedirs(out, exist_ok=True)
     c = Check(out, a.port)
-    # the scheme is fixed by VCS_KEYS for a run (an environment override): one run each
-    for scheme in (0, 1):
-        c.g = rig.Game.start(save=rig.default_save(), name="driver_aim", env={"VCS_KEYS": str(scheme)},
-                             data_dir=os.path.join(out, "data%d" % scheme), port=a.port)
-        try:
-            run(c, scheme)
-        finally:
-            c.g.quit()
+    c.g = rig.Game.start(save=rig.default_save(), name="driver_aim", data_dir=os.path.join(out, "data"), port=a.port)
+    try:
+        run(c)
+    finally:
+        c.g.quit()
     lines = ["%s %s %s" % ("ok  " if r else "FAIL", n, d) for n, r, d in c.results]
     open(os.path.join(out, "summary.txt"), "w", encoding="utf-8").write("\n".join(lines) + "\n")
     failed = [n for n, r, _ in c.results if not r]

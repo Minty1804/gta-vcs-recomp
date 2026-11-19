@@ -95,9 +95,7 @@ namespace vcs::prompts
             "DU", "DD", "DL", "DR", "DPAD", "DPADUD", "DPADLR",
             "LS", "LSU", "LSD", "LSL", "LSR", "LSUD", "LSLR",
             "RS", "RSU", "RSD", "RSL", "RSR", "RSUD", "RSLR"};
-        // the bindings' ids (vcs_input.cpp kControls) of the button controls, and their PS2 default on a gamepad
-        constexpr const char *kButtonIds[DPad] = {"cross", "circle", "triangle", "square", "l1", "r1", "l2", "r2",
-                                                  "l3", "r3", "select", "start", "dpad_up", "dpad_down", "dpad_left", "dpad_right"};
+        // the gamepad button that is each PS2 button (the actions' default)
         constexpr const char *kPadDefault[DPad] = {"south", "east", "north", "west", "lb", "rb", "lt", "rt",
                                                    "ls", "rs", "back", "start", "dpad_u", "dpad_d", "dpad_l", "dpad_r"};
 
@@ -156,7 +154,7 @@ namespace vcs::prompts
             return any ? s : s + "0";
         }
 
-        // The PC control scheme (Keyboard > Control scheme, keys.scheme 1: vcs_input.cpp's pc_* actions): the action that
+        // The controls (vcs_input.cpp's pc_* actions, on the keyboard and the gamepad): the action that
         // presses this PS2 button in this context, whose keys the glyph shows. The menu's Enter / Escape stay as below.
         // Fighting has no context of its own here: UCBT's text (PUHA / PUBL / PUGR) shows the on-foot keys.
         const char *pcAction(int ctx, int ctl)
@@ -233,7 +231,7 @@ namespace vcs::prompts
                 case L1: return "pc_action";
                 case L2: return "pc_prev_weapon";
                 case R2: return "pc_next_weapon";
-                case L3: return "pc_crouch";
+                case L3: return "pc_manual_aim";
                 case R3: return "pc_look_behind";
                 case Select: return "pc_camera_view";
                 case Start: return "pc_pause";
@@ -307,73 +305,9 @@ namespace vcs::prompts
             }
         }
 
-        std::string keyboardSpec(int ctx, int ctl)
-        {
-            using namespace platform;
-            if (setting("keys.scheme") != 0)
-                return keyboardSpecPC(ctx, ctl);
-            if (ctx == Air) // the PS2 scheme's Driving keys fly too
-                ctx = Vehicle;
-            if (ctl < DPad)
-            {
-                if (ctx == Menu && ctl == Cross)
-                    return keysSpec({KEY_ENTER});
-                if (ctx == Menu && (ctl == Triangle || ctl == Start))
-                    return keysSpec({KEY_ESCAPE});
-                if (ctx == Vehicle)
-                {
-                    const char *drive = ctl == Cross ? "drive_accelerate" : ctl == Square ? "drive_brake" : ctl == R1 ? "drive_handbrake" : nullptr;
-                    if (drive)
-                        if (const int k = boundKey(drive, false))
-                            return keysSpec({k});
-                }
-                // the mouse where it is bound (attack, target): how a PC player knows those
-                return keysSpec({boundKey(kButtonIds[ctl], ctl == Circle || ctl == R1)});
-            }
-            auto k = [](const char *id) { return boundKey(id, false); };
-            switch (ctl)
-            {
-            case DPad: return keysSpec({k("dpad_up"), k("dpad_left"), k("dpad_down"), k("dpad_right")});
-            case DPadUD: return keysSpec({k("dpad_up"), k("dpad_down")});
-            case DPadLR: return keysSpec({k("dpad_left"), k("dpad_right")});
-            default: break;
-            }
-            if (ctl >= RS)
-            {
-                if (setting("mouse.camera"))
-                    return "mouse:move";
-                switch (ctl)
-                {
-                case RSUp: return keysSpec({k("cam_up")});
-                case RSDown: return keysSpec({k("cam_down")});
-                case RSLeft: return keysSpec({k("cam_left")});
-                case RSRight: return keysSpec({k("cam_right")});
-                case RSUD: return keysSpec({k("cam_up"), k("cam_down")});
-                case RSLR: return keysSpec({k("cam_left"), k("cam_right")});
-                default: return keysSpec({k("cam_up"), k("cam_left"), k("cam_down"), k("cam_right")});
-                }
-            }
-            if (ctx == Vehicle) // the left stick steers (left / right) and leans (up / down: the Driving keys)
-                switch (ctl)
-                {
-                case LSUp: return keysSpec({k("drive_lean_forward")});
-                case LSDown: return keysSpec({k("drive_lean_back")});
-                case LSUD: return keysSpec({k("drive_lean_forward"), k("drive_lean_back")});
-                case LS:
-                case LSLR: return keysSpec({k("move_left"), k("move_right")});
-                default: break;
-                }
-            switch (ctl)
-            {
-            case LSUp: return keysSpec({k("move_up")});
-            case LSDown: return keysSpec({k("move_down")});
-            case LSLeft: return keysSpec({k("move_left")});
-            case LSRight: return keysSpec({k("move_right")});
-            case LSUD: return keysSpec({k("move_up"), k("move_down")});
-            case LSLR: return keysSpec({k("move_left"), k("move_right")});
-            default: return keysSpec({k("move_up"), k("move_left"), k("move_down"), k("move_right")});
-            }
-        }
+        // the keys of the action that presses this PS2 button here ([Minty1804 fork] the PS2 layout's key per PS2 button
+        // was removed on 2026-11-19)
+        std::string keyboardSpec(int ctx, int ctl) { return keyboardSpecPC(ctx, ctl); }
 
         const char *padSourceName(int source)
         {
@@ -413,14 +347,10 @@ namespace vcs::prompts
             std::string button;
             if (ctl < DPad) // the physical button the player bound (Gamepad page)
             {
-                // [Minty1804 fork] the action layout (Gamepad > Gamepad buttons: By action): the button of the action
-                // that presses this PS2 button here; in the menus the PS2's own (vcs_input.cpp)
-                std::string key = std::string("pad.") + kButtonIds[ctl];
-                if (setting("pad.scheme") != 0)
-                {
-                    const char *id = ctx == Menu ? nullptr : pcAction(ctx, ctl);
-                    key = id && registered(std::string("pad.") + id) ? std::string("pad.") + id : std::string();
-                }
+                // [Minty1804 fork] the gamepad by action: the button of the action that presses this PS2 button here;
+                // in the menus the PS2's own (vcs_input.cpp)
+                const char *id = ctx == Menu ? nullptr : pcAction(ctx, ctl);
+                const std::string key = id && registered(std::string("pad.") + id) ? std::string("pad.") + id : std::string();
                 const char *bound = key.empty() ? nullptr : padSourceName(setting(key));
                 button = bound ? bound : kPadDefault[ctl];
             }

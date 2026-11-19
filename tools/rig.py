@@ -175,7 +175,7 @@ class Game:
 
     def new_game(self, timeout=180.0, settle=4.0):
         """From an empty card (start(save=None)): the game boots into a new game - the intro cutscene, then the first
-        mission at Fort Baxter. Cross (Shift) every few seconds skips the title flyover and the cutscene until the
+        mission at Fort Baxter. Enter (the menus' select, Cross) every few seconds skips the title flyover and the cutscene until the
         player is outdoors (area 0) and frames advance; then `settle` s more. A mission is running then (unlike
         wait_ingame's save): fine for measuring and profile training, which need no save (tools/bench.py)."""
         t0 = time.time()
@@ -190,7 +190,7 @@ class Game:
                         time.sleep(settle)
                         return
                 elif time.time() - t0 > 8.0:
-                    gamectl.send("press Shift", port=self.port)
+                    gamectl.send("press Return", port=self.port)
             except Exception:
                 pass
             time.sleep(4.0)

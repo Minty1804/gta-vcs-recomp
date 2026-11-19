@@ -216,6 +216,18 @@ namespace settings
 
     void keepFile() { g_keepFile = true; }
 
+    void defaultControls()
+    {
+        std::lock_guard<std::mutex> lock(g_mutex);
+        for (const Spec &s : g_specs)
+            if (s.type == Type::Key || s.key.rfind("pad.pc_", 0) == 0)
+            {
+                g_values[s.key] = s.defaultValue;
+                g_aliased.erase(s.key);
+            }
+        g_startValues = g_values;
+    }
+
     std::string state(const std::string &key)
     {
         std::lock_guard<std::mutex> lock(g_mutex);

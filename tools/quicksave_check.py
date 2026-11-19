@@ -16,7 +16,7 @@ card), with VCS_QUICKSAVE=1. One session:
             safehouse as before (no quick-save restore)
 Then two fresh starts: the card without slot 6 (the newest is the "near" quick save: restored at boot) and with it
 (slot 6, a normal save: no restore). Screenshots and OUT/results.json in OUT (default build/quicksave_check). Exit code 1
-when a check fails. Menu keys (CONTROLS.md): Shift = Cross, Escape = Start, arrows = D-pad.
+when a check fails. Menu keys (CONTROLS.md): Enter = Cross (select), F = Triangle (back), Escape = Start, arrows = D-pad.
 """
 import argparse
 import json
@@ -163,14 +163,14 @@ class Session:
         self.g.cmd("press F12 150")
         menu = self.wait_menu()
         self.shot(tag + "_menu")
-        self.keys(tag + "_saved", "Shift@3", *(["Down"] * slot), "Shift@3", "Up", "Shift@12", "Shift@4")
+        self.keys(tag + "_saved", "Return@3", *(["Down"] * slot), "Return@3", "Up", "Return@12", "Return@4")
         st = self.wait_saved(n + 1)
         time.sleep(2)
         return menu, st
 
     def load_slot(self, tag, slot):
         """pause menu > Game > Load Game > slot > Yes; then until INITSAV and the restore are done"""
-        self.keys(tag, "Escape@3", "Right", "Right", "Shift@2", "Shift@3", *(["Down"] * slot), "Shift@3", "Up", "Shift@15")
+        self.keys(tag, "Escape@3", "Right", "Right", "Return@2", "Return@3", *(["Down"] * slot), "Return@3", "Up", "Return@15")
         self.wait_game()
         time.sleep(12)
 
@@ -284,7 +284,7 @@ def main():
         # 7. a normal safehouse save afterwards (the barracks' save point code) -> slot 6
         g.cmd("quicksave savepoint")  # the save point's code as a script of its own (test command)
         menu = s.wait_menu()
-        s.keys("normal_saved", "Shift@3", *(["Down"] * 6), "Shift@3", "Up", "Shift@12", "Shift@4")
+        s.keys("normal_saved", "Return@3", *(["Down"] * 6), "Return@3", "Up", "Return@12", "Return@4")
         time.sleep(4)
         new6 = [f for f in slot_files() if f.startswith("6 ")]
         checks["normal_save"] = {"ok": menu and bool(new6) and s.glob(4) == 0, "new": new6}

@@ -103,9 +103,9 @@ def check(out, port=None):
         time.sleep(12)
         shot("1_cutscene")  # Vic and Marty by the trailer: on the ground, not above / below it
         time.sleep(8)
-        g.cmd("press Shift 150")
+        g.cmd("press Return 150")
         time.sleep(2)
-        g.cmd("press Shift 150")
+        g.cmd("press Return 150")
         time.sleep(6)
         car_to(g, SHOP_MARKER[0] + 5.5, SHOP_MARKER[1] - 6.0, 13.0)  # next to the marker first, then onto it
         time.sleep(5)

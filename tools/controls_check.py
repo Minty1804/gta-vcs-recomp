@@ -4,13 +4,13 @@ report they make and in the game, plus the settings registry's presets and reset
 
     python tools/controls_check.py [OUT] [--port 47673]
 
-Loads the Fort Baxter rig save (a copy, hidden), then: every default key binding (both slots, either Shift / Ctrl,
+Loads the Fort Baxter rig save (a copy, hidden), then: every default on-foot key (both slots, either Shift / Ctrl,
 Keypad Enter, the mouse buttons) gives its PS2 button or stick direction, Alt+Enter is not Start; a rebound key moves
 Vic and the old one no longer does; the walk key holds the stick at walking speed, on a diagonal too; the Reload key
 refills the clip; On-foot camera hold keeps the camera where the mouse put it while Vic moves; the mouse turns the on-foot camera
 by the amount asked (heading and pitch, inverted, off) and is pulled in at a wall as the stick's camera is, right click
-locks on to a ped, the Driving keys (W / S / Space
-accelerate, brake, handbrake in a car, and nothing else there), the mouse on the vehicle camera (turned 1:1, held while
+locks on to a ped, the vehicle keys (W / S / Space
+accelerate, brake, handbrake in a car, Shift the horn), the mouse on the vehicle camera (turned 1:1, held while
 the mouse moves, standing and driving, then back behind the car; the right stick takes it back at once), on foot again after
 leaving the car; free aim (src/game/vcs_aim.cpp: the right button enters the game's free aim, the mouse turns it, a shot
 hits a man on the aim line and not one beside it, Vic strafes while aiming, the camera stays where the aim looked,
@@ -42,18 +42,20 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # DualShock 2 bits (pressed), as "padstate" reports them
 SELECT, L3, R3, START, UP, RIGHT, DOWN, LEFT = 0x0001, 0x0002, 0x0004, 0x0008, 0x0010, 0x0020, 0x0040, 0x0080
 L2, R2, L1, R1, TRIANGLE, CIRCLE, CROSS, SQUARE = 0x0100, 0x0200, 0x0400, 0x0800, 0x1000, 0x2000, 0x4000, 0x8000
-KEY_G, KEY_SHIFT, KEY_WHEEL_UP, KEY_F2 = 71, 340, 405, 291
+KEY_G, KEY_SHIFT, KEY_ALT, KEY_WHEEL_UP, KEY_F2 = 71, 340, 342, 405, 291
 
-# control-channel key name -> what the default bindings make of it: a button bit, or (axis, byte)
+# control-channel key name -> what the default on-foot bindings make of it: a button bit, or (axis, byte). Every
+# situation's keys: tools/pc_scheme_check.py
 DEFAULTS = [
     ("w", ("ly", 0)), ("s", ("ly", 255)), ("a", ("lx", 0)), ("d", ("lx", 255)),
+    ("up", ("ly", 0)), ("down", ("ly", 255)), ("left", ("lx", 0)), ("right", ("lx", 255)),
     ("i", ("ry", 0)), ("k", ("ry", 255)), ("j", ("rx", 0)), ("l", ("rx", 255)),
     ("shift", CROSS), ("rshift", CROSS), ("space", SQUARE), ("f", TRIANGLE), ("ctrl", CIRCLE), ("rctrl", CIRCLE),
-    ("mouseleft", CIRCLE), ("q", L1), ("e", R1), ("mouseright", R1), ("1", L2), ("z", L2), ("3", R2), ("x", R2),
-    ("c", L3), ("v", R3), ("backspace", SELECT),
-    ("up", UP), ("down", DOWN), ("left", LEFT), ("right", RIGHT),
+    ("mouseleft", CIRCLE), ("tab", L1), ("mouseright", R1), ("q", L2), ("e", R2), ("c", L3), ("mousemiddle", R3),
+    ("v", SELECT),
 ]
-# Start (Escape) opens the game's pause menu: checked last. Enter is Cross in the pause menu only (tools/menu_check.py)
+# Start (Escape) opens the game's pause menu: checked last. Enter (and Keypad Enter) is Enter vehicle on foot, Cross in
+# the pause menu (tools/menu_check.py)
 NOT_START_KEYS = ["return", "kpenter"]
 
 
@@ -126,7 +128,7 @@ class Check:
         self.ok("music / effects settings reach the game", s.get("music") == "32" and s.get("effects") == "64" and
                 prefs == "4000000020000000", "%s prefs %s" % (s, prefs))
         # loading the card's save (it holds the defaults) keeps the player's levels: pause menu > Game > Load, slot 1
-        self.keys("Escape@3", "Right", "Right", "Shift@2", "Shift@3", "Down", "Shift@3", "Up", "Shift@25")
+        self.keys("Escape@3", "Right", "Right", "Return@2", "Return@3", "Down", "Return@3", "Up", "Return@25")
         s = self.sound()
         with open(g.log_path, encoding="utf-8", errors="replace") as f:
             # (the level the save holds: 80 in the Fort Baxter save, another in a player's card)
@@ -136,7 +138,7 @@ class Check:
         # the pause menu's Audio page shows them (2 and 4 bars) and its slider changes the setting
         self.keys("Escape@3", "Down@2", "Right@2")
         self.shot("game_audio_page")
-        self.keys("Shift@2", "Left@2")
+        self.keys("Return@2", "Left@2")
         s = self.sound()
         music = self.setting("audio.music_volume")
         self.shot("game_audio_music_down")
@@ -223,7 +225,7 @@ class Check:
         self.ok("right click locks on", locked == 11 and still == 11 and self.cam()[0] == 4,
                 "held %d, mouse moved %d, released %d" % (locked, still, self.cam()[0]))
 
-        # driving: the Driving keys, and nothing else on those keys
+        # driving: the vehicle keys (Shift is the horn there)
         g.teleport(575.0, 175.0, -100.0, 0.0)
         time.sleep(3.0)
         g.spawn_car(ahead=0.0)
@@ -232,13 +234,14 @@ class Check:
         car = g.u32(ped + 0x480)
         self.ok("in a car", car != 0 and g.u32(ped + 0x8C4) == 0x37 and self.cam()[0] == 18, "car 0x%x mode %d" % (car, self.cam()[0]))
         got = {k: self.held(k) for k in ("w", "s", "space", "a", "shift", "mouseright")}
-        want = {"w": CROSS, "s": SQUARE, "space": R1, "a": 0, "shift": CROSS, "mouseright": R1}
+        want = {"w": CROSS, "s": SQUARE, "space": R1, "a": 0, "shift": L3, "mouseright": R1}
         bad = ["%s -> %s" % (k, p) for k, p in got.items() if p["buttons"] != want[k] or p["ly"] != 128 or
                p["lx"] != (0 if k == "a" else 128)]
-        self.ok("driving keys", not bad, "; ".join(bad))
-        self.setting("keys.drive_lean_forward", KEY_G)
+        self.ok("vehicle keys", not bad, "; ".join(bad))
+        lean = self.setting("keys.pc_lean_forward")
+        self.setting("keys.pc_lean_forward", KEY_G)
         p = self.held("g")
-        self.setting("keys.drive_lean_forward", 0)
+        self.setting("keys.pc_lean_forward", lean)
         self.ok("lean forward rebound", p["ly"] == 0 and p["buttons"] == 0, str(p))
 
         def forward():
@@ -384,10 +387,10 @@ class Check:
 
         def level(x, y):
             """Vic there, the camera level behind him: after a teleport from far away it looks straight down from above
-            him (L1 is the game's "camera behind him")."""
+            him (L1 - Tab, Pick up weapon - is the game's "camera behind him")."""
             g.teleport(x, y, -100.0, 0.0)
             time.sleep(3.0)
-            g.cmd("press q 1000")
+            g.cmd("press tab 1000")
             time.sleep(2.0)
 
         # god mode: Vic died in about 1 round in 5 here on Linux (2026-11-14) and respawned at a hospital, where the
@@ -398,7 +401,7 @@ class Check:
         level(575.0, 175.0)
         zoom, steps = stands()[1], 0
         while stands()[1] < 4.0 and steps < 3:
-            g.cmd("press backspace 150")
+            g.cmd("press v 150")
             time.sleep(1.5)
             steps += 1
         level(*self.BARRACKS_DOOR)
@@ -448,7 +451,7 @@ class Check:
                           for t, o, d in got))
         level(575.0, 175.0)
         while abs(stands()[1] - zoom) > 0.2 and steps < 6:  # the view as it was
-            g.cmd("press backspace 150")
+            g.cmd("press v 150")
             time.sleep(1.5)
             steps += 1
         g.cmd("trainer toggle god 0")
@@ -462,7 +465,7 @@ class Check:
         with the ammo unchanged; nothing with a full clip), and On-foot camera hold (after a mouse turn, D held leaves
         the heading where it is; Off: the game swings it) - 2026-11-16, game-internals.md 12a / 12b / 12c."""
         g = self.g
-        self.setting("keys.walk", KEY_G)
+        self.setting("keys.pc_walk", KEY_G)
         p = self.held("w", "d", "g")
         live = lambda v: v < 86 or v > 170  # past the game's dead third (|v - 128| > 42)
         self.ok("walk on a diagonal: both axes count", live(p["lx"]) and live(p["ly"]) and p["lx"] > 128 > p["ly"], str(p))
@@ -477,7 +480,7 @@ class Check:
         after = g.player()[1]
         far = math.hypot(after[0] - before[0], after[1] - before[1])
         self.ok("walk on a diagonal moves Vic at walking pace", 1.0 < far < 5.0, "%.2f m in 2 s" % far)
-        self.setting("keys.walk", 0)
+        self.setting("keys.pc_walk", KEY_ALT)
 
         self.give(19, 100)
         ped = g.player()[0]
@@ -533,15 +536,17 @@ class Check:
         g.spawn_car()
         time.sleep(2.0)
         w = ped + 0x578 + g.peek(ped + 0x789, 1)[0] * 0x1C
-        g.cmd("key 1 down")  # L2: look left, a drive-by
+        self.setting("keys.pc_car_reload", KEY_G)  # Vehicle > Reload weapon: no key by default (R is the radio)
+        g.cmd("key q down")  # L2: look left, a drive-by
         g.cmd("key ctrl down")
         time.sleep(0.6)
         during = weapon()
-        g.cmd("press r 100")
+        g.cmd("press g 100")
         g.wait_frames(2)
         refilled = weapon()
         g.cmd("key ctrl up")
-        g.cmd("key 1 up")
+        g.cmd("key q up")
+        self.setting("keys.pc_car_reload", 0)
         shots = during[3] - refilled[3]
         self.ok("Reload key in a drive-by fills the clip", during[2] + shots < 30 and refilled[2] + shots >= 30,
                 "during %s, after the key %s" % (during, refilled))
@@ -622,10 +627,10 @@ class Check:
             if weapon:
                 self.give(weapon)
             else:
-                for _ in range(10):  # R2 (3) until the fists are in his hand
+                for _ in range(10):  # R2 (E) until the fists are in his hand
                     if g.peek(g.player()[0] + self.PED_SLOT, 1)[0] == 0:
                         break
-                    g.cmd("press 3 120")
+                    g.cmd("press e 120")
                     time.sleep(0.6)
             self.ped_ahead(2.5)
             time.sleep(1.5)
@@ -1228,32 +1233,29 @@ class Check:
                     good = p[want[0]] == want[1] and p["buttons"] == 0
                 if not good:
                     bad.append("%s -> %s" % (key, p))
-            self.ok("default bindings (%d keys)" % len(DEFAULTS), not bad, "; ".join(bad))
+            self.ok("default on-foot bindings (%d keys)" % len(DEFAULTS), not bad, "; ".join(bad))
             p = self.held("w", "d", "shift", "e")
-            self.ok("keys together", p["ly"] == 0 and p["lx"] == 255 and p["buttons"] == CROSS | R1, str(p))
+            self.ok("keys together", p["ly"] == 0 and p["lx"] == 255 and p["buttons"] == CROSS | R2, str(p))
 
             # the game sees them: Vic runs forward
             far = self.moved("w")
             self.ok("W moves Vic", far > 1.0, "%.2f m" % far)
 
             # rebinding: forward on G, W does nothing then
-            self.setting("keys.move_up", KEY_G)
+            self.setting("keys.pc_forward", KEY_G)
             far_g = self.moved("g")
             far_w = self.moved("w")
             self.ok("rebound key moves Vic, the old one doesn't", far_g > 1.0 and far_w < 0.2, "G %.2f m, W %.2f m" % (far_g, far_w))
-            self.setting("keys.move_up", 87)
-            self.setting("keys.cross", KEY_G)
+            self.setting("keys.pc_forward", 87)
+            self.setting("keys.pc_sprint", KEY_G)
             p_g, p_shift = self.held("g"), self.held("shift")
-            self.ok("Cross rebound", p_g["buttons"] == CROSS and p_shift["buttons"] == 0, "G %s, Shift %s" % (p_g, p_shift))
-            self.setting("keys.cross", KEY_SHIFT)
+            self.ok("Sprint rebound", p_g["buttons"] == CROSS and p_shift["buttons"] == 0, "G %s, Shift %s" % (p_g, p_shift))
+            self.setting("keys.pc_sprint", KEY_SHIFT)
 
             # walk: the stick at the walking speed while held
-            self.setting("keys.walk", KEY_G)
-            p = self.held("w", "g")
+            p = self.held("w", "alt")
             want = round(128 - 0.45 * 128)
-            self.ok("walk key", abs(p["ly"] - want) <= 1, "ly %d (want %d)" % (p["ly"], want))
-            walk = self.setting("keys.walk", 0)
-            self.ok("walk unbound", walk == "0", walk)
+            self.ok("walk key (Alt)", abs(p["ly"] - want) <= 1, "ly %d (want %d)" % (p["ly"], want))
             self.walk_reload_hold()
             g.teleport(75.0, 175.0, -100.0)
             time.sleep(2)
@@ -1265,11 +1267,11 @@ class Check:
             self.forced_free_aim()
             self.mounted_gun()
 
-            # a wheel notch as L1 (second slot); the menu key keeps F2 (the menu refuses keys a control has)
-            self.setting("keys.l12", KEY_WHEEL_UP)
+            # a wheel notch as Pick up weapon (L1, second slot); the menu key keeps F2 (the menu refuses keys a control has)
+            self.setting("keys.pc_action2", KEY_WHEEL_UP)
             p = self.held("wheelup")
             self.ok("wheel binding", p["buttons"] == L1, str(p))
-            self.setting("keys.l12", 0)
+            self.setting("keys.pc_action2", 0)
 
             # settings: presets and reset
             self.setting("presets.balanced")
@@ -1281,12 +1283,12 @@ class Check:
             got = {k: self.setting(k) for k in ("display.aspect", "display.hud", "display.msaa", "display.timing", "display.fps")}
             self.ok("Authentic preset", got == {"display.aspect": "43", "display.hud": "0", "display.msaa": "1", "display.timing": "0",
                                                 "display.fps": "30"}, str(got))
-            self.setting("keys.cross", KEY_G)
+            self.setting("keys.pc_sprint", KEY_G)
             self.setting("audio.volume", 40)
             self.setting("pad.vibration", 0)
             self.setting("advanced.reset_all")
-            got = {k: self.setting(k) for k in ("keys.cross", "audio.volume", "pad.vibration", "controls.menu_key")}
-            self.ok("Reset all settings", got == {"keys.cross": str(KEY_SHIFT), "audio.volume": "100", "pad.vibration": "100",
+            got = {k: self.setting(k) for k in ("keys.pc_sprint", "audio.volume", "pad.vibration", "controls.menu_key")}
+            self.ok("Reset all settings", got == {"keys.pc_sprint": str(KEY_SHIFT), "audio.volume": "100", "pad.vibration": "100",
                                                   "controls.menu_key": str(KEY_F2)}, str(got))
             p = self.held("shift")
             self.ok("bindings after the reset", p["buttons"] == CROSS, str(p))
@@ -1344,7 +1346,7 @@ class Check:
             self.ok("Alt+Enter is not Start", not p["buttons"] & START, str(p))
             for key in NOT_START_KEYS:
                 p = self.held(key)
-                self.ok("%s presses nothing outside the pause menu" % key, p["buttons"] == 0, str(p))
+                self.ok("%s is not Start outside the pause menu" % key, p["buttons"] == TRIANGLE, str(p))
                 time.sleep(0.5)
             # Escape is Start: held, the menu opens and has the key from then on (the report shows nothing after)
             self.held("escape")

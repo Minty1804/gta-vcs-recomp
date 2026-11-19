@@ -40,6 +40,7 @@
 #include <memory>
 #include <numeric>
 #include <unordered_map>
+#include <string>
 #include <vector>
 #include "runtime/ps2_host_std.h"
 
@@ -78,6 +79,12 @@ namespace vcs
         bool g_inRadar = false;      // game thread
         bool g_textCentred = false;  // the line being printed is centred across the screen; game thread
         int g_traceAnchors = 0;      // VCS_TRACE_HUDANCHOR=<frames>
+        // [Minty1804 fork] VCS_TRACE_HUDFLICKER=1 (the user's report, 2026-11-19: the top-right HUD vanishing for a
+        // second now and then): a line whenever the top-right cluster - clock, bars, money, weapon - changes, its
+        // elements, their anchors and its primitives, with whether CHud::Draw ran that frame
+        bool g_traceFlicker = false;
+        std::string g_flickerLast;
+        uint32_t g_flickerKicks = 0, g_flickerHudDraws = 0;
 
         // The scope / camera / binocular mask (game-internals.md 6f "Scope mask"): the 2D pass FUN_0021f348 fills black
         // side bars rect(0, 240 - s1) and rect(240 + s1, 480) (s1 210: 30 units each) through FUN_003e0b10(rect, colour,
@@ -327,6 +334,39 @@ namespace vcs
                 b.y0 = std::min(b.y0, g_prims[i].y0);
                 b.y1 = std::max(b.y1, g_prims[i].y1);
                 b.keyCount += 1; // (prims in the element, for the trace)
+            }
+            if (g_traceFlicker)
+            {
+                ++g_flickerKicks;
+                const uint32_t draws = g_hudDraws.load(std::memory_order_relaxed);
+                std::string now, shape; // the elements; their anchors in order (sizes change with the numbers: not compared)
+                uint32_t prims = 0;
+                for (uint32_t i = 0; i < n; ++i)
+                {
+                    const Prim &p = g_prims[i];
+                    const Prim &b = boxes[find(i)];
+                    if (apart(p) || b.y1 > 150.0f || b.x1 < 470.0f)
+                        continue;
+                    ++prims;
+                    if (find(i) != i)
+                        continue;
+                    const float centre = (b.x0 + b.x1) * 0.5f;
+                    const char *side = !edges                                ? "centre"
+                                       : centre < 280.0f && b.x0 < 160.0f ? "left"
+                                       : centre > 360.0f && b.x1 > 480.0f ? "right"
+                                                                          : "centre";
+                    char buf[96];
+                    std::snprintf(buf, sizeof(buf), " [%.0f..%.0f x %.0f..%.0f %s]", b.x0, b.x1, b.y0, b.y1, side);
+                    now += buf;
+                    shape += std::string(side) + ",";
+                }
+                if (shape != g_flickerLast)
+                    std::fprintf(stderr, "[hud-flicker] kick %u: top right %s (%u prims; CHud::Draw %u since the last change):%s\n",
+                                 g_flickerKicks, shape.empty() ? "gone" : shape.c_str(), prims, draws - g_flickerHudDraws,
+                                 now.c_str());
+                if (shape != g_flickerLast)
+                    g_flickerHudDraws = draws;
+                g_flickerLast = shape;
             }
             const bool traceFrame = g_traceAnchors > 0 &&
                                     ps2x::hostNow() - g_traceStart >= std::chrono::seconds(g_traceDelay);
@@ -589,6 +629,8 @@ namespace vcs
             g_traceKeys = std::atoi(keys);
         if (const char *frames = std::getenv("VCS_TRACE_HUDANCHOR"))
             g_traceAnchors = std::atoi(frames);
+        if (const char *f = std::getenv("VCS_TRACE_HUDFLICKER"))
+            g_traceFlicker = f[0] == '1';
         const char *traceEnv = std::getenv("VCS_TRACE_IM2D");
         g_traceStart = ps2x::hostNow();
         if (const char *delay = std::getenv("VCS_TRACE_IM2D_DELAY")) // (VCS_TRACE_HUDANCHOR's too)

@@ -1855,3 +1855,30 @@ controls_check, driver_aim_check, prompts_check and menu_check as before.
 What would change it: a mission needing a PS2 button in a situation where no action presses it. Every PS2 button is
 some action's default in every situation the game uses it. A scope or an aircraft could still have a use not found
 yet; the PS2 layout is the way back meanwhile.
+
+## 2026-11-19 - The PS2 layout removed; Crouch and "answer phone" were never VCS controls (the user's request)
+
+The user, after the controls went by action: remove the PS2 layout; and why are there controls to crouch and to
+answer the phone when VCS has neither?
+
+- **The PS2 layout is gone**, for the keyboard (Keyboard > Control scheme: PS2 buttons, the default before 2026-11-05)
+  and for the gamepad (Gamepad > Gamepad buttons: PS2 buttons), with its page, `keys.scheme`, `pad.scheme`,
+  `VCS_KEYS` and `VCS_PAD`. That reverses the entry above ("the PS2 layout is the way back"): the user doesn't want
+  two ways to set the same controls.
+  - The gamepad actions still read the old `pad.cross`... settings until set (`Spec::alias`), so a player's own gamepad
+    buttons carry over. Keys set in the PS2 scheme don't: its keys were per button, the actions' per situation, and a
+    key per PS2 button has no one action to go to.
+  - The PS2 Reload key worked in a vehicle too (a drive-by's clip filled at once). The actions' Reload is on foot only,
+    where R is free, so Vehicle > **Reload weapon (drive-by)** is a row of its own, with no key by default (R is the
+    radio there).
+  - The test tools drove the game with the PS2 keys (`toolchain.test_keys` set `VCS_KEYS=0`). They press the actions'
+    keys now: Enter selects in menus and skips cutscenes, W accelerates, Q / E look left / right in a car, Tab is L1 on
+    foot, V the camera view. `controls_check.py` checks the default on-foot keys, rebinding, Walk (Alt) and the reset
+    on the actions.
+- **Crouch** came with PR #78 from the PC games, on L3. Measured in game: L3 on foot crouches nothing (ped +0x1C8 bit
+  45 stays clear, standing, moving or aiming). The PS2 text has no crouch key either. With a gun and Target held, L3 is
+  the game's manual aim (`C0FREE1`; the ped goes to state 0x16). The row is now **Manual aim (while targeting)**. It
+  keeps its key C and reads the old Crouch row's key until set (`pc_manual_aim`, alias `pc_crouch`).
+- **"Action (pick up, answer phone)"** is now **Pick up weapon** (`C0PUCF`, L1; on foot L1 also puts the camera
+  behind Vic). `C0ANS` reads "L button": the PSP's text, left in the PS2's. The PS2 game answers its phone calls by
+  itself.

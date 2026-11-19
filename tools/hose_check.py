@@ -59,7 +59,7 @@ def check(out, step=144, port=47634, env=None):
         g.mission(59)
         t0 = time.time()
         while gi(STATE) < 2 and time.time() - t0 < 180:
-            g.cmd("press Shift 150")  # through the opening cutscene
+            g.cmd("press Return 150")  # through the opening cutscene
             time.sleep(2.0)
         result["state_after_start"] = gi(STATE)
         if gi(STATE) != 2:

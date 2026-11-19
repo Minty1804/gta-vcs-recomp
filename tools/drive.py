@@ -60,7 +60,7 @@ def main():
             time.sleep(1.0)
             start = counters(g)
             if not args.auto:
-                g.cmd("key Shift down")  # accelerate (Cross)
+                g.cmd("key W down")  # accelerate (Cross)
             t0 = time.time()
             last = g.player()[1]
             steer = None
@@ -83,7 +83,7 @@ def main():
                     print("spot %d t=%3.0f pos=(%.0f, %.0f, %.0f) moved=%.0f frame_ms=%.1f black=%d dips=%d" %
                           (si, t, pos[0], pos[1], pos[2], dist, c["frame_ms"], c["black_frames"] - start["black_frames"],
                            c["dip_frames"] - start["dip_frames"]))
-            for k in ("Shift", "A", "D"):
+            for k in ("W", "A", "D"):
                 g.cmd("key %s up" % k)
     finally:
         g.quit()

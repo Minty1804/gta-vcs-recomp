@@ -2,7 +2,7 @@
 """Reference scenes: run the game along a fixed script, capture screenshots + perf, compare two captures.
 
     python tools/scenes.py capture OUT [--hidden]            the reference script (SCRIPT below) -> OUT/
-    python tools/scenes.py explore OUT [--seconds 120] [--every 3] [--press 40:Return,45:Shift:300] [--hidden]
+    python tools/scenes.py explore OUT [--seconds 120] [--every 3] [--press 40:Return,45:F:300] [--hidden]
     python tools/scenes.py compare REF NEW [--out DIR]       per-scene difference + diff images
 
 Every run starts from an empty memory card (VCS_DATA_DIR = build/scenes_data, wiped first), so the boot path is
@@ -43,7 +43,7 @@ SCRIPT = [
     (38.0, "perf", "flyover", False),
     (72.0, "shot", "cutscene_office", False),
     (86.0, "perf", "cutscene", False),
-    (88.0, "press", "Shift", False),            # Cross: skip the cutscene
+    (88.0, "press", "Return", False),           # Cross: skip the cutscene
     (106.0, "shot", "gameplay_hud", False),
     (108.0, "perf", "gameplay", False),
     (110.0, "press", "Escape", False),          # Start: pause menu (map)
