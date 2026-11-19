@@ -1680,5 +1680,10 @@ code.
 - **Quick save** (olaftnt, upstream PR #184): merged, off by default (Enhancements > Saving > Quick save; F12). Its
   own check failed here on loads with a vehicle and on a cold boot (the player under the map): three fixes of ours on
   top, marked `[Minty1804 fork]` in vcs_quicksave.cpp (game-internals.md 12f). They are worth sending back to the PR.
+- **Fog distance / start** (willzmkv, their fork's commit 0d63f27): their `vcs_fog.cpp` was taken as it is, at 100 % /
+  100 % by default (Graphics > Fog). It scales the arguments of the game's own fog-range setter (game-internals.md 6r),
+  so the fog keeps its depth and its time-of-day colour on every path. A screen overlay would lose both (their reason,
+  kept). Their fork is far behind upstream, so the file was copied rather than merged: only the section number of the
+  doc reference changed.
 - **Credits**: every import keeps its author on the commit and gets a line in the fork README's Credits section (the
   user's rule, AGENTS.md).

@@ -1815,6 +1815,37 @@ gone. Found with the free camera at (-705.85, -1318.16, 12.07), heading 293, FOV
   thins the fence itself (`PS2X_HW_CUTOUT_REF=<n>` tries others for one run). Checked at that view: the hangar shows
   through the fence; nothing else in the picture changes. Costs one more draw call per such draw.
 
+### 6r. Distance fog: the range setter (2026-11-19, Graphics > Fog)
+
+Found by willzmkv (dejot) in their fork (willzmkv/gta-vcs-recomp, commit 0d63f27, their game-internals 6l). Their
+module `src/game/vcs_fog.cpp` was brought in as it is (docs/FORK_IMPORTS.md item 3). We checked their facts again here.
+- VCS fogs the way the PS2's GS does. Each vertex gets F = clamp(53.z + 53.w * w, 0, 255), where w is the camera-space
+  depth, and each pixel is blended with FOGCOL by F. The two constants are in VU1 qword 53, held at 0x742B28 (53.z)
+  and 0x742B2C (53.w). The state flush uploads 0x742AE0 (qwords 49-53). Every path reads qword 53 from there: the VU1
+  programs, the CPU HLE, the native vertex shaders (`nativeFog` in gs_draw.hlsl) and the clipper.
+- **FUN_002F6008**(start f12, end f13) is a leaf. It writes 53.w = -255 / (end - start) and
+  53.z = 255 * (start / (end - start) + 1), so F = 255 (end - w) / (end - start). It sets dirty bit 0x8 when either
+  constant changes. Its caller, the camera's begin-update FUN_0018EE48, passes camera +0x80 as start and camera +0x7C
+  as end. That caller first queues FOGCOL from 0x4E1B30 (through FUN_002F5FB8).
+- The neighbouring RSL state setters: FUN_002F5D90 (52.y bit 0); FUN_002F5F10 (fog on / off, 52.y bit 1);
+  FUN_002F5EA0 (the colour in qword 51, from 0x4882B4); FUN_002F5E00 (52.w); FUN_002F5E30.
+- Measured with `fogstate`, a command the module adds (2026-11-19, the user's card):
+  - Indoors, the range is 5 .. 1000.
+  - Outdoors at noon in clear weather, it is about 55 .. 2000. The end is the far plane (6o), so the fog is total at
+    the far plane.
+  - willzmkv measured a start of about 22 at 22:00, and -28.6 in foggy weather.
+- **The setting** replaces FUN_002F6008. **Fog distance** (10-100 %) scales both start and end. **Fog start** (0-300 %)
+  scales the start again. The start is kept below 0.95 x end, because the setter divides by end - start. At 100 % / 100 %
+  the game's own values go in untouched.
+  - Distance stops at 100 %: past the far plane, more distance would only cut the city off at a hard edge.
+  - willzmkv rejected a screen-space fog overlay. It would not follow the depth of each surface, and it would lose
+    the time cycle's fog colour.
+  - Checks:
+    - `tools/fog_check.py` sets each setting and reads qword 53 back.
+    - Outdoors at 40 %, 54.95 .. 2000 went in as 21.98 .. 800.
+- Switches: `VCS_FOG_DISTANCE` and `VCS_FOG_START` set the two settings for one run. `VCS_FOG_HOOK=0` leaves the
+  setter alone. `VCS_TRACE_FOG=1` logs the ranges the game asks for, every 5 s.
+
 ## 7. Textures: `.XTX`
 
 Confirmed from `LOADSC*.XTX` (263,372 bytes each, 512x512 8-bit):
