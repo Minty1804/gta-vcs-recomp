@@ -13,6 +13,8 @@ One hidden session from a card copy (rig.default_save), at noon in the sun at a 
   poolroom   at 300% the pools keep room: never fewer than 8 free ped / vehicle slots (where the game deletes the
              closest one), and a script's CREATE_CHAR and CREATE_CAR still get a handle
   script0    the scripts' own multipliers at 0 (as missions do to clear the streets) still stop random spawning
+  cargen     parked cars: at 100% Car distance the generators' ranges are the game's (160 / 170 m squared), at 200%
+             four times that and more generators in range; back at 100% as before
   lod        at 300% draw distance the LOD scale is 3 and LODDistMultiplier (TheCamera+0x7DC) the original times it;
              reported: the draws in an emptied street (the scripts' density 0) at 100 / 300%, perf at 100..300%
   packets    during a drive at 300%: the packet buffer's peak stays clear of where the game drops sectors
@@ -38,6 +40,9 @@ S = rig.Scm
 SET_CAR_DENSITY_MULTIPLIER = 0x0125
 SET_PED_DENSITY_MULTIPLIER = 0x0264
 LOD_MULTIPLIER = 0x6F44D0 + 0x7DC  # TheCamera.LODDistMultiplier
+CARGEN_COUNT = 0x4CD674     # the car generators' count (int16)
+CARGEN_IN_RANGE = 0x74D340  # a byte per generator: within its spawn range of the player
+CARGEN_SLOTS = 0x7FF4C      # the two ranges squared the patched generator code reads (vcs_world_detail.cpp)
 # address, executable's bytes (game-internals.md 12d / 6o)
 ORIGINAL = {
     "car_factor": (0x48A680, struct.pack("<f", 0.7)),
@@ -188,6 +193,22 @@ def main():
         g.scm(S.op(SET_CAR_DENSITY_MULTIPLIER, S.f(1.0)) + S.op(SET_PED_DENSITY_MULTIPLIER, S.f(1.0)))
         grew = (int(st1["pedsused"]) - int(st0["pedsused"]), int(st1["vehused"]) - int(st0["vehused"]))
         ok("script0", grew[0] <= 1 and grew[1] <= 1, "over 15 s at 0: peds %+d vehicles %+d" % grew)
+
+        # cargen: the parked cars' generators come into range with Car distance (game-internals.md 12d)
+        def generators(pct):
+            setting("enhance.car_distance", pct)
+            g.teleport(*SPOT[:2], -100.0, heading=SPOT[2])
+            time.sleep(8.0)
+            n = struct.unpack("<h", g.peek(CARGEN_COUNT, 2))[0]
+            in_range = sum(1 for b in g.peek(CARGEN_IN_RANGE, n) if b) if 0 < n <= 1000 else -1
+            return in_range, tuple(round(v) for v in g.peekf(CARGEN_SLOTS, 2))
+
+        gen = [generators(p) for p in (100, 200, 100)]
+        data["cargen"] = gen
+        ok("cargen", gen[0][1] == (25600, 28900) and gen[1][1] == (102400, 115600) and gen[2][1] == (25600, 28900) and
+           gen[1][0] > gen[0][0] >= 0 and gen[2][0] == gen[0][0],
+           "generators in range at 100 / 200 / 100%%: %d / %d / %d, ranges squared %s / %s / %s" % (
+               gen[0][0], gen[1][0], gen[2][0], gen[0][1], gen[1][1], gen[2][1]))
 
         # lod
         setting("enhance.traffic", 100)

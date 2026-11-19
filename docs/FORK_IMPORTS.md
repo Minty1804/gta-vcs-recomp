@@ -39,7 +39,7 @@ The items are in the order we go through them, one at a time. Status: open / don
 | 21 | Detailed city further (the detailed sectors of neighbour cells instead of the low-detail city) | willzmkv "HD world" (~40 commits) | XL | re-do; theirs went through crashes before a 3 h soak passed | open |
 | 22 | Far street-lamp / traffic-light coronas to the detailed distance | willzmkv 635e6bc ... 36ee818 | M | re-do next to our distant lights (7c) | open |
 | 23 | Distant traffic and crowds (proxies on the real models), crowd bands | willzmkv T2, 8c7e1be, b08463c, cecdd55... | XL | re-do; experimental there | open |
-| 24 | Parked cars at the population distance; police spawn ring kept while wanted | willzmkv 0c41004, 57d661f | S-M | re-do in vcs_world_detail.cpp | open |
+| 24 | Parked cars at the population distance; police spawn ring kept while wanted | willzmkv 0c41004, 57d661f | S-M | re-do in vcs_world_detail.cpp | done 2026-11-19: the generators' 160 / 170 m follow Car distance (patched immediates, game-internals 12d); the police ring needs nothing here (Car distance never moved it). Checked (tools/world_check.py cargen, at a city spot): 9 generators in range at 100 %, 19 at 200 %, 9 again back at 100 %; the whole check passes. |
 
 ## E. Presentation
 

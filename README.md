@@ -31,7 +31,7 @@ option or can be switched off, and everything else is the same as upstream.
 | **Far palms fading out** | The game fades far palms out with distance: with a longer draw distance whole rows look like ghosts | Solid at every distance they are drawn at (option, off by default) |
 | **First shot of the Mac 10 / Micro SMG** | About half a second after you press fire, even with the gun raised | At once, always |
 | **Pedestrian distance** | People appear 35-60 m away | Up to twice as far (option, 100% by default) |
-| **Car distance** | Traffic appears about 110 m ahead | Up to twice as far (option, 100% by default) |
+| **Car distance** | Traffic appears about 110 m ahead, parked cars 160 m away | Up to twice as far, parked cars too (option, 100% by default; the parked cars after willzmkv's work) |
 | **Cars' detail at a distance** | Cars drop to their low-detail model at 70 m and vanish at 100 m, whatever the draw distance | Those distances grow with the draw distance (140 m / 200 m at 200%) |
 | **Far fences** | A chain-link fence far away turns into a band of sky, hiding the buildings behind it | They show what is behind them (always on) |
 | **Aim speed** | Vic raises his gun about 0.2 s after the aim button | Fast raises it in about two thirds of the time, Faster in about half; his arms and body turn faster too (Enhancements → Combat, Original by default) |
@@ -396,6 +396,7 @@ is listed here (the full list of candidates, done or not: [docs/FORK_IMPORTS.md]
 - **Additive cull** (the helicopter dust's GPU cost): [PerikiyoXD](https://github.com/PerikiyoXD) (upstream PR #178).
 - **PC keyboard control scheme**: [SkipperSkipTR](https://github.com/SkipperSkipTR) (upstream PR #78), merged with our
   Reload key added to both schemes.
+- **Parked cars at the Car distance**: [willzmkv](https://github.com/willzmkv) (dejot), from their fork (commit 0c41004).
 - **Cutscene framing** and the sky in a cutscene's fade-in (and the sniper scope's bars that went with it):
   [willzmkv](https://github.com/willzmkv) (dejot), from their fork (commits 477cfd0, ab1a765, ab6d89c).
 - **Free aim while driving** and the wheel's weapons in a vehicle: [ChrisM-Pek](https://github.com/ChrisM-Pek), from

@@ -3470,6 +3470,20 @@ probes in the game (rig, `worlddetail`).
   it remembers what it wrote) and FUN_00433188's hook puts it back: spawn spots and the removal move out together, the
   ped step never sees it. Measured on an AI drive from 575, 175 (60 s): 11.5 -> 14.4 cars around, new cars' mean
   distance 330 -> 409 m (it counts parked-car generators too; `worlddetail` carspawns / carspawnmean), none vanished.
+- **Parked cars** (2026-11-19, with Car distance; found by willzmkv (dejot) in their fork, commit 0c41004):
+  CCarGenerators::Process `FUN_0040A9E0` walks the generators in 16 slices a frame (count int16 at `0x4CD674`, 284 in
+  the USA disc; 10-byte entries at `*0x487490`: x, y int16 x 0.125, z a signed byte, +6 the node). A generator within
+  **160 m** of the player (`25600.0` squared: `lui/mtc1` at `0x40AB10`) is flagged in the byte array `0x74D340` and,
+  with the density's chance, spawns its car (`FUN_0040A418` -> `FUN_0040B348`); leaving the range clears the flag. A
+  queued one (16 at `0x7166F0`, 0x30 each) is handled within **170 m** (`28900.0` at `0x40ACA8`). Both are immediates:
+  Car distance moved the traffic and the removal (160 m x GenerationDistMultiplier) out but not these, so with the
+  city drawn far the parked cars (a hospital's ambulance, the cars at a Pay 'n' Spray) appeared 160 m ahead. Patched
+  (game/vcs/overrides.toml and vcs.toml; `build.py --recompile`) to `lui $at, 8; lwc1 $fN, -0xB4 / -0xB0($at)`: guest RAM
+  `0x7FF4C` / `0x7FF50`, written before every call by vcs_world_detail.cpp with the game's values times Car distance
+  squared (the game's own at 100 %, also with VCS_WORLD_DETAIL_HOOKS=0). Checked (tools/world_check.py cargen, at a city spot): 9 generators in range at 100 %, 19 at 200 %, 9 again back at 100 %; the whole check passes.
+  Their fork also kept the police's spawn ring at the game's distance while wanted (57d661f): there the population
+  distance scaled the out-of-view ring (60 / 90 / 70 m), here Car distance only scales GenerationDistMultiplier (the
+  in-view spot 110 m x it ahead and the removal), so the police come from where they did on the PS2 already.
 - **Ped shadows** (2026-11-17, Enhancements > World > **Character shadows**, `enhance.ped_shadows`, on by default,
   `VCS_PED_SHADOWS=0`): the shadow textures are read at boot by FUN_003896F8 (RwTextureRead 0x346C80) into
   0x489168 (`shad_car`), **0x48916C (`shad_ped`)**, 0x489170 (`shad_heli`), 0x489174 (`shad_bike`), 0x489178

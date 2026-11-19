@@ -1708,6 +1708,10 @@ code.
   - the exposure pictures (same bits on the sand).
   On this machine it gains little (game-internals.md 6j). The PR's own bound only covers screen-linear u, v.
   Extending it to perspective triangles would be work of our own, left for later and not done here.
+- **Parked cars follow Car distance, the police not touched** (after willzmkv's 0c41004 / 57d661f, 2026-11-19): the
+  generators' two ranges are patched immediates read from guest RAM (a recompile), not a hook re-implementing
+  CCarGenerators::Process as their fork first did: the game's own loop and chances stay, only the distance moves. Their
+  police fix undid a scaling of the out-of-view spawn ring that Car distance never did here, so it is not taken.
 - **Cutscene framing PS2 by default** (after willzmkv's 477cfd0, 2026-11-19): authentic by default. The PS2 showed
   cutscenes at the 4:3 width under bars, and scenes place actors just outside it; Hor+ shows them waiting. PS2 framing
   takes the height from the display aspect instead of widening, and the frustum's side planes stay the game's (no

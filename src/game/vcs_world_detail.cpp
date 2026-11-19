@@ -357,6 +357,26 @@ namespace vcs::world
             g_origCarSpawner(rdram, ctx, runtime);
         }
 
+        // [Minty1804 fork] The parked cars (after willzmkv's (dejot) 0c41004). CCarGenerators::Process (FUN_0040A9E0)
+        // spawns a generator's car when the player comes within 160 m (25600.0 squared, an immediate at 0x40AB10) and
+        // handles a queued one within 170 m (28900.0 at 0x40ACA8) - whatever Car distance says, so with the city drawn
+        // far parked cars (a hospital's ambulance, the cars at a Pay 'n' Spray) appeared 160 m ahead, in view. The two
+        // are patched (game/vcs/overrides.toml) to read guest RAM kCarGenSlots / + 4, written here before every call:
+        // the game's values times Car distance squared - the game's own at 100 %, and the removal (PossiblyRemoveVehicle,
+        // 160 m x GenerationDistMultiplier, which Car distance scales the same way) never takes such a car away again.
+        // Installed whatever VCS_WORLD_DETAIL_HOOKS says: the patched code reads the slots, so they are always written.
+        constexpr uint32_t kCarGenerators = 0x0040A9E0u;
+        constexpr uint32_t kCarGenSlots = 0x0007FF4Cu; // (below the runtime's stacks at 0x80000; next to 0x7FF00's)
+        PS2Runtime::RecompiledFunction g_origCarGenerators = nullptr;
+        PS2_GUEST_CC void carGenerators(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            const float k = g_enabled ? std::clamp(g_carDistance.load(std::memory_order_relaxed), 100, kCarDistanceMax) / 100.0f
+                                      : 1.0f;
+            wrf(rdram, kCarGenSlots, 25600.0f * (k * k));
+            wrf(rdram, kCarGenSlots + 4u, 28900.0f * (k * k));
+            g_origCarGenerators(rdram, ctx, runtime);
+        }
+
         // RemoveCarsIfThePoolGetsFull (FUN_00433188, right after RemoveDistantCars): the camera's
         // GenerationDistMultiplier back before anything else reads it (see g_carDistance)
         PS2_GUEST_CC void removeCarsIfPoolFull(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
@@ -614,6 +634,8 @@ namespace vcs::world
             std::fprintf(stderr, "[world] no pool reserve, no cars kept in view (VCS_WORLD_KEEP=0)\n");
         }
         std::fill(std::begin(g_nearInView), std::end(g_nearInView), -1);
+        if ((g_origCarGenerators = runtime.lookupFunction(kCarGenerators)))
+            runtime.replaceFunction(kCarGenerators, &carGenerators);
         if (g_enabled)
         {
             g_origCarSpawner = runtime.lookupFunction(kCarSpawner);
