@@ -985,8 +985,76 @@ namespace
     }
 
     uint64_t g_sectorCalls = 0; // FUN_00240ED8 calls, for VCS_TRACE_CELL
+    // VCS_SECTOR_PROBE=<file> (analysis): the file holds a command, re-read every 200 ms - "list" logs every
+    // sector entry drawn in the next walks once ([sector-probe] idx, model pointer, matrix translation), a number
+    // skips the sectors with that model index (not drawn at all), anything else draws all.
+    bool sectorProbeSkip(uint8_t *rdram, uint32_t level, uint32_t sector)
+    {
+        static const char *file = std::getenv("VCS_SECTOR_PROBE");
+        if (!file || !sector)
+            return false;
+        static auto lastRead = ps2x::hostNow();
+        static long skip = -1;
+        static int listWalks = 0;
+        static std::string lastCmd;
+        static std::map<uint32_t, int> listed;
+        const auto now = ps2x::hostNow();
+        if (now - lastRead > std::chrono::milliseconds(200))
+        {
+            lastRead = now;
+            std::string cmd;
+            if (FILE *f = std::fopen(file, "r"))
+            {
+                char buf[64] = {};
+                if (std::fgets(buf, sizeof buf, f))
+                    cmd = buf;
+                std::fclose(f);
+            }
+            while (!cmd.empty() && (cmd.back() == '\n' || cmd.back() == '\r' || cmd.back() == ' '))
+                cmd.pop_back();
+            if (cmd != lastCmd)
+            {
+                lastCmd = cmd;
+                skip = -1;
+                if (cmd == "list")
+                {
+                    listWalks = 3000; // sector calls to list over (a few frames)
+                    listed.clear();
+                }
+                else if (!cmd.empty() && cmd[0] >= '0' && cmd[0] <= '9')
+                    skip = std::atol(cmd.c_str());
+                std::fprintf(stderr, "[sector-probe] command '%s'\n", cmd.c_str());
+            }
+        }
+        const auto rd32 = [&](uint32_t a) { uint32_t v = 0; std::memcpy(&v, rdram + (a & 0x01FFFFFFu), 4); return v; };
+        uint16_t idx = 0;
+        std::memcpy(&idx, rdram + ((sector + 2u) & 0x01FFFFFFu), 2);
+        if (listWalks > 0)
+        {
+            --listWalks;
+            if (!listed.count(sector))
+            {
+                listed[sector] = 1;
+                const uint32_t m = rd32(sector + 0xCu) ? rd32(sector + 0xCu) : sector + 0x10u;
+                float t[3], r[3];
+                std::memcpy(t, rdram + ((m + 0x30u) & 0x01FFFFFFu), 12);
+                std::memcpy(r, rdram + (m & 0x01FFFFFFu), 12);
+                std::fprintf(stderr, "[sector-probe] sector 0x%x idx %u model 0x%x pos %.1f %.1f %.1f right %.2f %.2f %.2f "
+                                     "head %08x %08x %08x\n",
+                             sector, idx, rd32(rd32(rd32(level + 0x1Cu)) + idx * 12u), t[0], t[1], t[2], r[0], r[1], r[2],
+                             rd32(sector), rd32(sector + 4u), rd32(sector + 8u));
+            }
+        }
+        return skip >= 0 && idx == static_cast<unsigned long>(skip);
+    }
+
     PS2_GUEST_CC void traceSector(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
     {
+        if (sectorProbeSkip(rdram, GPR_U32(ctx, 4), GPR_U32(ctx, 5)))
+        {
+            ctx->pc = GPR_U32(ctx, 31);
+            return;
+        }
         ++g_sectorCalls;
         static uint64_t calls = 0, noSector = 0, noIndex = 0, notLoaded = 0, loaded = 0;
         static auto last = ps2x::hostNow();
@@ -1242,7 +1310,7 @@ namespace
             runtime.replaceFunction(0x00198408u, &tracePedWorldRemove);
             runtime.replaceFunction(0x002560D8u, &traceScriptCommand);
         }
-        if (std::getenv("VCS_TRACE_SECTORS"))
+        if (std::getenv("VCS_TRACE_SECTORS") || std::getenv("VCS_SECTOR_PROBE"))
             runtime.replaceFunction(0x00240ED8u, &traceSector);
         if (std::getenv("VCS_TRACE_CELL"))
         {

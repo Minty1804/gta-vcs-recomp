@@ -1820,11 +1820,24 @@ maths, then checked in the game (`tools/world_check.py`, the free camera).
   against 520 m from the tower, the same at 100% and 300% draw distance. The F12 draw log on the emulated path with
   every vertex (`PS2X_HW_DUMP_ALLVERTS=1`): the slab is part of the far city's single batch (3,861 vertices, 32x32
   texture, alpha test > 8), opaque (vertex alpha 0x80) and not fading; the body is its own draw whose top starts
-  where the slab ends (y 187 of 448). `VCS_TRACE_CELL=1`: no sector with its model missing at either spot. The swap
-  is the level's current hex cell changing from (13, 7) to (14, 7): the detailed buildings come with the cells
-  streamed around the camera (6b), not with the LOD distances the draw distance scales. So the gap is in the far
-  model as authored; drawing the detailed tower further would mean streaming more cells (more cell slots and a
-  larger stream buffer than `0xCB7A80..0x112A660`) - not done.
+  where the slab ends (y 187 of 448). `VCS_TRACE_CELL=1`: no sector with its model missing at either spot.
+- **Detail is chosen per cell, baked into the level** (2026-11-19, the user asked to show the detailed buildings
+  further). The swap is the level's current hex cell (6b) changing from (13, 7) to (14, 7), not a distance: with the
+  camera at x -722 (cell 13) the far model, at x -711 (cell 14, 11 m on) the detailed one. Each cell carries its own
+  list of sector entries - what is drawn from inside it, near buildings detailed and the rest as far models. The list
+  is short: 16 distinct model indices for everything seen from cell 13 towards Downtown (`VCS_SECTOR_PROBE`, below).
+  Skipping them one at a time: index 4102 alone is **the whole far skyline** - every building across the water,
+  the tower with its slab among them, gone at once (the bridge stays); the other 15 changed nothing there. So the far
+  city is one merged mesh per cell. The tower's far model cannot be hidden on its own, and its detailed model cannot
+  be swapped in without losing the rest of the skyline. Drawing more cells would not help either: a cell's list
+  already holds the far city, so a neighbour's list on top would draw it twice. The draw distance setting scales LOD
+  distances (models, props, cars), which these baked lists do not use. Corrects the note of f5c7817, which put the
+  fix at more cell slots and a larger stream buffer. Not fixable short of changing the far mesh itself.
+- `FUN_00240ED8(level, sector entry)`: entry +2 = u16 model index into the level's table (`*(level+0x1C)`, 12-byte
+  entries: +0 the model, +4 its cached packet block), +0xC = matrix pointer (0: the matrix is inline at +0x10).
+  `VCS_SECTOR_PROBE=<file>` (analysis) reads a command from the file every 200 ms: `list` logs the sector entries
+  drawn in the next ~3,000 calls (`[sector-probe]` index, model, matrix translation), a number skips every entry
+  with that model index, anything else draws all.
 - `vcs_world_detail.cpp` writes `0x4887F8` (Enhancements > Draw distance) as set, nothing held back. It reports the
   packet use at the frame kick = (cursor `+0x18` - (half start - 0x10)) + (half end - data `+0x1C`), as
   `FUN_00476770` computes it (`worlddetail`: packets / peak).
