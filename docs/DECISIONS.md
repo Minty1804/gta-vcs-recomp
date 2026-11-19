@@ -1806,3 +1806,52 @@ brake, Left / Right steer), Vice City's own defaults, as the second slots of tho
 the D-pad. VCS uses the D-pad while playing only for the forklift's forks (C0FLUP / C0FLDN, Phil's mission): Forklift
 forks up / down, Page Up / Page Down - the sniper zoom's keys, which only work in a scope. The D-pad while playing keeps
 rows of its own, unbound; the shops' cursor (C0AMMOV) is the left stick or the D-pad, so the arrows still work there.
+
+## 2026-11-19 - The controls by action and situation on both devices, with an Aircraft section (the user's request)
+
+The user asked why item 19 (FORK_IMPORTS) had been reported done. What they configured still went by gamepad buttons,
+and nothing was split into on foot / vehicle / aircraft. Their ask: "como en SA", the settings split that way, with
+actions (look behind, change weapon, horn) instead of the PS2 button each one presses.
+
+Item 19 had been called done because SkipperSkipTR's PC scheme was merged and is the keyboard's default. But three
+things were still per PS2 button:
+
+- the Gamepad page, every row a PS2 button ("Cross (sprint, accelerate)");
+- the PS2 keys page, a tab of its own next to the keyboard's;
+- the PC actions' help, which named the PS2 button first.
+
+And there was no aircraft situation: a helicopter used the car's actions ("Look left / right (helicopters: turn)").
+
+Now:
+
+- **The gamepad goes by action** (Gamepad > Gamepad buttons: By action, the default). The PC scheme's actions each
+  have a gamepad button, by the same situations as the keys.
+  - At the defaults every button presses its own PS2 button in every situation, so nothing changes for a player who
+    sets nothing. That is the authentic default the rules want.
+  - In the game's menus the buttons are fixed as the PS2's. As in San Andreas, the menus aren't rebound, and the
+    shops, cutscenes and title screen keep working whatever the actions say.
+  - The old per-button layout stays as **PS2 buttons** on the **PS2 layout** page, together with the PS2 scheme's keys.
+  - Until set, an action takes the button the player's old layout gave its PS2 button (`Spec::alias` to `pad.cross`
+    and so on).
+- **An Aircraft situation** (`kInAir`): a helicopter (type 4) or plane (type 5, but not the hovercraft). Its buttons
+  were measured in game first (game-internals.md 12a), not taken from the GXT list, which was never checked in a
+  helicopter.
+  - Its actions are named for flying: climb / throttle, descend, turn left / right, bank, nose down / up, rockets,
+    cannon.
+  - The car's rows lost their aircraft meanings.
+- **Shared rows split by situation**: Enter / exit, Change camera view and Sub-missions are each a row in On foot,
+  Vehicle and Aircraft, as San Andreas lists them in both its on-foot and vehicle pages.
+  - The split rows and the aircraft rows read their older row's keys until set (`Spec::alias`).
+  - settings.cpp writes an aliased value at the next save even at its default, so the older key stops deciding it.
+- The help says when an action works and what that means for its key or button; the PS2 button comes last, for
+  reference.
+
+Why the gamepad's buttons don't take each other's: a gamepad has 16 buttons for some 40 actions, and the PS2's own map
+shares them (R1 is the handbrake and the Hunter's cannon). Exclusive dropdowns would make the defaults impossible.
+
+Checked: `tools/pc_scheme_check.py` (29 checks, the new ones in a Maverick, with the gamepad and the menus), and
+controls_check, driver_aim_check, prompts_check and menu_check as before.
+
+What would change it: a mission needing a PS2 button in a situation where no action presses it. Every PS2 button is
+some action's default in every situation the game uses it. A scope or an aircraft could still have a use not found
+yet; the PS2 layout is the way back meanwhile.

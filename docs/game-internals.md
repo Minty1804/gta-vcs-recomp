@@ -2848,6 +2848,25 @@ timing at 60 fps; independent timing at 60 / 144 fps got through, by luck (below
   sites, recruiting)**, **unarmed combat, locked on** (UCBT_01..03): PUNA Circle light attack, PUHA Cross heavy
   attack, PUBL Square block (held), PUGR Triangle grab ("making them defenseless to your attacks"), TAXJU L3, SWIMF Cross, SWIMO Square, AMBUY / AMEXI Cross / Triangle (shops), AMLEF / AMRIG
   D-pad left / right. The keyboard's PC scheme presses these (src/game/vcs_input.cpp, docs/CONTROLS.md).
+- **Vehicle types and the aircraft's buttons** (2026-11-19, `[Minty1804 fork]`, for the controls' Aircraft section). The
+  vehicle's type is the u32 at **+0x354**, read in each vehicle spawned into (the rig's `spawn_car`, ped +0x480):
+  0 cars (Sentinel), **1 boats** (Speeder - and the Skimmer, a seaplane to the player), 2 the jet ski, **4
+  helicopters** (Maverick, Sparrow, Hunter, Huey, the air ambulance, the autogyro), **5 planes** (Biplane, AEROPL - and
+  the hovercraft, model 198), 6 bikes (PCJ-600), 8 the BMX, 9 the quad. The model index is the entity's +0x56 (s16).
+  What each PS2 button does there, with the gamepad injected (identity map) and the vehicle's matrix read before and
+  after 1.5 s (heading, pitch, roll, height):
+  - **Maverick**, hovering after 7 s of Cross from the ground: Cross climbs (+10 m against +4 coasting), Square
+    descends (-2 m), **L2 turns left and R2 right** (about 120 degrees a second, sampled every 0.25 s), the left stick
+    left / right **banks** (roll +39 / -39 degrees), up / down **pitches** the nose down / up (-38 / +34); L2 + R2
+    together does nothing, nor do L1, R1, L3, R3, Circle, Select (no weapon on a Maverick). The D-pad steers as the left
+    stick does.
+  - **Biplane** on the ground with throttle: Cross is the throttle (speed up), Square brakes (10 m/s to 1.7), **L2 / R2
+    the rudder** (heading +59 / -55 degrees in 1.5 s), the left stick left / right little on the ground (the
+    ailerons); in the air the stick pitches (not measured there: it dived into the ground).
+  - **Hovercraft** (type 5): the left stick steers it (heading +108 / -42), L2 / R2 do not turn it, Cross / Square
+    accelerate / brake - a boat's controls, so the controls count it as a vehicle, not an aircraft.
+  So a helicopter and a plane share their buttons: Cross / Square climb / descend (throttle / brake), L2 / R2 turn, the
+  left stick banks and pitches. `src/game/vcs_input.cpp` (the Aircraft actions: type 4, or 5 but model 198).
 - **Driving buttons**, measured with a car on a straight street (575, 175): Cross accelerates (forward speed 0.28 after
   2 s), R1 is the handbrake (0.12 to 0 in 0.7 s; coasting 0.28 to 0.20), Square brakes, then reverses. Vehicle +0x140
   is its velocity (units per 1/50 s), +0x10 its forward vector.

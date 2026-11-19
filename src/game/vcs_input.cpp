@@ -43,7 +43,8 @@ namespace vcs::input
                            kTriangle = 0x1000, kCircle = 0x2000, kCross = 0x4000, kSquare = 0x8000;
 
         // Gamepad sources for a PS2 button (the Gamepad page's choices): platform::GamepadButton, or a trigger.
-        constexpr int kPadNone = -1, kPadLT = 20, kPadRT = 21;
+        // kPadOwn (the control table only): the gamepad button that is the action's PS2 button (padFor).
+        constexpr int kPadNone = -1, kPadOwn = -2, kPadLT = 20, kPadRT = 21;
 
         enum class Target
         {
@@ -59,9 +60,11 @@ namespace vcs::input
         // fighting (on foot, unarmed, the target button held: locked on to a ped or ready to). The PC games' action
         // types (CControllerConfigManager::GetActionType, 0x6167A0 in gta-vc.exe): third person, first person, both
         // (kOnFootAny), vehicle, vehicle and third person (kPlaying), common (kCommon).
-        constexpr uint8_t kOnFoot = 1, kInVehicle = 2, kInMenu = 4, kInScope = 8, kInFight = 16;
-        constexpr uint8_t kOnFootAny = kOnFoot | kInScope, kPlaying = kOnFoot | kInVehicle,
-                          kCommon = kOnFoot | kInScope | kInVehicle, kAlways = kCommon | kInMenu;
+        // [Minty1804 fork] kInAir: the player flies a helicopter or a plane (GameState::aircraft) - its own actions, as
+        // San Andreas' Controls menu has (kInVehicle is then cars, bikes, boats and the hovercraft).
+        constexpr uint8_t kOnFoot = 1, kInVehicle = 2, kInMenu = 4, kInScope = 8, kInFight = 16, kInAir = 32;
+        constexpr uint8_t kOnFootAny = kOnFoot | kInScope, kPlaying = kOnFoot | kInVehicle | kInAir,
+                          kCommon = kOnFoot | kInScope | kInVehicle | kInAir, kAlways = kCommon | kInMenu;
 
         // The keyboard's two schemes (Keyboard > Control scheme): PC actions as in the PC Vice City / San Andreas
         // (CControllerConfigManager: an action per key, by situation), or a key per PS2 button.
@@ -80,14 +83,18 @@ namespace vcs::input
             uint16_t mask;
             int axis, sign;
             int key1, key2;       // default keys
-            int pad;              // default gamepad source (the PS2 scheme's buttons: the Gamepad page)
-            uint8_t when;         // kOnFoot...: when its keys work
+            int pad;              // default gamepad source: the PS2 layout's buttons, and the actions' (kPadOwn: the
+                                  // button that is its PS2 button; kPadNone: none, or no gamepad row - the sticks)
+            uint8_t when;         // kOnFoot...: when its keys (and in the action layout its gamepad button) work
             Scheme scheme;
             const char *group;    // PS2 scheme: the settings menu keeps keys exclusive within a group (settings::Spec::group);
                                   // the PC scheme's come from `when` (pcGroup)
+            const char *alias = nullptr; // [Minty1804 fork] an older action whose keys it takes until set (settings::Spec::
+                                         // alias): the rows split by situation on 2026-11-19
         };
 
         using namespace platform;
+        constexpr const char *kVehicleSection = "Vehicle (cars, bikes, boats)", *kAirSection = "Aircraft (helicopters, planes)";
         // The PC scheme's actions, the PS2 buttons they press in VCS's default controller setup (the game's own key
         // names for its help text, C0* in the PS2 GXT: C0VEHN horn L3, C0VECRS radio L1, C0VELL / C0VELR / C0VELB look
         // L2 / R2 / both, C0TGSUB sub-missions R3, C0PDBAK look behind R3, C0PUCF / C0ANS pick up / answer L1, C0SNZI /
@@ -96,76 +103,107 @@ namespace vcs::input
         // weapons from San Andreas', 0x530640 in gta_sa.exe 1.0). docs/CONTROLS.md, game-internals.md 12a.
         constexpr const char *kPS2Group = "keys", *kPS2DriveGroup = "drive";
         const Control kControls[] = {
+            // On foot (third person; the rows also kInScope work in the first-person weapon views)
             {"pc_forward", "Forward", "On foot", Target::Stick, 0, 1, -1, KEY_W, KEY_UP, kPadNone, kOnFootAny, kSchemePC, nullptr},
             {"pc_backward", "Backward", "On foot", Target::Stick, 0, 1, 1, KEY_S, KEY_DOWN, kPadNone, kOnFootAny, kSchemePC, nullptr},
             {"pc_left", "Left", "On foot", Target::Stick, 0, 0, -1, KEY_A, KEY_LEFT, kPadNone, kOnFootAny, kSchemePC, nullptr},
             {"pc_right", "Right", "On foot", Target::Stick, 0, 0, 1, KEY_D, KEY_RIGHT, kPadNone, kOnFootAny, kSchemePC, nullptr},
             {"pc_walk", "Walk (hold)", "On foot", Target::Walk, 0, 0, 0, KEY_LEFT_ALT, 0, kPadNone, kOnFoot, kSchemePC, nullptr},
-            {"pc_sprint", "Sprint / swim faster", "On foot", Target::Button, kCross, 0, 0, KEY_LEFT_SHIFT, 0, kPadNone, kOnFoot, kSchemePC, nullptr},
-            {"pc_jump", "Jump / climb", "On foot", Target::Button, kSquare, 0, 0, KEY_SPACE, 0, kPadNone, kOnFoot, kSchemePC, nullptr},
-            {"pc_crouch", "Crouch", "On foot", Target::Button, kL3, 0, 0, KEY_C, 0, kPadNone, kOnFoot, kSchemePC, nullptr},
-            {"pc_fire", "Fire / attack", "On foot", Target::Button, kCircle, 0, 0, KEY_MOUSE_LEFT, KEY_LEFT_CONTROL, kPadNone, kOnFootAny, kSchemePC, nullptr},
-            {"pc_target", "Target / lock on", "On foot", Target::Button, kR1, 0, 0, KEY_MOUSE_RIGHT, KEY_DELETE, kPadNone, kOnFootAny, kSchemePC, nullptr},
-            {"pc_next_weapon", "Next weapon", "On foot", Target::Button, kR2, 0, 0, KEY_E, 0, kPadNone, kOnFoot, kSchemePC, nullptr},
-            {"pc_prev_weapon", "Previous weapon", "On foot", Target::Button, kL2, 0, 0, KEY_Q, 0, kPadNone, kOnFoot, kSchemePC, nullptr},
-            {"pc_next_target", "Next target", "On foot", Target::Button, kR2, 0, 0, KEY_RIGHT_BRACKET, 0, kPadNone, kOnFoot, kSchemePC, nullptr},
-            {"pc_prev_target", "Previous target", "On foot", Target::Button, kL2, 0, 0, KEY_LEFT_BRACKET, 0, kPadNone, kOnFoot, kSchemePC, nullptr},
-            {"pc_action", "Action (pick up, answer phone)", "On foot", Target::Button, kL1, 0, 0, KEY_TAB, 0, kPadNone, kOnFoot, kSchemePC, nullptr},
-            {"pc_look_behind", "Look behind", "On foot", Target::Button, kR3, 0, 0, KEY_MOUSE_MIDDLE, KEY_KP_1, kPadNone, kOnFoot, kSchemePC, nullptr},
+            {"pc_sprint", "Sprint / swim faster", "On foot", Target::Button, kCross, 0, 0, KEY_LEFT_SHIFT, 0, kPadOwn, kOnFoot, kSchemePC, nullptr},
+            {"pc_jump", "Jump / climb", "On foot", Target::Button, kSquare, 0, 0, KEY_SPACE, 0, kPadOwn, kOnFoot, kSchemePC, nullptr},
+            {"pc_crouch", "Crouch", "On foot", Target::Button, kL3, 0, 0, KEY_C, 0, kPadOwn, kOnFoot, kSchemePC, nullptr},
+            {"pc_fire", "Fire / attack", "On foot", Target::Button, kCircle, 0, 0, KEY_MOUSE_LEFT, KEY_LEFT_CONTROL, kPadOwn, kOnFootAny, kSchemePC, nullptr},
+            {"pc_target", "Target / lock on", "On foot", Target::Button, kR1, 0, 0, KEY_MOUSE_RIGHT, KEY_DELETE, kPadOwn, kOnFootAny, kSchemePC, nullptr},
+            {"pc_next_weapon", "Next weapon", "On foot", Target::Button, kR2, 0, 0, KEY_E, 0, kPadOwn, kOnFoot, kSchemePC, nullptr},
+            {"pc_prev_weapon", "Previous weapon", "On foot", Target::Button, kL2, 0, 0, KEY_Q, 0, kPadOwn, kOnFoot, kSchemePC, nullptr},
+            {"pc_next_target", "Next target", "On foot", Target::Button, kR2, 0, 0, KEY_RIGHT_BRACKET, 0, kPadOwn, kOnFoot, kSchemePC, nullptr},
+            {"pc_prev_target", "Previous target", "On foot", Target::Button, kL2, 0, 0, KEY_LEFT_BRACKET, 0, kPadOwn, kOnFoot, kSchemePC, nullptr},
+            {"pc_action", "Action (pick up, answer phone)", "On foot", Target::Button, kL1, 0, 0, KEY_TAB, 0, kPadOwn, kOnFoot, kSchemePC, nullptr},
+            {"pc_look_behind", "Look behind", "On foot", Target::Button, kR3, 0, 0, KEY_MOUSE_MIDDLE, KEY_KP_1, kPadOwn, kOnFoot, kSchemePC, nullptr},
+            // [Minty1804 fork] split by situation (2026-11-19): these were one row for on foot and vehicles; the vehicle
+            // and aircraft sections have their own now, which take this row's keys until they are set (`alias`)
+            {"pc_enter_exit", "Enter vehicle", "On foot", Target::Button, kTriangle, 0, 0, KEY_F, KEY_ENTER, kPadOwn, kOnFoot, kSchemePC, nullptr},
+            {"pc_camera_view", "Change camera view", "On foot", Target::Button, kSelect, 0, 0, KEY_V, KEY_HOME, kPadOwn, kOnFootAny, kSchemePC, nullptr},
+            {"pc_submission", "Activity (recruit, buy sites)", "On foot", Target::Button, kR3, 0, 0, KEY_CAPS_LOCK, KEY_KP_ADD, kPadOwn, kOnFoot, kSchemePC, nullptr},
             // [Minty1804 fork] our reload key (Target::Reload): on foot only - R is the radio in a vehicle, where the game
             // refills the clip itself whenever you stop shooting
             {"pc_reload", "Reload weapon", "On foot", Target::Reload, 0, 0, 0, KEY_R, 0, kPadNone, kOnFoot, kSchemePC, nullptr},
-            {"pc_zoom_in", "Sniper zoom in", "On foot", Target::Button, kSquare, 0, 0, KEY_PAGE_UP, KEY_Z, kPadNone, kInScope, kSchemePC, nullptr},
-            {"pc_zoom_out", "Sniper zoom out", "On foot", Target::Button, kCross, 0, 0, KEY_PAGE_DOWN, KEY_X, kPadNone, kInScope, kSchemePC, nullptr},
+            {"pc_zoom_in", "Sniper zoom in", "On foot", Target::Button, kSquare, 0, 0, KEY_PAGE_UP, KEY_Z, kPadOwn, kInScope, kSchemePC, nullptr},
+            {"pc_zoom_out", "Sniper zoom out", "On foot", Target::Button, kCross, 0, 0, KEY_PAGE_DOWN, KEY_X, kPadOwn, kInScope, kSchemePC, nullptr},
+            // [Minty1804 fork] C0SNSLO: L1 steadies the sniper's aim (nothing pressed it in the PC scheme before)
+            {"pc_steady_aim", "Steady aim (sniper scope)", "On foot", Target::Button, kL1, 0, 0, KEY_LEFT_SHIFT, 0, kPadOwn, kInScope, kSchemePC, nullptr},
 
             // VCS's unarmed combat, locked on (UCBT_01..03; C0PUNA Circle the light attack - Fire above -, C0PUHA Cross
             // the heavy one, C0PUBL Square blocks while held, C0PUGR Triangle grabs). These keys win over the on-foot
             // ones meanwhile: Space kicks rather than jumps.
-            {"pc_heavy_attack", "Heavy attack", "Fighting (unarmed, Target held)", Target::Button, kCross, 0, 0, KEY_SPACE, KEY_MOUSE_X1, kPadNone, kInFight, kSchemePC, nullptr},
-            {"pc_block", "Block (hold)", "Fighting (unarmed, Target held)", Target::Button, kSquare, 0, 0, KEY_LEFT_SHIFT, KEY_MOUSE_X2, kPadNone, kInFight, kSchemePC, nullptr},
-            {"pc_grab", "Grab", "Fighting (unarmed, Target held)", Target::Button, kTriangle, 0, 0, KEY_F, 0, kPadNone, kInFight, kSchemePC, nullptr},
+            {"pc_heavy_attack", "Heavy attack", "Fighting (unarmed, Target held)", Target::Button, kCross, 0, 0, KEY_SPACE, KEY_MOUSE_X1, kPadOwn, kInFight, kSchemePC, nullptr},
+            {"pc_block", "Block (hold)", "Fighting (unarmed, Target held)", Target::Button, kSquare, 0, 0, KEY_LEFT_SHIFT, KEY_MOUSE_X2, kPadOwn, kInFight, kSchemePC, nullptr},
+            {"pc_grab", "Grab", "Fighting (unarmed, Target held)", Target::Button, kTriangle, 0, 0, KEY_F, 0, kPadOwn, kInFight, kSchemePC, nullptr},
 
-            {"pc_accelerate", "Accelerate", "In a vehicle", Target::Button, kCross, 0, 0, KEY_W, KEY_UP, kPadNone, kInVehicle, kSchemePC, nullptr},
-            {"pc_brake", "Brake / reverse", "In a vehicle", Target::Button, kSquare, 0, 0, KEY_S, KEY_DOWN, kPadNone, kInVehicle, kSchemePC, nullptr},
-            {"pc_steer_left", "Steer left", "In a vehicle", Target::Stick, 0, 0, -1, KEY_A, KEY_LEFT, kPadNone, kInVehicle, kSchemePC, nullptr},
-            {"pc_steer_right", "Steer right", "In a vehicle", Target::Stick, 0, 0, 1, KEY_D, KEY_RIGHT, kPadNone, kInVehicle, kSchemePC, nullptr},
-            {"pc_lean_forward", "Lean forward / nose down", "In a vehicle", Target::Stick, 0, 1, -1, KEY_KP_8, 0, kPadNone, kInVehicle, kSchemePC, nullptr},
-            {"pc_lean_back", "Lean back / nose up", "In a vehicle", Target::Stick, 0, 1, 1, KEY_KP_5, 0, kPadNone, kInVehicle, kSchemePC, nullptr},
-            {"pc_handbrake", "Handbrake", "In a vehicle", Target::Button, kR1, 0, 0, KEY_SPACE, 0, kPadNone, kInVehicle, kSchemePC, nullptr},
-            {"pc_vehicle_fire", "Fire (drive-by, rockets, water cannon)", "In a vehicle", Target::Button, kCircle, 0, 0, KEY_MOUSE_LEFT, KEY_LEFT_CONTROL, kPadNone, kInVehicle, kSchemePC, nullptr},
-            // the game's second vehicle weapon is R1 (C0VEWE2: the Hunter's cannon; its rockets and the fire engine's
-            // water are Circle, Fire above) - the handbrake's button, so in a car it is the handbrake too
-            {"pc_vehicle_fire_alt", "Secondary fire (Hunter's cannon)", "In a vehicle", Target::Button, kR1, 0, 0, KEY_MOUSE_RIGHT, 0, kPadNone, kInVehicle, kSchemePC, nullptr},
-            {"pc_horn", "Horn / siren", "In a vehicle", Target::Button, kL3, 0, 0, KEY_LEFT_SHIFT, KEY_H, kPadNone, kInVehicle, kSchemePC, nullptr},
-            {"pc_radio", "Next radio station", "In a vehicle", Target::Button, kL1, 0, 0, KEY_R, KEY_INSERT, kPadNone, kInVehicle, kSchemePC, nullptr},
-            {"pc_look_left", "Look left", "In a vehicle", Target::Button, kL2, 0, 0, KEY_Q, 0, kPadNone, kInVehicle, kSchemePC, nullptr},
-            {"pc_look_right", "Look right", "In a vehicle", Target::Button, kR2, 0, 0, KEY_E, 0, kPadNone, kInVehicle, kSchemePC, nullptr},
+            // Vehicles: cars, bikes, boats (the Skimmer is a boat to the game: type 1) and the hovercraft (driven as one)
+            {"pc_accelerate", "Accelerate", kVehicleSection, Target::Button, kCross, 0, 0, KEY_W, KEY_UP, kPadOwn, kInVehicle, kSchemePC, nullptr},
+            {"pc_brake", "Brake / reverse", kVehicleSection, Target::Button, kSquare, 0, 0, KEY_S, KEY_DOWN, kPadOwn, kInVehicle, kSchemePC, nullptr},
+            {"pc_steer_left", "Steer left", kVehicleSection, Target::Stick, 0, 0, -1, KEY_A, KEY_LEFT, kPadNone, kInVehicle, kSchemePC, nullptr},
+            {"pc_steer_right", "Steer right", kVehicleSection, Target::Stick, 0, 0, 1, KEY_D, KEY_RIGHT, kPadNone, kInVehicle, kSchemePC, nullptr},
+            {"pc_lean_forward", "Lean forward (bikes)", kVehicleSection, Target::Stick, 0, 1, -1, KEY_KP_8, 0, kPadNone, kInVehicle, kSchemePC, nullptr},
+            {"pc_lean_back", "Lean back (bikes)", kVehicleSection, Target::Stick, 0, 1, 1, KEY_KP_5, 0, kPadNone, kInVehicle, kSchemePC, nullptr},
+            {"pc_handbrake", "Handbrake", kVehicleSection, Target::Button, kR1, 0, 0, KEY_SPACE, 0, kPadOwn, kInVehicle, kSchemePC, nullptr},
+            {"pc_vehicle_fire", "Fire (drive-by, water cannon)", kVehicleSection, Target::Button, kCircle, 0, 0, KEY_MOUSE_LEFT, KEY_LEFT_CONTROL, kPadOwn, kInVehicle, kSchemePC, nullptr},
+            // the game's second vehicle weapon is R1 (C0VEWE2) - the handbrake's button, so in a car it is the handbrake
+            // too (and with Free aim on its keys aim from the driver's seat)
+            {"pc_vehicle_fire_alt", "Secondary fire / aim", kVehicleSection, Target::Button, kR1, 0, 0, KEY_MOUSE_RIGHT, 0, kPadOwn, kInVehicle, kSchemePC, nullptr},
+            {"pc_horn", "Horn / siren", kVehicleSection, Target::Button, kL3, 0, 0, KEY_LEFT_SHIFT, KEY_H, kPadOwn, kInVehicle, kSchemePC, nullptr},
+            {"pc_radio", "Next radio station", kVehicleSection, Target::Button, kL1, 0, 0, KEY_R, KEY_INSERT, kPadOwn, kInVehicle, kSchemePC, nullptr},
+            {"pc_look_left", "Look left", kVehicleSection, Target::Button, kL2, 0, 0, KEY_Q, 0, kPadOwn, kInVehicle, kSchemePC, nullptr},
+            {"pc_look_right", "Look right", kVehicleSection, Target::Button, kR2, 0, 0, KEY_E, 0, kPadOwn, kInVehicle, kSchemePC, nullptr},
+            // L2 + R2 (C0VELB): on a gamepad both triggers together
+            {"pc_look_behind_car", "Look behind", kVehicleSection, Target::Button, kL2 | kR2, 0, 0, KEY_MOUSE_MIDDLE, KEY_KP_1, kPadNone, kInVehicle, kSchemePC, nullptr},
+            {"pc_car_exit", "Exit vehicle", kVehicleSection, Target::Button, kTriangle, 0, 0, KEY_F, KEY_ENTER, kPadOwn, kInVehicle, kSchemePC, nullptr, "pc_enter_exit"},
+            {"pc_car_camera_view", "Change camera view", kVehicleSection, Target::Button, kSelect, 0, 0, KEY_V, KEY_HOME, kPadOwn, kInVehicle, kSchemePC, nullptr, "pc_camera_view"},
+            {"pc_car_submission", "Sub-missions (taxi, police...)", kVehicleSection, Target::Button, kR3, 0, 0, KEY_CAPS_LOCK, KEY_KP_ADD, kPadOwn, kInVehicle, kSchemePC, nullptr, "pc_submission"},
             // the D-pad's use in a vehicle (C0FLUP / C0FLDN: the forklift's forks, Phil's mission)
-            {"pc_forks_up", "Forklift: forks up", "In a vehicle", Target::Button, kUp, 0, 0, KEY_PAGE_UP, 0, kPadNone, kInVehicle, kSchemePC, nullptr},
-            {"pc_forks_down", "Forklift: forks down", "In a vehicle", Target::Button, kDown, 0, 0, KEY_PAGE_DOWN, 0, kPadNone, kInVehicle, kSchemePC, nullptr},
-            {"pc_look_behind_car", "Look behind", "In a vehicle", Target::Button, kL2 | kR2, 0, 0, KEY_MOUSE_MIDDLE, KEY_KP_1, kPadNone, kInVehicle, kSchemePC, nullptr},
+            {"pc_forks_up", "Forklift: forks up", kVehicleSection, Target::Button, kUp, 0, 0, KEY_PAGE_UP, 0, kPadOwn, kInVehicle, kSchemePC, nullptr},
+            {"pc_forks_down", "Forklift: forks down", kVehicleSection, Target::Button, kDown, 0, 0, KEY_PAGE_DOWN, 0, kPadOwn, kInVehicle, kSchemePC, nullptr},
 
-            {"pc_enter_exit", "Enter / exit vehicle", "Both", Target::Button, kTriangle, 0, 0, KEY_F, KEY_ENTER, kPadNone, kPlaying, kSchemePC, nullptr},
-            {"pc_camera_view", "Change camera view", "Both", Target::Button, kSelect, 0, 0, KEY_V, KEY_HOME, kPadNone, kCommon, kSchemePC, nullptr},
-            {"pc_submission", "Sub-missions / activity", "Both", Target::Button, kR3, 0, 0, KEY_CAPS_LOCK, KEY_KP_ADD, kPadNone, kPlaying, kSchemePC, nullptr},
-            {"pc_cam_up", "Camera up (right stick)", "Both", Target::Stick, 0, 3, -1, KEY_I, 0, kPadNone, kCommon, kSchemePC, nullptr},
-            {"pc_cam_down", "Camera down", "Both", Target::Stick, 0, 3, 1, KEY_K, 0, kPadNone, kCommon, kSchemePC, nullptr},
-            {"pc_cam_left", "Camera left", "Both", Target::Stick, 0, 2, -1, KEY_J, 0, kPadNone, kCommon, kSchemePC, nullptr},
-            {"pc_cam_right", "Camera right", "Both", Target::Stick, 0, 2, 1, KEY_L, 0, kPadNone, kCommon, kSchemePC, nullptr},
+            // [Minty1804 fork] Aircraft: helicopters (type 4, the autogyro too) and planes (type 5 but the hovercraft),
+            // the PS2 buttons measured in a Maverick and the Biplane with the gamepad injected (game-internals.md 12a):
+            // Cross climbs / throttle, Square descends / brakes, L2 / R2 turn (yaw), the left stick banks and pitches,
+            // L2 + R2 together does nothing. Until set they take the vehicle actions' keys they had before (`alias`).
+            {"pc_air_up", "Climb / throttle", kAirSection, Target::Button, kCross, 0, 0, KEY_W, KEY_UP, kPadOwn, kInAir, kSchemePC, nullptr, "pc_accelerate"},
+            {"pc_air_down", "Descend / brake", kAirSection, Target::Button, kSquare, 0, 0, KEY_S, KEY_DOWN, kPadOwn, kInAir, kSchemePC, nullptr, "pc_brake"},
+            {"pc_air_turn_left", "Turn left (rudder)", kAirSection, Target::Button, kL2, 0, 0, KEY_Q, 0, kPadOwn, kInAir, kSchemePC, nullptr, "pc_look_left"},
+            {"pc_air_turn_right", "Turn right (rudder)", kAirSection, Target::Button, kR2, 0, 0, KEY_E, 0, kPadOwn, kInAir, kSchemePC, nullptr, "pc_look_right"},
+            {"pc_air_bank_left", "Bank left", kAirSection, Target::Stick, 0, 0, -1, KEY_A, KEY_LEFT, kPadNone, kInAir, kSchemePC, nullptr, "pc_steer_left"},
+            {"pc_air_bank_right", "Bank right", kAirSection, Target::Stick, 0, 0, 1, KEY_D, KEY_RIGHT, kPadNone, kInAir, kSchemePC, nullptr, "pc_steer_right"},
+            {"pc_air_nose_down", "Nose down", kAirSection, Target::Stick, 0, 1, -1, KEY_KP_8, 0, kPadNone, kInAir, kSchemePC, nullptr, "pc_lean_forward"},
+            {"pc_air_nose_up", "Nose up", kAirSection, Target::Stick, 0, 1, 1, KEY_KP_5, 0, kPadNone, kInAir, kSchemePC, nullptr, "pc_lean_back"},
+            {"pc_air_fire", "Fire (the Hunter's rockets)", kAirSection, Target::Button, kCircle, 0, 0, KEY_MOUSE_LEFT, KEY_LEFT_CONTROL, kPadOwn, kInAir, kSchemePC, nullptr, "pc_vehicle_fire"},
+            {"pc_air_fire_alt", "Secondary fire (the Hunter's cannon)", kAirSection, Target::Button, kR1, 0, 0, KEY_MOUSE_RIGHT, KEY_SPACE, kPadOwn, kInAir, kSchemePC, nullptr, "pc_vehicle_fire_alt"},
+            {"pc_air_radio", "Next radio station", kAirSection, Target::Button, kL1, 0, 0, KEY_R, KEY_INSERT, kPadOwn, kInAir, kSchemePC, nullptr, "pc_radio"},
+            {"pc_air_exit", "Exit vehicle", kAirSection, Target::Button, kTriangle, 0, 0, KEY_F, KEY_ENTER, kPadOwn, kInAir, kSchemePC, nullptr, "pc_enter_exit"},
+            {"pc_air_camera_view", "Change camera view", kAirSection, Target::Button, kSelect, 0, 0, KEY_V, KEY_HOME, kPadOwn, kInAir, kSchemePC, nullptr, "pc_camera_view"},
+            {"pc_air_submission", "Sub-missions", kAirSection, Target::Button, kR3, 0, 0, KEY_CAPS_LOCK, KEY_KP_ADD, kPadOwn, kInAir, kSchemePC, nullptr, "pc_submission"},
 
+            // everywhere but the menus
+            {"pc_cam_up", "Camera up (right stick)", "All situations", Target::Stick, 0, 3, -1, KEY_I, 0, kPadNone, kCommon, kSchemePC, nullptr},
+            {"pc_cam_down", "Camera down", "All situations", Target::Stick, 0, 3, 1, KEY_K, 0, kPadNone, kCommon, kSchemePC, nullptr},
+            {"pc_cam_left", "Camera left", "All situations", Target::Stick, 0, 2, -1, KEY_J, 0, kPadNone, kCommon, kSchemePC, nullptr},
+            {"pc_cam_right", "Camera right", "All situations", Target::Stick, 0, 2, 1, KEY_L, 0, kPadNone, kCommon, kSchemePC, nullptr},
+            // the arrows are the D-pad in the menus; while playing they move (Vice City's defaults), and the D-pad there
+            // (VCS uses it little: the forklift above) has keys of its own when bound
+            {"pc_play_dpad_up", "D-pad up", "All situations", Target::Button, kUp, 0, 0, 0, 0, kPadOwn, kCommon, kSchemePC, nullptr},
+            {"pc_play_dpad_down", "D-pad down", "All situations", Target::Button, kDown, 0, 0, 0, 0, kPadOwn, kCommon, kSchemePC, nullptr},
+            {"pc_play_dpad_left", "D-pad left", "All situations", Target::Button, kLeft, 0, 0, 0, 0, kPadOwn, kCommon, kSchemePC, nullptr},
+            {"pc_play_dpad_right", "D-pad right", "All situations", Target::Button, kRight, 0, 0, 0, 0, kPadOwn, kCommon, kSchemePC, nullptr},
+
+            // the menus (on a gamepad: its own buttons there, padMenuButtons)
             {"pc_pause", "Pause menu (Escape too)", "Menus and pause", Target::Button, kStart, 0, 0, KEY_P, 0, kPadNone, kAlways, kSchemePC, nullptr},
             {"pc_menu_select", "Menu: select / skip", "Menus and pause", Target::Button, kCross, 0, 0, KEY_ENTER, KEY_SPACE, kPadNone, kInMenu, kSchemePC, nullptr},
             {"pc_menu_back", "Menu: back", "Menus and pause", Target::Button, kTriangle, 0, 0, KEY_BACKSPACE, KEY_F, kPadNone, kInMenu, kSchemePC, nullptr},
-            // the arrows are the D-pad in the menus; while playing they move (Vice City's defaults), and the D-pad there
-            // (VCS uses it little: the forklift above) has keys of its own when bound
             {"pc_dpad_up", "Menu: up (D-pad)", "Menus and pause", Target::Button, kUp, 0, 0, KEY_UP, 0, kPadNone, kInMenu, kSchemePC, nullptr},
             {"pc_dpad_down", "Menu: down (D-pad)", "Menus and pause", Target::Button, kDown, 0, 0, KEY_DOWN, 0, kPadNone, kInMenu, kSchemePC, nullptr},
             {"pc_dpad_left", "Menu: left (D-pad)", "Menus and pause", Target::Button, kLeft, 0, 0, KEY_LEFT, 0, kPadNone, kInMenu, kSchemePC, nullptr},
             {"pc_dpad_right", "Menu: right (D-pad)", "Menus and pause", Target::Button, kRight, 0, 0, KEY_RIGHT, 0, kPadNone, kInMenu, kSchemePC, nullptr},
-            {"pc_play_dpad_up", "D-pad up", "Both", Target::Button, kUp, 0, 0, 0, 0, kPadNone, kCommon, kSchemePC, nullptr},
-            {"pc_play_dpad_down", "D-pad down", "Both", Target::Button, kDown, 0, 0, 0, 0, kPadNone, kCommon, kSchemePC, nullptr},
-            {"pc_play_dpad_left", "D-pad left", "Both", Target::Button, kLeft, 0, 0, 0, 0, kPadNone, kCommon, kSchemePC, nullptr},
-            {"pc_play_dpad_right", "D-pad right", "Both", Target::Button, kRight, 0, 0, 0, 0, kPadNone, kCommon, kSchemePC, nullptr},
 
             // the PS2 scheme: a key per PS2 button, its rows the Gamepad page's too
             {"move_up", "Move forward", "Movement", Target::Stick, 0, 1, -1, KEY_W, 0, kPadNone, kAlways, kSchemePS2, kPS2Group},
@@ -206,11 +244,43 @@ namespace vcs::input
 
         // Only while the player drives, and then the key does nothing else of its scheme.
         bool vehicleOnly(const Control &c) { return c.when == kInVehicle; }
-        // The Gamepad page's rows: the PS2 scheme's buttons.
+        // The gamepad's PS2 layout (Gamepad > Buttons: PS2 buttons): a gamepad button for each PS2 button.
         bool gamepadRow(const Control &c) // [Minty1804 fork] Reload has a gamepad button too
         {
             return c.scheme == kSchemePS2 && (c.target == Target::Button || c.target == Target::Reload) && !vehicleOnly(c);
         }
+        // [Minty1804 fork] The gamepad's action layout (the default since 2026-11-19, as San Andreas' Controls menu): a
+        // gamepad button for each of the PC scheme's actions that is a button, by situation. Not the sticks (the
+        // gamepad's own), nor the menus (there its buttons are the PS2's: padMenuButtons) or the pause (Start).
+        bool padActionRow(const Control &c)
+        {
+            return c.scheme == kSchemePC && (c.target == Target::Button || c.target == Target::Reload) && !(c.when & kInMenu);
+        }
+        // The gamepad button that is a PS2 button (the PS2 layout's defaults, the DualShock's shape).
+        int padFor(uint16_t mask)
+        {
+            switch (mask)
+            {
+            case kCross: return GAMEPAD_SOUTH;
+            case kCircle: return GAMEPAD_EAST;
+            case kSquare: return GAMEPAD_WEST;
+            case kTriangle: return GAMEPAD_NORTH;
+            case kL1: return GAMEPAD_LEFT_SHOULDER;
+            case kR1: return GAMEPAD_RIGHT_SHOULDER;
+            case kL2: return kPadLT;
+            case kR2: return kPadRT;
+            case kL3: return GAMEPAD_LEFT_STICK;
+            case kR3: return GAMEPAD_RIGHT_STICK;
+            case kSelect: return GAMEPAD_BACK;
+            case kStart: return GAMEPAD_START;
+            case kUp: return GAMEPAD_DPAD_UP;
+            case kDown: return GAMEPAD_DPAD_DOWN;
+            case kLeft: return GAMEPAD_DPAD_LEFT;
+            case kRight: return GAMEPAD_DPAD_RIGHT;
+            default: return kPadNone;
+            }
+        }
+        int defaultPad(const Control &c) { return c.pad == kPadOwn ? padFor(c.mask) : c.pad; }
 
         // The PC scheme's settings group: the situations its keys work in. Two actions clash when they can work at the
         // same moment, so binding a key takes it from those and leaves it on the others, as the PC games' Controls menu
@@ -222,7 +292,8 @@ namespace vcs::input
             if (when == kInFight)
                 return "fight";
             std::string g;
-            const std::pair<uint8_t, const char *> names[] = {{kOnFoot, "foot"}, {kInScope, "scope"}, {kInVehicle, "car"}, {kInMenu, "menu"}};
+            const std::pair<uint8_t, const char *> names[] = {{kOnFoot, "foot"}, {kInScope, "scope"}, {kInVehicle, "car"},
+                                                               {kInAir, "air"}, {kInMenu, "menu"}};
             for (const auto &[bit, name] : names)
                 if (when & bit)
                     g += (g.empty() ? "" : ",") + std::string(name);
@@ -304,9 +375,18 @@ namespace vcs::input
         constexpr uint32_t kGameClock = 0x004CD104u; // CTimer::m_snTimeInMilliseconds
         constexpr uint32_t kWallTailMs = 300;        // ... kept so this long after the mouse's last turn
 
+        // [Minty1804 fork] The vehicle's type (u32 at +0x354, read in each vehicle the trainer spawns, 2026-11-19): 0 cars,
+        // 1 boats (the Skimmer too), 2 the jet ski, 4 helicopters (the autogyro too), 5 planes - and the hovercraft,
+        // model 198, which drives as a boat (its left stick steers; L2 / R2 do not turn it) -, 6 bikes, 8 the BMX, 9 the
+        // quad. The model index is the entity's +0x56 (s16).
+        constexpr uint32_t kVehicleType = 0x354u, kEntityModel = 0x56u;
+        constexpr uint32_t kTypeHeli = 4, kTypePlane = 5;
+        constexpr int16_t kModelHovercraft = 198;
+
         struct GameState
         {
             bool driving = false;
+            bool aircraft = false;   // ... a helicopter or a plane (the action layouts' Aircraft actions)
             bool footCamera = false; // the on-foot follow camera, turned by the player (no script camera, controls on)
             bool paused = false;     // the pause menu or the game's own pause
             bool menu = false;       // the PC scheme's menu keys apply: paused, no player yet (the title screen, the
@@ -325,7 +405,15 @@ namespace vcs::input
             if (!g_rdram)
                 return s;
             const uint32_t ped = rd32(kPlayerPed);
-            s.driving = ped && rd32(ped + kPedVehicle) && rd32(ped + kPedState) == 0x37;
+            const uint32_t vehicle = ped ? rd32(ped + kPedVehicle) : 0;
+            s.driving = vehicle && rd32(ped + kPedState) == 0x37;
+            if (s.driving)
+            {
+                int16_t model;
+                std::memcpy(&model, g_rdram + ((vehicle + kEntityModel) & kRamMask), 2);
+                const uint32_t type = rd32(vehicle + kVehicleType);
+                s.aircraft = type == kTypeHeli || (type == kTypePlane && model != kModelHovercraft);
+            }
             int16_t disabled;
             std::memcpy(&disabled, g_rdram + kPad0 + 0x96, 2);
             const bool paused = g_rdram[kUserPause] || g_rdram[kCodePause];
@@ -345,6 +433,7 @@ namespace vcs::input
             std::array<std::array<int, 2>, kControlCount> keys{};
             std::array<int, kControlCount> pad{};
             Scheme scheme = kSchemePC;
+            Scheme padScheme = kSchemePC; // [Minty1804 fork] Gamepad > Buttons: by action (PC), or the PS2 layout
             bool mouseCamera = true;
             float mouseScale = 1.0f; // stick deflection per mouse count per second (the cameras the stick turns)
             float mouseLook = 0.0025f; // radians per mouse count (the on-foot camera, turned directly)
@@ -377,9 +466,10 @@ namespace vcs::input
             {
                 m.keys[i][0] = settings::value(keyId(kControls[i], 0));
                 m.keys[i][1] = settings::value(keyId(kControls[i], 1));
-                m.pad[i] = gamepadRow(kControls[i]) ? settings::value(padId(kControls[i])) : kPadNone;
+                m.pad[i] = gamepadRow(kControls[i]) || padActionRow(kControls[i]) ? settings::value(padId(kControls[i])) : kPadNone;
             }
             m.scheme = settings::value("keys.scheme") == kSchemePS2 ? kSchemePS2 : kSchemePC;
+            m.padScheme = settings::value("pad.scheme") == kSchemePS2 ? kSchemePS2 : kSchemePC;
             m.mouseCamera = settings::value("mouse.camera") != 0;
             // 100%: a mouse moving 1,500 counts a second (a steady turn at 800 DPI) is a full stick; on foot 400 counts
             // (half an inch at 800 DPI) turn a radian, as the PC GTAs' default
@@ -694,16 +784,42 @@ namespace vcs::input
             bool keyDriverAim = false, keyHandbrake = false;
             float padRx = 0.0f, padRy = 0.0f;
             bool padUsed = false, keysUsed = false; // the player's device this read (lastDevice)
-            if (padConnected(physical) && !freeCamera)
+            bool reloadHeld = false;                // the Reload key or its gamepad button
+
+            // The situation, for both devices. Keyboard and mouse buttons (blocked while a menu has the input, injected
+            // keys included) work by the bindings of the scheme in use: the PC scheme's by situation (on foot, in a
+            // vehicle, in an aircraft, in the game's menus); the PS2 scheme's always, but while the player drives its
+            // Driving keys apply and other bindings of the same keys do not (W accelerates, not also the stick). The
+            // gamepad's action layout goes by the PC scheme's situations whichever the keyboard's scheme.
+            const GameState game = gameState();
+            const bool blocked = ps2control::gameInputBlocked() || freeCamera;
+            const bool alt = !blocked && (ps2control::keyDown(KEY_LEFT_ALT) || ps2control::keyDown(KEY_RIGHT_ALT));
+            const bool pc = m.scheme == kSchemePC;
+            // one at a time, as in the PC games; in a first-person weapon view the third-person actions do nothing
+            const uint8_t pcSituation = game.menu      ? kInMenu
+                                        : game.driving ? (game.aircraft ? kInAir : kInVehicle)
+                                                       : (scopeMode(game.mode) ? kInScope : kOnFoot);
+            uint8_t situation = pc ? pcSituation : static_cast<uint8_t>(kOnFoot | kInMenu | kInScope | (game.driving ? kInVehicle : 0));
+
+            const bool pad = padConnected(physical) && !freeCamera;
+            const bool padActions = m.padScheme == kSchemePC;
+            auto padDown = [&](size_t i) { return m.pad[i] != kPadNone && padSource(m.pad[i], m.trigger); };
+            if (pad)
             {
                 // a button, or a stick / trigger past half way: the gamepad is in use (a resting stick's drift is not)
                 for (int b = 0; b < GAMEPAD_BUTTON_COUNT && !padUsed; ++b)
                     padUsed = padButton(static_cast<GamepadButton>(b));
                 for (int a = 0; a < AXIS_COUNT && !padUsed; ++a)
                     padUsed = std::fabs(padAxis(static_cast<GamepadAxis>(a))) > 0.5f;
-                for (size_t i = 0; i < kControlCount; ++i)
-                    if (gamepadRow(kControls[i]) && padSource(m.pad[i], m.trigger))
+                // the PS2 layout: each PS2 button's gamepad button, always (the action layout: below, by situation)
+                for (size_t i = 0; i < kControlCount && !padActions; ++i)
+                    if (gamepadRow(kControls[i]) && padDown(i))
                     {
+                        if (kControls[i].target == Target::Reload)
+                        {
+                            reloadHeld = true;
+                            continue;
+                        }
                         buttons |= kControls[i].mask;
                         padR1 = padR1 || kControls[i].mask == kR1;
                     }
@@ -724,23 +840,6 @@ namespace vcs::input
                 padRy = ry;
             }
 
-            // keyboard and mouse buttons (blocked while a menu has the input, injected keys included), the bindings of
-            // the scheme in use. The PC scheme's keys work by situation (on foot, in a vehicle, in the game's menus); the
-            // PS2 scheme's always, but while the player drives its Driving keys apply and other bindings of the same keys
-            // do not (W accelerates, not also the stick).
-            const GameState game = gameState();
-            const bool blocked = ps2control::gameInputBlocked() || freeCamera;
-            const bool alt = !blocked && (ps2control::keyDown(KEY_LEFT_ALT) || ps2control::keyDown(KEY_RIGHT_ALT));
-            const bool pc = m.scheme == kSchemePC;
-            uint8_t situation = 0; // the situations whose keys work now
-            if (!pc)
-                situation = kOnFoot | kInMenu | kInScope | (game.driving ? kInVehicle : 0);
-            else if (game.menu)
-                situation = kInMenu;
-            else if (game.driving)
-                situation = kInVehicle;
-            else // in a first-person weapon view the third-person actions do nothing, as in the PC games
-                situation = scopeMode(game.mode) ? kInScope : kOnFoot;
             auto fightKey = [&](int key) {
                 for (size_t i = 0; i < kControlCount; ++i)
                     if (kControls[i].scheme == m.scheme && kControls[i].when == kInFight && key > 0 &&
@@ -767,14 +866,61 @@ namespace vcs::input
                         else if (side == 0)
                             side = game.menu ? 2 : 1;
                     }
-            // fighting (PC scheme): unarmed on foot with the target button held (its keys, or the gamepad's R1)
+            // fighting: unarmed on foot with the target button held - its keys (PC scheme), or the gamepad's (Target's
+            // button in the action layout, R1's in the PS2 layout)
             auto keyHeld = [&](int key) { return key > 0 && bound(key, alt) && g_keySide[key] == (game.menu ? 2 : 1); };
             bool fighting = false;
-            for (size_t i = 0; i < kControlCount && pc && !blocked && (situation & kOnFoot) && game.unarmed; ++i)
-                if (kControls[i].scheme == kSchemePC && kControls[i].mask == kR1 && (kControls[i].when & kOnFoot))
-                    fighting = fighting || padR1 || keyHeld(m.keys[i][0]) || keyHeld(m.keys[i][1]);
-            if (fighting)
+            if (!blocked && (pcSituation & kOnFoot) && game.unarmed)
+                for (size_t i = 0; i < kControlCount && !fighting; ++i)
+                {
+                    const Control &c = kControls[i];
+                    if (c.scheme != kSchemePC || c.mask != kR1 || !(c.when & kOnFoot))
+                        continue;
+                    fighting = (pc && (keyHeld(m.keys[i][0]) || keyHeld(m.keys[i][1]))) ||
+                               (pad && (padActions ? padDown(i) : padR1));
+                }
+            if (fighting && pc)
                 situation |= kInFight;
+
+            // [Minty1804 fork] the gamepad's action layout: each action's gamepad button in its situation, the fighting
+            // ones winning over the on-foot ones they share (as the keys); in the game's menus the gamepad's buttons are
+            // the PS2's (padFor), Start the pause everywhere
+            if (pad && padActions)
+            {
+                if (game.menu)
+                {
+                    for (uint16_t mask = 1; mask; mask = static_cast<uint16_t>(mask << 1))
+                        if (padSource(padFor(mask), m.trigger))
+                            buttons |= mask;
+                }
+                else
+                {
+                    const uint8_t padSituation = static_cast<uint8_t>(pcSituation | (fighting ? kInFight : 0));
+                    auto fightPad = [&](int source) {
+                        for (size_t i = 0; i < kControlCount; ++i)
+                            if (kControls[i].scheme == kSchemePC && kControls[i].when == kInFight && m.pad[i] == source)
+                                return true;
+                        return false;
+                    };
+                    for (size_t i = 0; i < kControlCount; ++i)
+                    {
+                        const Control &c = kControls[i];
+                        if (!padActionRow(c) || !(c.when & padSituation) || !padDown(i) ||
+                            (fighting && c.when != kInFight && fightPad(m.pad[i])))
+                            continue;
+                        if (c.target == Target::Reload)
+                            reloadHeld = true;
+                        else
+                        {
+                            buttons |= c.mask;
+                            padR1 = padR1 || c.mask == kR1;
+                        }
+                    }
+                    if (padSource(GAMEPAD_START, m.trigger))
+                        buttons |= kStart;
+                }
+            }
+
             const bool zooming = (situation & kInScope) && zoomMode(game.mode); // the wheel zooms there (below)
             const uint8_t wheelContext = static_cast<uint8_t>(situation | (zooming ? 0x80 : 0));
             if (wheelContext != g_wheelContext)
@@ -784,10 +930,6 @@ namespace vcs::input
             }
             std::array<int, 4> neg{}, pos{}; // per axis: a bound key toward each side is down
             bool walk = false;
-            bool reloadHeld = false; // the Reload key or its gamepad button
-            for (size_t i = 0; i < kControlCount && !freeCamera && padConnected(physical); ++i)
-                if (kControls[i].target == Target::Reload && padSource(m.pad[i], m.trigger))
-                    reloadHeld = true;
             for (size_t i = 0; i < kControlCount && !blocked; ++i)
             {
                 const Control &c = kControls[i];
@@ -808,7 +950,7 @@ namespace vcs::input
                 if (c.target == Target::Button)
                 {
                     buttons |= c.mask;
-                    keyR1 = keyR1 || (c.mask == kR1 && !vehicleOnly(c));
+                    keyR1 = keyR1 || (c.mask == kR1 && (c.when & (kOnFoot | kInScope))); // not a vehicle's or aircraft's R1
                     if (c.mask == kR1 && vehicleOnly(c))
                         (std::strstr(c.id, "handbrake") ? keyHandbrake : keyDriverAim) = true;
                     keyCircle = keyCircle || c.mask == kCircle;
@@ -1303,7 +1445,50 @@ namespace vcs::input
                     {"D-pad right", GAMEPAD_DPAD_RIGHT},
                     {"None", kPadNone}};
         }
+
+        // [Minty1804 fork] An action's help line (the PC scheme's keys, the gamepad's action layout): what it does, when
+        // it works and what that means for its `binding` ("its key", "its button"), and the PS2 button it presses.
+        std::string actionHelp(const Control &c, const std::string &binding)
+        {
+            std::string what;
+            if (c.target == Target::Walk)
+                what = "While held, you walk instead of running (the left stick at a small tilt). ";
+            else if (c.target == Target::Reload)
+                what = "Reloads the gun in your hand now, with the game's own reload (its animation and time), when the "
+                       "clip is not full and you have ammo to fill it; no ammo is lost. The PS2 only reloads an empty clip. ";
+            std::string when;
+            switch (c.when)
+            {
+            case kOnFoot: when = "On foot (not in a scope). In a vehicle or a scope " + binding + " can do something else."; break;
+            case kOnFootAny: when = "On foot and in the scopes. In a vehicle " + binding + " can do something else."; break;
+            case kCommon: when = "Everywhere but the menus: on foot, in the scopes, in vehicles and aircraft."; break;
+            case kInScope:
+                when = "In the sniper scope, the camera and binoculars. On foot " + binding + " can do something else.";
+                break;
+            case kInFight:
+                when = "Unarmed, while Target / lock on is held; then " + binding + " does nothing else (it wins over the "
+                       "on-foot action it shares).";
+                break;
+            case kInVehicle:
+                when = "In a car, bike or boat (not in a helicopter or plane). On foot " + binding + " can do something else.";
+                break;
+            case kInAir: when = "In a helicopter or plane. On foot and in other vehicles " + binding + " can do something else."; break;
+            case kPlaying: when = "On foot, in vehicles and in aircraft."; break;
+            case kInMenu:
+                when = "In the game's menus, cutscenes and shops; while playing " + binding + " does something else.";
+                break;
+            default: when = "Always."; break;
+            }
+            std::string ps2;
+            if (c.target == Target::Stick)
+                ps2 = std::string(" The PS2's ") + (c.axis < 2 ? "left" : "right") + " stick.";
+            else if (c.target == Target::Button)
+                ps2 = std::string(" The PS2's ") + buttonName(c.mask) + ".";
+            return what + when + ps2;
+        }
     }
+
+    bool inAircraft() { return g_rdram && gameState().aircraft; }
 
     void registerSettings()
     {
@@ -1312,17 +1497,19 @@ namespace vcs::input
         auto onChange = [](int) { rebuild(); };
         const std::string kKeys = "Keyboard", kPad = "Gamepad";
 
-        const std::string kPS2Keys = "PS2 keys";
+        // [Minty1804 fork] the PS2 layout for both devices: a key and a gamepad button for each PS2 button (Keyboard >
+        // Control scheme and Gamepad > Buttons: PS2 buttons)
+        const std::string kPS2Page = "PS2 layout";
 
         s = {};
         s.key = "keys.scheme";
         s.page = kKeys;
         s.section = "Control scheme";
         s.label = "Control scheme";
-        s.help = "PC: actions as in the PC Vice City and San Andreas - each key does one thing on foot and another in a "
-                 "vehicle (W walks, and accelerates in a car), Escape pauses, Enter selects in the menus; below. PS2 "
-                 "buttons: a key for each button of the PS2 controller, on the PS2 keys page. The gamepad is the same "
-                 "with either.";
+        s.help = "PC: actions as in the PC Vice City and San Andreas, by situation - on foot, in a vehicle, in an "
+                 "aircraft: each key does one thing on foot and another in a vehicle (W walks, and accelerates in a "
+                 "car), Escape pauses, Enter selects in the menus; below. PS2 buttons: a key for each button of the PS2 "
+                 "controller, on the PS2 layout page. The gamepad has its own (Gamepad > Buttons).";
         s.type = Type::Choice;
         s.choices = {{"PC (Vice City / San Andreas)", kSchemePC}, {"PS2 buttons", kSchemePS2}};
         s.defaultValue = kSchemePC;
@@ -1330,8 +1517,9 @@ namespace vcs::input
         s.onChange = onChange;
         settings::add(s);
 
-        for (const Control &c : kControls)
-        {
+        // a control's key setting (and its second key): the PC scheme's on the Keyboard page, the PS2 scheme's on the PS2
+        // layout's page (registered after the Gamepad page, keyRow below)
+        auto keyRow = [&](const Control &c) {
             if (std::string(c.id) == "pc_pause")
             {
                 // the mouse settings sit between the play keys and the menu keys
@@ -1469,34 +1657,13 @@ namespace vcs::input
 
             s = {};
             s.key = keyId(c, 0);
-            s.page = c.scheme == kSchemePC ? kKeys : kPS2Keys;
+            s.page = c.scheme == kSchemePC ? kKeys : kPS2Page;
             s.section = c.section;
             s.label = c.label;
+            if (c.alias) // [Minty1804 fork] a row split from an older one: its keys until set
+                s.alias = std::string("keys.") + c.alias;
             if (c.scheme == kSchemePC)
-            {
-                const std::string what = c.target == Target::Walk ? "While held, you walk instead of running (the left stick at a small tilt)."
-                                         : c.target == Target::Reload ? "Reloads the gun in your hand now, with the game's own reload "
-                                                                        "(its animation and time), when the clip is not full and you "
-                                                                        "have ammo to fill it; no ammo is lost. The PS2 only reloads "
-                                                                        "an empty clip."
-                                         : c.target == Target::Stick ? std::string("The PS2's ") + (c.axis < 2 ? "left" : "right") +
-                                                                           " stick in this direction."
-                                                                     : std::string("Presses the PS2's ") + buttonName(c.mask) + ".";
-                const char *when = c.when == kOnFoot     ? " On foot (not in a scope); in a vehicle or a scope its key can "
-                                                            "do something else."
-                                   : c.when == kOnFootAny ? " On foot and in the scopes; in a vehicle its key can do something else."
-                                   : c.when == kCommon    ? " On foot, in the scopes and in vehicles."
-                                   : c.when == kInScope  ? " In the sniper scope, the camera and binoculars; on foot its key "
-                                                           "can do something else."
-                                   : c.when == kInFight  ? " Unarmed, while Target / lock on is held; then its key does "
-                                                           "nothing else (Space kicks, not jumps)."
-                                   : c.when == kInVehicle ? " In a vehicle; on foot its key can do something else."
-                                   : c.when == kPlaying   ? " On foot and in vehicles."
-                                   : c.when == kInMenu    ? " In the game's menus, cutscenes and shops; while playing its key "
-                                                            "does something else."
-                                                          : " Always.";
-                s.help = what + when;
-            }
+                s.help = actionHelp(c, "its key");
             else
                 s.help = vehicleOnly(c) ? (c.target == Target::Stick
                                                ? "While you drive: the left stick in this direction (bikes lean, aircraft "
@@ -1525,6 +1692,8 @@ namespace vcs::input
             s.onChange = onChange;
             settings::add(s);
             s.key = keyId(c, 1);
+            if (c.alias)
+                s.alias = std::string("keys.") + c.alias + "2";
             s.partner.clear();
             s.hidden = true;
             s.defaultValue = c.key2;
@@ -1546,7 +1715,10 @@ namespace vcs::input
                 s.onChange = onChange;
                 settings::add(s);
             }
-        }
+        };
+        for (const Control &c : kControls)
+            if (c.scheme == kSchemePC)
+                keyRow(c);
 
         // the menu keys, on the same page (their group keeps them apart from the bindings)
         s = {};
@@ -1596,22 +1768,42 @@ namespace vcs::input
         settings::add(s);
 
         // ---- Gamepad ---------------------------------------------------------------------------------------------
+        // [Minty1804 fork] by action and situation, as San Andreas' Controls menu (2026-11-19); the PS2 layout (a gamepad
+        // button for each PS2 button, as before) on its own page
+        s = {};
+        s.key = "pad.scheme";
+        s.page = kPad;
+        s.section = "Buttons";
+        s.label = "Gamepad buttons";
+        s.help = "By action: a button for each action, by situation - on foot, fighting, in a vehicle, in an aircraft - "
+                 "below; the same button can do one thing on foot and another in a car. At the defaults every button "
+                 "does what it does on the PS2. In the game's menus the buttons are the PS2 controller's and Start "
+                 "pauses. PS2 buttons: a gamepad button for each PS2 button, on the PS2 layout page.";
+        s.type = Type::Choice;
+        s.choices = {{"By action (as on PC)", kSchemePC}, {"PS2 buttons", kSchemePS2}};
+        s.defaultValue = kSchemePC;
+        s.env = "VCS_PAD";
+        s.onChange = onChange;
+        settings::add(s);
         for (const Control &c : kControls)
         {
-            if (!gamepadRow(c))
+            if (!padActionRow(c))
                 continue;
             s = {};
             s.key = padId(c);
             s.page = kPad;
-            s.section = "Buttons";
+            s.section = c.section;
             s.label = c.label;
-            s.help = c.target == Target::Reload
-                         ? std::string("The gamepad button that reloads the gun in your hand (it also does what that button does "
-                                       "in the game). None by default.")
-                         : std::string("The gamepad button for the PS2's ") + c.label + ". Several PS2 buttons can share one.";
+            s.help = actionHelp(c, "its button") + " A button can do several actions; in one situation it does all it is set to.";
+            if (c.target == Target::Reload)
+                s.help += " None by default.";
+            // until set: the button the PS2 layout gave this action's PS2 button (a player's own map carries over)
+            for (const Control &o : kControls)
+                if (gamepadRow(o) && o.target == Target::Button && o.mask == c.mask)
+                    s.alias = padId(o);
             s.type = Type::Choice;
             s.choices = padChoices();
-            s.defaultValue = c.pad;
+            s.defaultValue = defaultPad(c);
             s.onChange = onChange;
             settings::add(s);
         }
@@ -1675,8 +1867,8 @@ namespace vcs::input
         s.page = kPad;
         s.section = "Sticks and triggers";
         s.label = "Free aim";
-        s.help = "With a gun, R1's button (RB unless changed above; give R1 the LT to aim with the trigger) aims where "
-                 "the right stick points, with the game's aiming circle, instead of locking on. No aim assist.";
+        s.help = "With a gun, Target's button (RB unless changed above; give Target the LT to aim with the trigger) aims "
+                 "where the right stick points, with the game's aiming circle, instead of locking on. No aim assist.";
         s.type = Type::Toggle;
         s.defaultValue = 0;
         s.onChange = onChange;
@@ -1696,6 +1888,30 @@ namespace vcs::input
         s.defaultValue = 100;
         s.onChange = onChange;
         settings::add(s);
+
+        // ---- PS2 layout: the keys, then the gamepad buttons, of each PS2 button ------------------------------------
+        for (const Control &c : kControls)
+            if (c.scheme == kSchemePS2)
+                keyRow(c);
+        for (const Control &c : kControls)
+        {
+            if (!gamepadRow(c))
+                continue;
+            s = {};
+            s.key = padId(c);
+            s.page = kPS2Page;
+            s.section = "Gamepad (Gamepad buttons: PS2 buttons)";
+            s.label = c.label;
+            s.help = c.target == Target::Reload
+                         ? std::string("The gamepad button that reloads the gun in your hand (it also does what that button does "
+                                       "in the game). None by default.")
+                         : std::string("The gamepad button for the PS2's ") + c.label + ". Several PS2 buttons can share one.";
+            s.type = Type::Choice;
+            s.choices = padChoices();
+            s.defaultValue = c.pad;
+            s.onChange = onChange;
+            settings::add(s);
+        }
     }
 
     void install(PS2Runtime &runtime)

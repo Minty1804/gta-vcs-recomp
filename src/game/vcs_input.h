@@ -35,6 +35,10 @@ namespace vcs::input
     };
     Device lastDevice();
 
+    // [Minty1804 fork] The player flies a helicopter or a plane (the Aircraft actions apply: docs/CONTROLS.md). Reads
+    // the game's memory; the game thread.
+    bool inAircraft();
+
     // The free camera's controls (game/vcs_freecam.h; fixed keys, docs/CONTROLS.md), taken once per camera update on
     // the game thread. While the free camera flies the game's pad reads give it nothing, and the mouse is left for this.
     struct FreeCamInput

@@ -84,7 +84,11 @@ namespace vcs::prompts
             Foot,
             Vehicle,
             Menu,
-            kCtxCount
+            kCtxCount,
+            // [Minty1804 fork] not a context of the text's own (its tokens are Foot / Vehicle / Menu): the Vehicle ones
+            // while the player flies a helicopter or plane (input::inAircraft), resolved to the Aircraft actions
+            Air = kCtxCount,
+            kSpecCtxCount
         };
         constexpr const char *kCtlNames[kCtlCount] = {
             "X", "O", "T", "S", "L1", "R1", "L2", "R2", "L3", "R3", "SELECT", "START",
@@ -157,20 +161,44 @@ namespace vcs::prompts
         // Fighting has no context of its own here: UCBT's text (PUHA / PUBL / PUGR) shows the on-foot keys.
         const char *pcAction(int ctx, int ctl)
         {
-            if (ctx == Vehicle)
+            if (ctx == Air)
+                switch (ctl)
+                {
+                case Cross: return "pc_air_up";
+                case Square: return "pc_air_down";
+                case Circle: return "pc_air_fire";
+                case Triangle: return "pc_air_exit";
+                case R1: return "pc_air_fire_alt";
+                case L1: return "pc_air_radio";
+                case L2: return "pc_air_turn_left";
+                case R2: return "pc_air_turn_right";
+                case R3: return "pc_air_submission";
+                case Select: return "pc_air_camera_view";
+                case Start: return "pc_pause";
+                case DUp: return "pc_play_dpad_up";
+                case DDown: return "pc_play_dpad_down";
+                case DLeft: return "pc_play_dpad_left";
+                case DRight: return "pc_play_dpad_right";
+                case LSUp: return "pc_air_nose_down";
+                case LSDown: return "pc_air_nose_up";
+                case LSLeft: return "pc_air_bank_left";
+                case LSRight: return "pc_air_bank_right";
+                default: break;
+                }
+            else if (ctx == Vehicle)
                 switch (ctl)
                 {
                 case Cross: return "pc_accelerate";
                 case Square: return "pc_brake";
                 case Circle: return "pc_vehicle_fire";
-                case Triangle: return "pc_enter_exit";
+                case Triangle: return "pc_car_exit";
                 case R1: return "pc_handbrake";
                 case L1: return "pc_radio";
                 case L2: return "pc_look_left";
                 case R2: return "pc_look_right";
                 case L3: return "pc_horn";
-                case R3: return "pc_submission";
-                case Select: return "pc_camera_view";
+                case R3: return "pc_car_submission";
+                case Select: return "pc_car_camera_view";
                 case Start: return "pc_pause";
                 case DUp: return "pc_forks_up";
                 case DDown: return "pc_forks_down";
@@ -272,7 +300,7 @@ namespace vcs::prompts
             case LSRight: return keysSpec({k(ctl)});
             case LSUD: return keysSpec({k(LSUp), k(LSDown)});
             case LS:
-                if (ctx == Vehicle) // the left stick steers
+                if (ctx == Vehicle || ctx == Air) // the left stick steers / banks
                     return keysSpec({k(LSLeft), k(LSRight)});
                 return keysSpec({k(LSUp), k(LSLeft), k(LSDown), k(LSRight)});
             default: return keysSpec({k(LSLeft), k(LSRight)}); // LSLR
@@ -284,6 +312,8 @@ namespace vcs::prompts
             using namespace platform;
             if (setting("keys.scheme") != 0)
                 return keyboardSpecPC(ctx, ctl);
+            if (ctx == Air) // the PS2 scheme's Driving keys fly too
+                ctx = Vehicle;
             if (ctl < DPad)
             {
                 if (ctx == Menu && ctl == Cross)
@@ -369,12 +399,29 @@ namespace vcs::prompts
             }
         }
 
-        std::string padSpec(const char *family, int ctl)
+        // a setting registered (settings::value gives 0 for one that is not: the gamepad's A)
+        bool registered(const std::string &key)
+        {
+            for (const settings::Spec &s : settings::all())
+                if (s.key == key)
+                    return true;
+            return false;
+        }
+
+        std::string padSpec(const char *family, int ctx, int ctl)
         {
             std::string button;
             if (ctl < DPad) // the physical button the player bound (Gamepad page)
             {
-                const char *bound = padSourceName(setting(std::string("pad.") + kButtonIds[ctl]));
+                // [Minty1804 fork] the action layout (Gamepad > Gamepad buttons: By action): the button of the action
+                // that presses this PS2 button here; in the menus the PS2's own (vcs_input.cpp)
+                std::string key = std::string("pad.") + kButtonIds[ctl];
+                if (setting("pad.scheme") != 0)
+                {
+                    const char *id = ctx == Menu ? nullptr : pcAction(ctx, ctl);
+                    key = id && registered(std::string("pad.") + id) ? std::string("pad.") + id : std::string();
+                }
+                const char *bound = key.empty() ? nullptr : padSourceName(setting(key));
                 button = bound ? bound : kPadDefault[ctl];
             }
             else if (ctl <= DPadLR)
@@ -395,8 +442,8 @@ namespace vcs::prompts
         {
             switch (set)
             {
-            case PlayStation: return padSpec("ps", ctl);
-            case Xbox: return padSpec("xbox", ctl);
+            case PlayStation: return padSpec("ps", ctx, ctl);
+            case Xbox: return padSpec("xbox", ctx, ctl);
             default: return keyboardSpec(ctx, ctl);
             }
         }
@@ -1011,14 +1058,14 @@ namespace vcs::prompts
 
         // ---- the set's widths and cells (game thread, frame kick) -------------------------------------------------------
         std::shared_ptr<Atlas> g_appliedAtlas;
-        bool g_appliedMenu = false;
+        bool g_appliedMenu = false, g_appliedAir = false;
 
-        void resolve(int set, bool menuOpen)
+        void resolve(int set, bool menuOpen, bool air)
         {
             for (size_t i = 0; i < g_entries.size(); ++i)
             {
                 const Entry &e = g_entries[i];
-                const int ctx = e.original ? (menuOpen ? Menu : Foot) : e.ctx;
+                const int ctx = e.original ? (menuOpen ? Menu : Foot) : e.ctx == Vehicle && air ? Air : e.ctx;
                 const auto it = g_atlas->cells.find(specFor(set, ctx, e.ctl));
                 if (it == g_atlas->cells.end())
                 {
@@ -1041,7 +1088,7 @@ namespace vcs::prompts
         {
             std::vector<std::string> specs;
             for (int set : {PlayStation, Xbox, Keyboard})
-                for (int ctx = 0; ctx < kCtxCount; ++ctx)
+                for (int ctx = 0; ctx < kSpecCtxCount; ++ctx)
                     for (int ctl = 0; ctl < kCtlCount; ++ctl)
                         specs.push_back(specFor(set, ctx, ctl));
             std::sort(specs.begin(), specs.end());
@@ -1188,9 +1235,11 @@ namespace vcs::prompts
             return;
         const int set = effectiveSet();
         const bool menuOpen = frontend::open();
-        if (set != g_appliedSet || g_atlas != g_appliedAtlas || menuOpen != g_appliedMenu)
+        const bool air = input::inAircraft();
+        if (set != g_appliedSet || g_atlas != g_appliedAtlas || menuOpen != g_appliedMenu || air != g_appliedAir)
         {
-            resolve(set, menuOpen);
+            resolve(set, menuOpen, air);
+            g_appliedAir = air;
             if (set != g_appliedSet)
                 std::fprintf(stderr, "[prompts] %s\n", set == PlayStation ? "PlayStation buttons" : set == Xbox ? "Xbox buttons" : "keyboard and mouse");
             g_appliedSet = set;

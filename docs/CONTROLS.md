@@ -2,7 +2,9 @@
 
 Keyboard, mouse and a gamepad (anything SDL3 knows: Xbox, DualShock / DualSense, Switch Pro, ...) all drive the
 same PS2 controller (DualShock 2, analog mode), so they can be mixed. Every binding can be changed in the settings
-menu (F2): the **Keyboard** and **Gamepad** pages (src/game/vcs_input.cpp).
+menu (F2): the **Keyboard** and **Gamepad** pages by action and situation - on foot, fighting, vehicle, aircraft -, as
+San Andreas' Controls menu; the **PS2 layout** page a key and a gamepad button for each PS2 button
+(src/game/vcs_input.cpp).
 
 ## Control scheme
 
@@ -11,9 +13,13 @@ Keyboard > **Control scheme** picks how the keyboard and mouse drive the pad:
 - **PC (Vice City / San Andreas)**, the default: actions as in the PC games (their CControllerConfigManager) - each key
   does one thing on foot and another in a vehicle, and the game's menus have their own keys. Each action presses the
   PS2 button VCS's default controller setup gives it (the game's own help-text key names, game-internals.md 12a).
-- **PS2 buttons**: a key for each button of the PS2 controller (the PS2 keys page; the old default, below).
+- **PS2 buttons**: a key for each button of the PS2 controller (the PS2 layout page; the old default, below).
 
-The gamepad is the same with either: its buttons are the PS2's (Gamepad page).
+Gamepad > **Gamepad buttons** does the same for the gamepad (since 2026-11-19; "Gamepad by action" below):
+
+- **By action (as on PC)**, the default: a button for each action, by situation. At the defaults each button does what
+  it does on the PS2.
+- **PS2 buttons**: a gamepad button for each PS2 button (the PS2 layout page; as before 2026-11-19).
 
 ## PC scheme (default)
 
@@ -35,8 +41,12 @@ Keypad Enter is Enter here). Every action has two slots on the Keyboard page.
 | Next / previous target | ] / [ | R2 / L2 |
 | Action (pick up a weapon, answer the phone) | Tab | L1 |
 | Look behind | middle mouse button, Keypad 1 | R3 |
+| Enter vehicle | F, Enter | Triangle |
+| Change camera view (also in the scopes) | V, Home | Select |
+| Activity (recruit, buy sites, start a site attack) | Caps Lock, Keypad + | R3 |
 | Reload weapon (on foot; in a vehicle R is the radio, and the game refills the clip itself) | R | (our Reload key) |
 | Sniper zoom in / out (scopes, camera, binoculars) | Page Up, Z / Page Down, X; mouse wheel | Square / Cross |
+| Steady aim (sniper scope; the game's C0SNSLO) | Shift | L1 |
 
 The wheel bound to Sniper zoom in / out zooms in steps that the scope eases (as the unbound wheel does), not as short
 Square / Cross taps. Whenever the wheel's meaning changes (into or out of a scope, a vehicle, the menus), notches still
@@ -55,29 +65,54 @@ Target and they are the on-foot keys again.
 
 Next / previous target (] / [, and Q / E: L2 / R2 change the target while locked on) work as on foot.
 
-**In a vehicle**
+**Vehicle** (cars, bikes, boats - the Skimmer is a boat to the game - and the hovercraft, which drives like one)
 
 | Action | Keys | PS2 |
 |---|---|---|
 | Accelerate | W, Up | Cross |
 | Brake / reverse | S, Down | Square |
 | Steer left / right | A / D, Left / Right | Left stick |
-| Lean forward / back (bikes; aircraft nose) | Keypad 8 / Keypad 5 | Left stick up / down |
-| Handbrake (also the Hunter's cannon) | Space | R1 |
-| Fire (drive-by, the Hunter's rockets, the fire engine's water, other vehicle weapons) | left mouse button, Ctrl | Circle |
-| Secondary fire (the Hunter's cannon) - R1, so in a car also the handbrake | right mouse button | R1 |
+| Lean forward / back (bikes) | Keypad 8 / Keypad 5 | Left stick up / down |
+| Handbrake | Space | R1 |
+| Fire (drive-by, the fire engine's water, other vehicle weapons) | left mouse button, Ctrl | Circle |
+| Secondary fire / aim (R1, so in a car also the handbrake; with Free aim on it aims from the driver's seat) | right mouse button | R1 |
 | Horn / siren | Shift, H | L3 |
 | Next radio station | R, Insert | L1 |
-| Look left / right (helicopters: turn) | Q / E | L2 / R2 |
+| Look left / right | Q / E | L2 / R2 |
 | Look behind | middle mouse button, Keypad 1 | L2 + R2 |
+| Exit vehicle | F, Enter | Triangle |
+| Change camera view | V, Home | Select |
+| Sub-missions (taxi, police, fire truck, ambulance) | Caps Lock, Keypad + | R3 |
 | Forklift: forks up / down | Page Up / Page Down | D-pad up / down |
 
-**Both**: Enter / exit vehicle F, Enter (Triangle); Change camera view V, Home (Select); Sub-missions / activity (site
-attacks, buying sites, recruiting) Caps Lock, Keypad + (R3); camera I J K L (right stick).
+**Aircraft** (helicopters - the autogyro too - and planes; since 2026-11-19, before which they used the vehicle keys).
+The PS2 buttons were measured in a Maverick and the Biplane with the gamepad injected (game-internals.md 12a); a
+helicopter and a plane take the same ones.
+
+| Action | Keys | PS2 |
+|---|---|---|
+| Climb (helicopters) / throttle (planes) | W, Up | Cross |
+| Descend / brake | S, Down | Square |
+| Turn left / right (rudder) | Q / E | L2 / R2 |
+| Bank left / right | A / D, Left / Right | Left stick left / right |
+| Nose down / up | Keypad 8 / Keypad 5 | Left stick up / down |
+| Fire (the Hunter's rockets) | left mouse button, Ctrl | Circle |
+| Secondary fire (the Hunter's cannon) | right mouse button, Space | R1 |
+| Next radio station | R, Insert | L1 |
+| Exit vehicle | F, Enter | Triangle |
+| Change camera view | V, Home | Select |
+| Sub-missions | Caps Lock, Keypad + | R3 |
+
+The actions split from older ones on 2026-11-19 (the vehicle's and aircraft's Exit vehicle, Change camera view and
+Sub-missions from the shared rows; the aircraft's from the vehicle's) take the older ones' keys from vcs.ini until they
+are set (settings::Spec::alias), so a player's own keys carry over.
+
+**All situations** (everywhere but the menus): camera I J K L (right stick); D-pad up / down / left / right (unbound
+keys).
 
 **Menus and pause**: Pause menu Escape (fixed) and P (Start); Menu select / skip Enter, Space (Cross); Menu back
 Backspace, F (Triangle); the arrow keys are the D-pad in the menus (while playing they move, as in Vice City; the
-D-pad while playing has rows of its own under "Both", unbound). The menu keys apply while the game is paused, before
+D-pad while playing has rows of its own under "All situations", unbound). The menu keys apply while the game is paused, before
 the player exists (title screen, intro movies) and while the game holds the player's controls (cutscenes, shops); then
 the play keys do nothing. A key held from a menu into play (Enter choosing Resume) does nothing on the other side until
 let go.
@@ -86,10 +121,35 @@ A key can do several actions as long as they never work at the same moment, as i
 Forward on foot and Accelerate in a vehicle, Z is a sniper zoom in a scope and could be Jump on foot. Binding a key
 takes it from the actions that work at the same time as this one (the menu says which, in blue under the list) and
 leaves it on the others. The situations: on foot, in a scope (first-person weapon views: the sniper rifles, rocket
-launcher, M16, camera, binoculars - there the on-foot-only actions do nothing, as on PC), in a vehicle, in the menus.
+launcher, M16, camera, binoculars - there the on-foot-only actions do nothing, as on PC), in a vehicle, in an
+aircraft, in the menus.
 Forward / back / left / right, Fire and Target work on foot and in scopes; Change camera view and the camera keys
 everywhere but the menus. The fighting keys may share with the on-foot keys (they win while fighting). The menu keys
 (F2, F5, F6, F8) never share.
+
+## Gamepad by action (default)
+
+Gamepad > Gamepad buttons: **By action** (2026-11-19; the user's ask: the controls set by action and situation, as in
+San Andreas, not by the PS2 button they press). The Gamepad page lists the same actions as the Keyboard page, in the
+same sections (On foot, Fighting, Vehicle, Aircraft, All situations), each with a gamepad button (any button, LT / RT,
+a stick click, the D-pad, or none):
+
+- An action's button works in its situation only, as a key does: RT given to Accelerate accelerates in a car and is
+  still the next weapon on foot.
+- At the defaults every button presses its own PS2 button in every situation (A Cross, B Circle, X Square, Y Triangle,
+  LB / RB L1 / R1, LT / RT L2 / R2, the stick clicks L3 / R3, Back Select, the D-pad), so the game plays as on the PS2.
+  Look behind in a vehicle is both triggers together, as on the PS2.
+- A button may do several actions; in one situation it does all it is set to (the dropdowns don't take a button from
+  another action). The fighting actions win over the on-foot ones they share, as the keys.
+- In the game's menus (paused, the title screen, cutscenes, shops) the buttons are the PS2 controller's whatever the
+  actions say; Start pauses everywhere.
+- The sticks are the gamepad's own (Sticks and triggers: deadzones, swap, invert). Reload weapon has no button by
+  default.
+- Until an action's button is set it takes the button the PS2 layout gave its PS2 button (`pad.cross` and so on), so
+  a player's own gamepad map carries over.
+
+`VCS_PAD=0|1` sets it for one run. `tools/pc_scheme_check.py` checks the defaults on foot, in a car and in a
+helicopter, an action rebound in its situation only, the menus, and the PS2 layout.
 
 ## PS2 scheme
 
@@ -112,7 +172,7 @@ everywhere but the menus. The fighting keys may share with the on-foot keys (the
 | Walk (hold) | - (unbound) | - (a small stick tilt) |
 | Reload weapon | R | - (none; Gamepad page) |
 
-**While driving** (PS2 keys page, Driving) these keys do what a PC driving game does, and nothing else meanwhile; on
+**While driving** (PS2 layout page, Driving) these keys do what a PC driving game does, and nothing else meanwhile; on
 foot they keep their bindings above (W walks, Space jumps):
 
 | Driving | Keyboard | PS2 |
@@ -191,7 +251,7 @@ bound to the wheel, or on foot while aiming.
 
 ## Keyboard page
 
-- Every action (PC scheme; on the PS2 keys page every PS2 button), both sticks' directions and **Walk** have two slots. Click a slot, then press a key, a mouse
+- Every action (PC scheme; on the PS2 layout page every PS2 button), both sticks' directions and **Walk** have two slots. Click a slot, then press a key, a mouse
   button (left, right, middle, 4, 5) or turn the wheel (each notch is a short press); Esc cancels, a right-click on a
   slot clears it. Shift / Ctrl / Alt bind both sides, Enter is also Keypad Enter.
 - A key does one thing: binding it to a control takes it from the control that had it. The menu keys (Settings menu
@@ -233,12 +293,13 @@ bound to the wheel, or on foot while aiming.
 
 ## Gamepad page
 
-- **Buttons**: the gamepad input for each PS2 button (any button, LT / RT, stick clicks, D-pad, or none); several PS2
-  buttons may share one.
+- **Gamepad buttons**: By action (the default: a button for each action, by situation, in the sections below it; "Gamepad
+  by action" above) or PS2 buttons (the gamepad input for each PS2 button on the PS2 layout page - any button, LT / RT,
+  stick clicks, D-pad, or none; several PS2 buttons may share one).
 - **Sticks and triggers**: deadzone per stick (12%; the range past it is stretched, so a small tilt beyond it still
   counts), **Camera speed** (the right stick's tilt scaled), **Trigger press point** (LT / RT are L2 / R2 buttons),
   **Swap sticks**, **Invert camera** left / right and up / down, **Free aim** (above; to aim with the left trigger,
-  give R1 the LT and move L2 to another button).
+  give Target the LT and move Previous weapon / target to another button).
 - **Vibration**: the DualShock 2's motors on the gamepad's rumble, 0-200% (100% as on the PS2, 0% off). The game
   drives them itself (crashes, explosions, gunfire; game-internals.md 12a).
 

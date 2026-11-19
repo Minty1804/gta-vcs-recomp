@@ -22,6 +22,9 @@ namespace settings
         std::filesystem::path g_ini;
         bool g_keepFile = false; // keepFile()
         std::unordered_set<std::string> g_overridden; // by their environment variable, at load()
+        // [Minty1804 fork] taken from their alias at load(): written by the next save() even at their default, so the
+        // older key stops deciding them (an action split by situation keeps its keys once anything is saved)
+        std::unordered_set<std::string> g_aliased;
         std::unordered_map<std::string, std::string> g_loaded; // every key = value of vcs.ini at load()
         std::map<std::string, std::string> g_state;            // setState() values, written by save()
 
@@ -86,7 +89,7 @@ namespace settings
             for (const Spec &s : g_specs)
             {
                 const int v = g_values[s.key];
-                if (!written[s.key] && !g_overridden.count(s.key) && v != s.defaultValue)
+                if (!written[s.key] && !g_overridden.count(s.key) && (v != s.defaultValue || g_aliased.count(s.key)))
                     lines.push_back(s.key + "=" + std::to_string(v));
             }
             for (const auto &[key, text] : g_state)
@@ -196,7 +199,10 @@ namespace settings
             if (auto it = found.find(s.key); it != found.end())
                 take(s, it->second, iniName.c_str());
             else if (auto old = found.find(s.alias); !s.alias.empty() && old != found.end())
+            {
                 take(s, old->second, iniName.c_str());
+                g_aliased.insert(s.key);
+            }
             if (const char *e = s.env.empty() ? nullptr : std::getenv(s.env.c_str()); e && *e)
             {
                 take(s, e, s.env.c_str());
