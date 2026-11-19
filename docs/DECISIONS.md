@@ -1892,3 +1892,29 @@ other World options: Enhancements > World > **Far view from interiors**. On, the
 the aiming camera already does; the fog end moves with it, the near plane (0.3 indoors) stays. The other two graphics
 reports (a tower's floating roof edge, distant window blocks) look the same natively and emulated at 100% draw
 distance: the game's art, left as it is.
+
+## 2026-11-19 - Detailed city further: willzmkv's HD world carried over, by stages (the user's request)
+
+The floating roof over a Downtown tower is that tower's far model, and the far model is what a cell's list draws
+beyond the detailed band around it (game-internals.md 6o). The user asked for FORK_IMPORTS.md row 21 anyway, "even if
+it is a lot of work": the detailed city further, as willzmkv (dejot) built it in their fork (`hd-world-merge`,
+`src/game/vcs_world_hd.cpp`, their game-internals 9j). Two answers of ours that day said it could not be done (more
+cells "would draw the far city twice"); their 9j shows how: an extra cell's detailed sectors are added and the
+current list's low-detail sectors they lie inside are hidden, as the game hides them itself.
+
+- **Carried over, not rewritten.** Their final code holds a dozen fixes found from player reports (the translucent list
+  inside the level object, stale table entries, orphaned and CALLing cached packets, buffers read while drawn, multi-part
+  sectors, mission-switched buildings, conditional pieces by the hour, twins drawn over detail). Re-deriving them would
+  be the worse result. The code is fitted to our tree by hand (not a git merge: 250 commits of theirs since the shared
+  base, most unrelated), willzmkv as the commits' author or co-author, credited in README and FORK_IMPORTS.
+- **Off by default, the game's path untouched when off** (rule 1): radius 0 installs nothing.
+- **Stages, each checked before the next**, on branch `hd-world` (merged into the playable branch only after the bar
+  below): (0) their branch built as it is, the reference: the user's spot at (-739, -1158) and perf; (1) EE RAM past
+  32 MB with the game still seeing 32 (their T10), every hard-coded RAM mask in our src/ swept, regress and scenes
+  unchanged; (2) cells read and entered, nothing drawn - the picture identical to off; (3) the game's own records
+  through the built list - identical; (4) the extra sectors - zero `[VU1 reserved lower]` lines, the tower detailed at
+  the user's spot; (5) our caches keyed by guest address (RSL recordings, mesh keys) dropped wherever a piece is freed
+  or re-entered - their tree has none of them, so this part is ours; (6) their three tools ported (hd_world_verify,
+  hd_overlap_scan, hdworld_missions).
+- **The bar** (FORK_IMPORTS row 21, theirs crashed before a 3 h soak passed): `soak.py --hours 3`, `memcheck.py`,
+  `cruise.py` hitches measured with it on, the regression rig green with it off.

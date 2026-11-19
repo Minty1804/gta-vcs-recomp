@@ -1827,12 +1827,13 @@ maths, then checked in the game (`tools/world_check.py`, the free camera).
   list of sector entries - what is drawn from inside it, near buildings detailed and the rest as far models. The list
   is short: 16 distinct model indices for everything seen from cell 13 towards Downtown (`VCS_SECTOR_PROBE`, below).
   Skipping them one at a time: index 4102 alone is **the whole far skyline** - every building across the water,
-  the tower with its slab among them, gone at once (the bridge stays); the other 15 changed nothing there. So the far
-  city is one merged mesh per cell. The tower's far model cannot be hidden on its own, and its detailed model cannot
-  be swapped in without losing the rest of the skyline. Drawing more cells would not help either: a cell's list
-  already holds the far city, so a neighbour's list on top would draw it twice. The draw distance setting scales LOD
-  distances (models, props, cars), which these baked lists do not use. Corrects the note of f5c7817, which put the
-  fix at more cell slots and a larger stream buffer. Not fixable short of changing the far mesh itself.
+  the tower with its slab among them, gone at once (the bridge stays); the other 15 changed nothing there. The probe
+  skips by geometry index (gid), so that skyline is one gid's mesh in this cell's list. The draw distance setting
+  scales LOD distances (models, props, cars), which these baked lists do not use. Wrong conclusion first drawn from
+  it (ff8f740: "drawing more cells draws the far city twice, not fixable"): willzmkv's fork does exactly this - the
+  low-detail sectors left out where neighbour cells' lists have detailed sectors inside them, and those drawn instead
+  (their game-internals 9j, FORK_IMPORTS.md row 21) - being brought over (DECISIONS.md 2026-11-19, "Detailed city
+  further").
 - `FUN_00240ED8(level, sector entry)`: entry +2 = u16 model index into the level's table (`*(level+0x1C)`, 12-byte
   entries: +0 the model, +4 its cached packet block), +0xC = matrix pointer (0: the matrix is inline at +0x10).
   `VCS_SECTOR_PROBE=<file>` (analysis) reads a command from the file every 200 ms: `list` logs the sector entries
