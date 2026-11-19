@@ -1790,6 +1790,22 @@ maths, then checked in the game (`tools/world_check.py`, the free camera).
 - **Moving the far plane** (`VCS_FAR_CLIP`, a test: both 2000s replaced, so the fog end moves too): more of the
   distant city and a bridge show through thinner haze, but the far water and land the PS2 kept in the fog are drawn
   as dark brown-black patches, and the hazy look of the city goes. Not offered in the menu (DECISIONS.md 2026-11-07).
+- **The follow camera's indoor far plane** (2026-11-19, the user's report: from the 101 Bayshore Avenue safehouse the
+  towers across the water showed while aiming and vanished when not). FUN_0029DAB0 (mode 4, on foot) calls
+  `RwCameraSetNearClipPlane(0.3)` and `RwCameraSetFarClipPlane(1000)` indoors (`0x489F7C` not 0 / 4) at two sites:
+  jals at `0x29DB7C` (returns to 0x29DB84) and `0x29F8B8` (0x29F8C0), both every frame there - found by logging the
+  far setter's callers (`$ra`, `$f12`). No other camera mode sets it, so aiming (mode 11, the manual aim of state
+  0x16) keeps the 2000 of `FUN_0021E950`. Measured at the user's spot (entered through the door: the safehouse script
+  moves the player in from the save point when he walks west; a teleport with area 2 loads no collision and leaves
+  the player and camera frozen): `0x4CD12C` follow 1000, aiming 2000, after 1000 again; through the window the
+  follow camera shows the bridge, the aiming one the towers behind it - at 100% draw distance as well (fainter), so it
+  is the original game's. Enhancements > World > **Far view from interiors** (`enhance.interior_far_view`, off,
+  `VCS_INTERIOR_FAR_VIEW`) passes 2000 at those two calls (the near plane stays 0.3); the fog end moves with it, as
+  it does when aiming. `world_check.py`'s `interior` step reads the far plane in the barracks.
+- **Checked as the game's own art** (2026-11-19, the user's reports): the bright double roof edge floating above a
+  tower across the water from (-739, -1158) (looking east at 18:41), and the lit and unlit window blocks of the
+  buildings above the sea wall at (-749, -1031). Both look the same drawn natively and emulated (`PS2X_HLE=0`), at 100%
+  and 300% draw distance, and with anisotropic filtering 16x or bilinear: not our renderer nor the draw distance.
 - `vcs_world_detail.cpp` writes `0x4887F8` (Enhancements > Draw distance) as set, nothing held back. It reports the
   packet use at the frame kick = (cursor `+0x18` - (half start - 0x10)) + (half end - data `+0x1C`), as
   `FUN_00476770` computes it (`worlddetail`: packets / peak).

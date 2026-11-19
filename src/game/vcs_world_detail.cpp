@@ -133,6 +133,14 @@ namespace vcs::world
 
         // VCS_FAR_CLIP: the far plane (and so the fog end) at this distance instead of 2000 (outdoors only)
         float g_farClip = 0.0f;
+        // [Minty1804 fork] Enhancements > World "Far view from interiors" (the user's report, 2026-11-19: from the
+        // safehouse window the city showed while aiming and vanished when not). Indoors (currArea not 0 / 4) the
+        // follow-ped camera FUN_0029DAB0 sets the far plane to 1000 (jals at 0x29DB7C and 0x29F8B8, near 0.3 before
+        // each); every other camera mode - aiming (mode 11) among them - keeps the 2000 FUN_0021E950 sets. The far
+        // plane cuts the world (0x4CD12C, IsSphereVisible) and ends the fog, so through a window the follow camera
+        // showed the bridge and not the towers behind it, which the aiming camera showed - at 100% draw distance too,
+        // more of them with a longer one. On: the follow camera keeps 2000 indoors as well (the near plane stays 0.3).
+        std::atomic<int> g_interiorFarView{0};
         PS2Runtime::RecompiledFunction g_origSetFar = nullptr, g_origProjection = nullptr;
 
         uint32_t rd32(const uint8_t *ram, uint32_t a)
@@ -463,8 +471,13 @@ namespace vcs::world
         // RwCameraSetFarClipPlane (FUN_0018F400: a0 camera, f12 far) from the per-frame camera setup (0x21EBB0)
         PS2_GUEST_CC void setFarClip(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
-            if (GPR_U32(ctx, 31) == 0x0021EBB8u && ctx->f[12] == 2000.0f)
+            if (g_farClip > 0.0f && GPR_U32(ctx, 31) == 0x0021EBB8u && ctx->f[12] == 2000.0f)
                 ctx->f[12] = g_farClip;
+            // [Minty1804 fork] the follow-ped camera indoors: 1000 -> the outdoor far (Far view from interiors)
+            const uint32_t ra = GPR_U32(ctx, 31);
+            if ((ra == 0x0029DB84u || ra == 0x0029F8C0u) && ctx->f[12] == 1000.0f &&
+                g_interiorFarView.load(std::memory_order_relaxed))
+                ctx->f[12] = g_farClip > 0.0f ? g_farClip : 2000.0f;
             g_origSetFar(rdram, ctx, runtime);
         }
 
@@ -608,6 +621,20 @@ namespace vcs::world
         f.onChange = [](int v) { vcs::hleworld::setSolidFarFoliage(v != 0); };
         settings::add(f);
 
+        settings::Spec iv; // [Minty1804 fork]
+        iv.key = "enhance.interior_far_view";
+        iv.page = "Enhancements";
+        iv.section = "World";
+        iv.label = "Far view from interiors";
+        iv.help = "Indoors, the city stays visible through the windows when you are not aiming. In the original game "
+                  "the normal camera sees only half as far inside a building, so distant towers show only while "
+                  "aiming. Off is the original game.";
+        iv.type = settings::Type::Toggle;
+        iv.defaultValue = 0;
+        iv.env = "VCS_INTERIOR_FAR_VIEW";
+        iv.onChange = [](int v) { g_interiorFarView.store(v, std::memory_order_relaxed); };
+        settings::add(iv);
+
         settings::Spec sh;
         sh.key = "enhance.ped_shadows";
         sh.page = "Enhancements";
@@ -675,15 +702,19 @@ namespace vcs::world
         else
             std::fprintf(stderr, "[world] the shadow store not found: character shadows stay on\n");
 
+        // RwCameraSetFarClipPlane: the follow camera's indoor far (Far view from interiors) and VCS_FAR_CLIP; passes
+        // everything through while both are off
+        if (g_enabled && (g_origSetFar = runtime.lookupFunction(0x0018F400u)))
+            runtime.replaceFunction(0x0018F400u, &setFarClip);
+        else
+            std::fprintf(stderr, "[world] the far plane's setter not found: no far view from interiors\n");
         if (const char *far = std::getenv("VCS_FAR_CLIP"); g_enabled && far && *far)
         {
             const float metres = static_cast<float>(std::atof(far));
-            g_origSetFar = runtime.lookupFunction(0x0018F400u);
             g_origProjection = runtime.lookupFunction(0x002F57A0u);
             if (metres > 2000.0f && metres <= 20000.0f && g_origSetFar && g_origProjection)
             {
                 g_farClip = metres;
-                runtime.replaceFunction(0x0018F400u, &setFarClip);
                 runtime.replaceFunction(0x002F57A0u, &setProjection);
                 std::fprintf(stderr, "[world] far plane and fog end at %.0f instead of 2000 (VCS_FAR_CLIP)\n", metres);
             }

@@ -1882,3 +1882,13 @@ answer the phone when VCS has neither?
 - **"Action (pick up, answer phone)"** is now **Pick up weapon** (`C0PUCF`, L1; on foot L1 also puts the camera
   behind Vic). `C0ANS` reads "L button": the PSP's text, left in the PS2's. The PS2 game answers its phone calls by
   itself.
+
+## 2026-11-19 - Far view from interiors: an option, off by default (the user's report)
+
+From inside a safehouse the city through the window showed while aiming and vanished when not. The cause is the
+original game's: indoors the on-foot follow camera sets the far plane to 1000 m, the aiming camera keeps 2000 m
+(game-internals.md 6o). It shows at 100% draw distance too, so the fix is an enhancement and off by default, like the
+other World options: Enhancements > World > **Far view from interiors**. On, the follow camera keeps 2000 m indoors, as
+the aiming camera already does; the fog end moves with it, the near plane (0.3 indoors) stays. The other two graphics
+reports (a tower's floating roof edge, distant window blocks) look the same natively and emulated at 100% draw
+distance: the game's art, left as it is.
