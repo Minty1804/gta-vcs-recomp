@@ -30,7 +30,7 @@ The items are in the order we go through them, one at a time. Status: open / don
 | # | What | From | Size | How | Status |
 |---|---|---|---|---|---|
 | 19 | Keyboard: PC control scheme as in VC / SA on PC, keys shared per situation | SkipperSkipTR PR #78 | M | merge; conflicts with our vcs_input.cpp | done 2026-11-19: merged, our Reload key in both schemes (on foot only in the PC one: R is the radio in a car); tools/pc_scheme_check.py |
-| 20 | Mouse free aim while driving; the wheel cycles the car's weapons | ChrisM-Pek (European fork) 741d6a6, a90845f | M | re-do (their base is the PAL disc) | open |
+| 20 | Mouse free aim while driving; the wheel cycles the car's weapons | ChrisM-Pek (European fork) 741d6a6, a90845f | M | re-do (their base is the PAL disc) | done 2026-11-19: their aim and wheel code merged on ours (USA addresses), the aim key fitted to both schemes (PC: the right mouse button, Space stays the handbrake), Mouse wheel in a vehicle: Weapons (default) / Radio; their 25 fps cap is PAL-only and left out. `tools/driver_aim_check.py` |
 
 ## D. The world further
 

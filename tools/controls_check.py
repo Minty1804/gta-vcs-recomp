@@ -327,7 +327,9 @@ class Check:
 
         # the mouse wheel on the radio (game-internals.md 12a "The radio"): a notch down is the next station, a notch up
         # the one before (the vehicle's +0x2BA: 0..8 the stations, 9 off). The game drops L1 while the radio plays an
-        # announcement (15 - 40 s after getting in, in this save), so a step is waited for.
+        # announcement (15 - 40 s after getting in, in this save), so a step is waited for. The wheel is on the radio
+        # with Mouse wheel in a vehicle: Radio (its default is Weapons: tools/driver_aim_check.py)
+        self.setting("mouse.wheel_vehicle", 0)
         station = lambda: g.peek(car + 0x2BA, 1)[0]
         s0, t0, took = station(), time.time(), False
         while time.time() - t0 < 80 and not took:
@@ -344,6 +346,7 @@ class Check:
         s2 = station()
         self.ok("wheel: radio stations", took and s1 == s0 and s2 == (s0 + 9) % 10,
                 "from %d: down %s, up %d, up %d" % (s0, "took" if took else "not taken in 80 s", s1, s2))
+        self.setting("mouse.wheel_vehicle", 1)
 
         # out of the car: the on-foot keys and the mouse look again
         g.cmd("key space down")

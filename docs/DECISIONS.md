@@ -1708,6 +1708,13 @@ code.
   - the exposure pictures (same bits on the sand).
   On this machine it gains little (game-internals.md 6j). The PR's own bound only covers screen-linear u, v.
   Extending it to perspective triangles would be work of our own, left for later and not done here.
+- **Free aim from the driver's seat** (after ChrisM-Pek's 741d6a6, a90845f; 2026-11-19): their code merged on ours,
+  not a re-write, with the USA disc's addresses. Their aim key was "R1's keys that aren't driving keys", which in our
+  PC scheme is none in a car (the right mouse button is the vehicle's secondary fire there). So the aim key is R1's keys
+  other than the handbrake's, by row: the PC scheme's secondary fire, the PS2 scheme's R1 keys; the handbrake's keys and
+  the gamepad's R1 keep R1 while aiming. The wheel in a vehicle was the radio (issue 90) and is weapons in their fork:
+  both are kept, as **Mouse wheel in a vehicle** (Weapons, the default - the user's wish - or Radio); aiming, it is
+  always weapons. Their 25 fps cap is for PAL's 50 Hz and was left out.
 - **Native draws joined** (after willzmkv's 0bc5067): re-done, not copied. Their commit predates our cut-out split.
   Joined as they did, a fence's two passes would interleave between parts. Only the main thread knows which textures
   have holes, so refusing at record time would refuse nearly every world draw. So the recorder always joins and keeps

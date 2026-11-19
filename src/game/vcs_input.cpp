@@ -313,6 +313,8 @@ namespace vcs::input
                                      // intro), or the player's controls held by the game (cutscenes, shops)
             uint32_t mode = 0;       // the active camera's mode
             bool unarmed = false;    // the player's fists in hand (weapon slot 0)
+            bool playerControl = false; // not paused, the player's controls on, the camera on the player (no script
+                                        // camera): a weapon change by the wheel in a vehicle
         };
 
         uint32_t activeCam() { return kTheCamera + 0x70u + g_rdram[kTheCamera + 0x50u] * 0x270u; }
@@ -331,6 +333,7 @@ namespace vcs::input
             s.menu = paused || !ped || disabled != 0;
             s.mode = rd32(activeCam()) & 0xFFFFu;
             s.unarmed = ped && g_rdram[(ped + kPedSlot) & kRamMask] == 0;
+            s.playerControl = !paused && disabled == 0 && rd32(kLooksAtPlayer) == 1;
             s.footCamera = ped && !s.driving && !paused && rd32(kCam) == kCamModeFollowPed && rd32(kLooksAtPlayer) == 1 &&
                            disabled == 0 && rd32(kCamStickLocked) == 0;
             return s;
@@ -349,6 +352,7 @@ namespace vcs::input
             bool mouseInvertY = false;
             bool freeAimMouse = false, freeAimPad = false; // free aim (game/vcs_aim.h) on the keyboard / mouse, the gamepad
             bool mouseWheel = true;                        // the wheel changes weapons on foot and zooms scopes
+            bool wheelVehicleWeapons = true;               // ... in a vehicle the drive-by weapon (else the radio)
             bool swapSticks = false, invertX = false, invertY = false;
             float deadzoneLeft = 0.12f, deadzoneRight = 0.12f, cameraScale = 1.0f, trigger = 0.3f;
             float vibration = 1.0f;
@@ -386,6 +390,7 @@ namespace vcs::input
             m.freeAimMouse = settings::value("mouse.free_aim") != 0;
             m.freeAimPad = settings::value("pad.free_aim") != 0;
             m.mouseWheel = settings::value("mouse.wheel") != 0;
+            m.wheelVehicleWeapons = settings::value("mouse.wheel_vehicle") != 0;
             m.swapSticks = settings::value("pad.swap_sticks") != 0;
             m.invertX = settings::value("pad.invert_x") != 0;
             m.invertY = settings::value("pad.invert_y") != 0;
@@ -684,6 +689,9 @@ namespace vcs::input
             const bool freeCamera = freecam::flying();
 
             bool padR1 = false, keyR1 = false, keyCircle = false; // the target / fire buttons, by device (free aim)
+            // [Minty1804 fork] in a vehicle: R1's keys other than the handbrake's (the PC scheme's secondary fire, the
+            // right mouse button) aim from the driver's seat (free aim), and the handbrake's keys, which keep R1 then
+            bool keyDriverAim = false, keyHandbrake = false;
             float padRx = 0.0f, padRy = 0.0f;
             bool padUsed = false, keysUsed = false; // the player's device this read (lastDevice)
             if (padConnected(physical) && !freeCamera)
@@ -801,6 +809,8 @@ namespace vcs::input
                 {
                     buttons |= c.mask;
                     keyR1 = keyR1 || (c.mask == kR1 && !vehicleOnly(c));
+                    if (c.mask == kR1 && vehicleOnly(c))
+                        (std::strstr(c.id, "handbrake") ? keyHandbrake : keyDriverAim) = true;
                     keyCircle = keyCircle || c.mask == kCircle;
                 }
                 else if (c.target == Target::Stick)
@@ -865,7 +875,11 @@ namespace vcs::input
             const float dt = g_mouse.last.time_since_epoch().count() ? std::chrono::duration<float>(now - g_mouse.last).count() : 0.0f;
             const uint32_t frame = g_rdram ? rd32(kFrameCounter) : 0;
             if (freeCamera)
+            {
+                if (g_mouse.aim.driver)
+                    aim::update({}); // the driver's aim ends with the free camera (its weapon hooks idle)
                 g_mouse = {};
+            }
             else if (frame != g_mouse.frame || dt >= 0.25f || dt == 0.0f)
             {
                 g_mouse.last = now;
@@ -917,13 +931,14 @@ namespace vcs::input
                 // free aim (game/vcs_aim.h): the target button with a gun - R1 (its keys or mouse button) when Keyboard >
                 // Free aim is on, the gamepad's R1 when Gamepad > Free aim is; with the keyboard / mouse also a shot
                 // from the hip (Circle), held a moment after it so a burst stays one aim
+                const bool wasDriverAiming = g_mouse.aim.driver;
                 g_mouse.aim = {};
-                if (m.freeAimMouse || m.freeAimPad || aim::aiming())
+                if (m.freeAimMouse || m.freeAimPad || aim::aiming() || wasDriverAiming)
                 {
                     // the hold is for shots from the hip only: letting go of the target button ends the aim at once
                     if (keyR1 || g_mouse.aimHeld)
                         g_mouse.hipUntil = {};
-                    else if (m.freeAimMouse && keyCircle && aim::gunInHand())
+                    else if (!game.driving && m.freeAimMouse && keyCircle && aim::gunInHand())
                         g_mouse.hipUntil = now + std::chrono::milliseconds(600);
                     g_mouse.aimHeld = keyR1;
                     const bool mouseWant = m.freeAimMouse && (keyR1 || now < g_mouse.hipUntil);
@@ -933,6 +948,10 @@ namespace vcs::input
                     in.on = m.freeAimMouse || m.freeAimPad;
                     in.fire = keyCircle;
                     in.target = keyR1;
+                    // aiming from the driver's seat (ChrisM-Pek): the target key held in a car whose camera the mouse
+                    // turns - R1's keys (PS2 scheme), the secondary fire's (PC scheme: the right mouse button)
+                    in.driverWant = !blocked && !game.paused && m.freeAimMouse && game.driving && (keyR1 || keyDriverAim) &&
+                                    carcam::turns(mode);
                     if (!blocked)
                     {
                         // zoomed views turn slower for the same hand movement
@@ -1043,12 +1062,13 @@ namespace vcs::input
                     if (wallFix && g_mouse.footTurn && rd32(kCamWallSkip) == 0)
                         wr32(kCamWallSkip, 1);
                 }
-                else if (on && game.driving && carcam::turns(mode))
+                else if (g_mouse.aim.driver || (on && game.driving && carcam::turns(mode)))
                 {
                     // the camera behind a vehicle turns by the mouse itself and stays where it is put while the mouse
-                    // moves, then goes back behind the car (game/vcs_carcam.h)
+                    // moves, then goes back behind the car (game/vcs_carcam.h); aiming from the driver's seat it stays
+                    // where it is put until the aim ends
                     if (!game.paused)
-                        carcam::mouse(-dx * m.carLook, up * m.carLook);
+                        carcam::mouse(-dx * m.carLook, up * m.carLook, g_mouse.aim.driver);
                 }
                 else
                 {
@@ -1132,6 +1152,16 @@ namespace vcs::input
                         discardWheelNotches(); // nor are they played out as presses after the scope
                     g_mouse.wheelSteps = 0;
                 }
+                else if (game.driving && m.mouseWheel && !wheelBound && !g_mouse.aim.camera &&
+                         (m.wheelVehicleWeapons || g_mouse.aim.driver))
+                {
+                    // the drive-by weapon (Mouse wheel in a vehicle: Weapons, and always while aiming from the driver's
+                    // seat): the next / previous gun a driver can fire with ammo, through the game's own selector (on
+                    // the game thread, aim::driverWheel)
+                    if (game.playerControl)
+                        aim::driverWheel(static_cast<int>(notch[1]) - static_cast<int>(notch[0]));
+                    g_mouse.wheelSteps = 0;
+                }
                 else if (!m.mouseWheel || wheelBound || g_mouse.aim.camera || aim::aiming())
                     g_mouse.wheelSteps = 0;
                 else if (game.driving)
@@ -1177,14 +1207,22 @@ namespace vcs::input
             }
             // the right stick (the gamepad's, or the camera keys) on the camera behind a vehicle hands it back to the
             // game at once, should the mouse have held it a moment before (game/vcs_carcam.h)
-            if ((rx != 0.0f || ry != 0.0f) && game.driving)
+            if ((rx != 0.0f || ry != 0.0f) && game.driving && !g_mouse.aim.driver)
                 carcam::stickMoved();
             else if (rx != 0.0f || ry != 0.0f)
                 footcam::stickMoved();
             rx += g_mouse.x;
             ry += g_mouse.y;
             buttons |= g_mouse.wheelButton;
-            if (g_mouse.aim.own)
+            if (g_mouse.aim.driver)
+            {
+                // aiming from the driver's seat: the aim key is not the handbrake (R1), the handbrake's keys and the
+                // gamepad's R1 still are; the camera is the mouse's
+                if (!keyHandbrake && !padR1)
+                    buttons &= static_cast<uint16_t>(~kR1);
+                rx = ry = 0.0f;
+            }
+            else if (g_mouse.aim.own)
             {
                 // free aim has the target button (R1 + L3 to enter the game's free aim, then R1 held; R1 up while the
                 // button is held after the gun ran dry) and, aiming, the camera
@@ -1391,7 +1429,10 @@ namespace vcs::input
                 s.help = "With a gun, the target button (Target / lock on, the right mouse button unless changed; R1 in the "
                          "PS2 scheme) aims where the mouse points, with the "
                          "game's aiming circle, instead of locking on; shots go through the circle. You move while aiming "
-                         "as you do locked on with that gun. Fists, melee and scoped weapons lock on as on the PS2.";
+                         "as you do locked on with that gun. Driving a car, the same button (the right mouse button; R1's "
+                         "keys in the PS2 scheme) aims a pistol or SMG from the driver's seat where the mouse points, "
+                         "with a small circle; the handbrake stays on its own key. Fists, melee and scoped weapons lock "
+                         "on as on the PS2.";
                 s.type = Type::Toggle;
                 s.defaultValue = 0;
                 s.onChange = onChange;
@@ -1403,9 +1444,24 @@ namespace vcs::input
                 s.section = "Mouse";
                 s.label = "Mouse wheel";
                 s.help = "On foot the wheel changes weapon (down: next, up: previous); in a sniper scope, the camera and "
-                         "binoculars it zooms; while you drive it changes the radio station (down: next, up: previous). "
-                         "Off, or with the wheel bound to a control, it does only that.";
+                         "binoculars it zooms; in a vehicle, see Mouse wheel in a vehicle. Off, or with the wheel bound "
+                         "to a control, it does only that.";
                 s.type = Type::Toggle;
+                s.defaultValue = 1;
+                s.onChange = onChange;
+                settings::add(s);
+
+                // [Minty1804 fork] the wheel in a vehicle: the drive-by weapon (ChrisM-Pek's) or the radio (issue 90)
+                s = {};
+                s.key = "mouse.wheel_vehicle";
+                s.page = kKeys;
+                s.section = "Mouse";
+                s.label = "Mouse wheel in a vehicle";
+                s.help = "Weapons: the wheel switches between the pistols and SMGs you have ammo for (down: next, up: "
+                         "previous), the guns a driver fires. Radio: it changes the station (down: next, up: previous). "
+                         "Aiming from the driver's seat it always switches weapons.";
+                s.type = Type::Choice;
+                s.choices = {{"Radio", 0}, {"Weapons", 1}};
                 s.defaultValue = 1;
                 s.onChange = onChange;
                 settings::add(s);

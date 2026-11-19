@@ -123,7 +123,8 @@ foot they keep their bindings above (W walks, Space jumps):
 | Lean forward / nose down (bikes, aircraft) | Keypad 8 | Left stick up |
 | Lean back / nose up | Keypad 5 | Left stick down |
 
-Steering stays on A / D (the left stick); Shift still accelerates and E / the right mouse button is still R1. The
+Steering stays on A / D (the left stick); Shift still accelerates and E / the right mouse button is still R1 (with Free
+aim on, the right mouse button / E aim from the driver's seat instead: below). The
 game's own PS2 controls apply on top. Start or Cross (Escape / Shift) skips the intro movie; the Rockstar logos before
 it can't be skipped, as on the PS2 (Game > Skip intro movies skips both). The test tools use this scheme
 (`VCS_KEYS=0`, set by `toolchain.test_keys`).
@@ -170,13 +171,23 @@ game-internals.md 12c):
   circle in the middle): the same again - the mouse and the right stick turn the view, the left button fires, on the
   gamepad R1 fires. Up to 70 degrees either side of the door, as the game allows. With free aim off the mouse still
   turns it (as in the scopes) and the gamepad's left stick does, as on the PS2.
+- **Driving a car** (after ChrisM-Pek's fork): hold the target button - the **right mouse button** (in the PS2 scheme
+  R1's keys, the right mouse button / E) - with a pistol or an SMG and move the mouse to aim from the driver's seat; a
+  small circle above the car shows where the shots go, and the **left mouse button** fires through it. The chase camera
+  stays where the mouse puts it while you aim. W / A / S / D still drive and **Space is still the handbrake** (and the
+  gamepad's R1); the aim key isn't. Letting go, the pause menu or the free camera end it. Cars only: on a motorcycle
+  the game's own drive-by stays as it is. Other guns (shotguns, rifles) can't be fired from the driver's seat, as on
+  the PS2. The game's lean-out, fire rate, effects and ammo are its own; only the line of the shot follows the mouse.
 
 **In the scopes** (sniper rifles, rocket launcher, M16 view, camera, binoculars) the mouse turns the view itself, 1:1,
 with Mouse camera on (zoomed in it turns slower). **Mouse wheel** (Keyboard page, on by default): on foot down is the
 next weapon and up the previous one (R2 / L2, one per notch); in the sniper scope, the camera and binoculars it zooms;
-while driving down is the next radio station and up the one before (the game's own L1 steps forwards only: a step back
-is the station written two back and L1 - game-internals.md 12a; nothing happens while the radio plays an announcement,
-as with L1). It does nothing of this while a control is bound to the wheel or while aiming.
+in a vehicle it follows **Mouse wheel in a vehicle** (Keyboard page): **Weapons** (the default) switches between the
+pistols and SMGs you have ammo for, the guns a driver fires (down: next, up: previous; on a motorcycle too, aiming or
+not); **Radio** changes the station (down: next, up: previous - the game's own L1 steps forwards only: a step back is
+the station written two back and L1, game-internals.md 12a; nothing happens while the radio plays an announcement, as
+with L1). Aiming from the driver's seat the wheel always switches weapons. It does nothing of this while a control is
+bound to the wheel, or on foot while aiming.
 
 ## Keyboard page
 

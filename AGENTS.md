@@ -113,6 +113,8 @@ python tools/finale_check.py [OUT] [--story] [--full]         # Last Stand's end
 python tools/controls_check.py [OUT]                          # bindings, presets, reset, vibration, volume levels; menu screenshots
 python tools/pc_scheme_check.py [OUT]                         # the keyboard's PC scheme: every default key by situation (on
                                                               # foot, fighting, in a vehicle, pause), keys shared by situation
+python tools/driver_aim_check.py [OUT]                       # aiming from the driver's seat (both schemes), the
+                                                              # wheel's weapons in a vehicle, a motorcycle
 python tools/hud_check.py [OUT]                               # HUD at the screen edges: radar left, centred text in the middle
 python tools/menu_check.py [OUT]                              # the pause menu: Escape / Enter, the mouse (hover, click, sliders,
                                                               # map drag), the gamepad as before

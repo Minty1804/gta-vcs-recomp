@@ -2828,9 +2828,11 @@ timing at 60 fps; independent timing at 60 / 144 fps got through, by luck (below
   nothing that is heard (8 kept playing with 7 written) until the next retune, which starts from the written value:
   7 -> 5 written, then L1, gave 6. While stream 0x21 plays (an announcement about 15 s after getting into a car in the
   test save, 20 - 25 s long) L1 is ignored and the presses are dropped; afterwards the vehicle's station resumes.
-  `vcs_input.cpp` puts the mouse wheel on this while driving: a notch down is L1, a notch up writes the station two
-  back and presses L1 (one forward from there); when the station is still where it was put 40 frames after the last
-  press the presses were not taken and the old station is written back.
+  `vcs_input.cpp` puts the mouse wheel on this while driving with Mouse wheel in a vehicle: Radio: a notch down is L1,
+  a notch up writes the station two back and presses L1 (one forward from there); when the station is still where it
+  was put 40 frames after the last press the presses were not taken and the old station is written back. With
+  Weapons (the default since 2026-11-19) the wheel calls the game's weapon selector instead (12c, "Free aim from the
+  driver's seat").
 
 ### 12b. The camera and the mouse (2026-10-29)
 
@@ -3340,6 +3342,29 @@ hidden run (rig `peek` / `poke`, snapshots diffed).
       that frame). The jump and its landing play whole (a first version cut the landing short with Aim speed; the
       player wanted the animations kept, 2026-11-18). `VCS_AIM_LOG=1` prints per frame the entry's conditions (`[aim-log] entry`)
       and the player's animations (`[aim-log] anims id:time/length`), and each free-aim entry's / lock-on's caller.
+
+- **Free aim from the driver's seat** (2026-11-19, after ChrisM-Pek's fork (commits 741d6a6, a90845f, found on the
+  PAL disc); USA addresses checked here by counted shots and ammo, `tools/driver_aim_check.py`). The car's controller
+  calls **FUN_002CEBE0** (the driver's fire) from 0x13AE2C with the car in a0, returning to 0x13AE34; car +0x384 is the
+  driver, +0x354 == 0 an automobile (bikes 1: left to the game's own drive-by), model 194 left out. With the chase
+  camera (mode 18, +0x74 == 3, TheCamera +0x7E0 == 0) the routine reads the active CCam's **+0x88 / +0x8C** for which
+  window to fire from: `vcs_aim.cpp` sets those flags from the camera's direction (ahead / left / right / behind) for
+  the call alone and puts them back through a guest continuation at **0x1000BC** (padding no function uses), which
+  returns to 0x13AE34. The ped's state stays 0x37 (driving): the game's own lean-out plays. No dummy object, nothing
+  changed in the steering.
+  - The shot: FUN_002CEBE0 -> FireFromCar (0x2C1BB0) -> FUN_002CB7C0, whose line test at 0x2CC848 returns to
+    **0x2CC850**: for this car and this driver the line is turned through the reticle, which sits at 0.37 of the
+    picture's height (above the car) and uses the camera's vertical field of view. Rate, effects and ammo are the
+    game's (16 SMG shots = 16 rounds, 7 pistol shots = 7 in the check).
+  - The driver's weapon gate reads weapon info +0x68 and wants slot 5 (the SMGs): for a pistol, the weapon info getter
+    (0x407120) called from **0x2CEC90** returns a copy with slot 5; the rest of the game sees the real slot.
+  - The wheel: the game's slot selector **0x200168** (traced from SET_CURRENT_CHAR_WEAPON; a0 ped, a1 slot) with the
+    next loaded pistol or SMG, run as a guest tail call before CGame::Process (ra back to its hook, which then runs the
+    frame as usual): no shoulder button injected, so it works aiming or not, on a bike too.
+  - Input (`vcs_input.cpp`): the aim key is R1's keys other than the handbrake's. In the PC scheme, in a vehicle, that
+    is the secondary fire (right mouse button); Space (Handbrake) is R1's other key there. While aiming, R1 is left
+    out of the pad unless a handbrake key or the gamepad's R1 is held, and the right stick is centred (the mouse has
+    the camera, `carcam::mouse(..., aiming)` holds it).
 
 ### 12d. Population: density, caps, spawn chance (2026-11-07, Enhancements > World)
 

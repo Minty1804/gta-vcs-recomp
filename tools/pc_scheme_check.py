@@ -54,6 +54,9 @@ def run(c):
     g.cmd("trainer toggle god 1")
     time.sleep(2.0)
     c.ok("PC scheme in use", c.setting("keys.scheme") == "1", "keys.scheme=%s" % c.setting("keys.scheme"))
+    # the keys' own buttons: with Free aim on (the player's vcs.ini) the right mouse button aims from a car's driver's
+    # seat instead of R1 (tools/driver_aim_check.py)
+    c.setting("mouse.free_aim", 0)
 
     bad = []
     for key, want in FOOT:
