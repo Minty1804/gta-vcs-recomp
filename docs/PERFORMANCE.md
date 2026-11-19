@@ -1016,3 +1016,42 @@ no watchdog or VU fallback line.
   original sign-extends the handler's byte result after `jalr` - the tail call skips that, so it needs a return through
   the original's tail (0x256164) or proof that every handler returns a clean byte.
 - Playtest missions above 100 fps; sprint at 1/240 s (-11%).
+
+### 34. D3D11: state reaches the driver only when it changes (2026-11-19)
+
+After willzmkv's (dejot) commit 4fc7828 in their fork (docs/FORK_IMPORTS.md item 6), re-done in our
+`src/rhi/d3d11/rhi_d3d11.cpp`.
+
+**Before:** every draw set the whole pipeline: input layout, topology, the shaders, blend, depth and raster. On top of
+that came the vertex buffer, two constant-buffer calls, a texture and a sampler, the viewport and the scissor. Most of
+these repeated the previous draw's state. willzmkv measured 14-15 ms a frame on the main thread for about 3,100 draws
+with AMD's driver.
+
+**Now** the device keeps what it last gave the context and skips the repeats.
+- Theirs, plus three things of ours:
+  - the viewport and scissor, which gs_hw sets for every draw;
+  - our `setBlendConstant`, which sets the blend state outside `setPipeline` and now goes through the cache;
+  - the cache is cleared at a resize as well.
+- Everything cached is bound in the context, which holds a reference to it. So a cached pointer cannot be freed and
+  come back as another object.
+- The cache is reset wherever the context's state changes outside these calls: a pass's start (its shader inputs
+  unbound), the present (flip model), Dear ImGui and a resize.
+- `VCS_D3D11_STATE_CACHE=0` makes every call reach the driver again (the reference).
+
+**Measured** (RX 6950 XT, 1x, the user's settings; perf `gl_ms` = the main thread's submit time per frame):
+
+| view | draws | cache off | cache on |
+|---|---|---|---|
+| Ocean Beach from 90 m, noon | ~1,267 | 0.8 ms | 0.6 ms |
+| the city from 60 m, noon | ~2,055 | 1.2 ms | 0.7 ms |
+
+AMD's driver costs far more per call (their 14-15 ms), so the saving there should be larger.
+
+**Checked:**
+- The reference scenes against the capture just before: static ones identical, moving ones within run-to-run noise.
+- Two runs with the cache are identical pixel for pixel. Without it, two runs differ from each other as much as from
+  a run with it, and only in the sky and reflections (clouds and time).
+- The D3D11 debug layer (`PS2X_RHI_DEBUG=1`) has no messages with or without the cache.
+- The F2 menu (Dear ImGui) opens and closes with the game right after it.
+
+Vulkan and Metal are untouched.

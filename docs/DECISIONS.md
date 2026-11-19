@@ -1708,5 +1708,9 @@ code.
   - the exposure pictures (same bits on the sand).
   On this machine it gains little (game-internals.md 6j). The PR's own bound only covers screen-linear u, v.
   Extending it to perspective triangles would be work of our own, left for later and not done here.
+- **D3D11 state cache** (after willzmkv's 4fc7828): re-done in our backend rather than copied. Our backend differs
+  from theirs: a blend constant set outside the pipeline, plus the viewport and scissor, which our renderer sets for
+  every draw. Their approach and their reference switch (`VCS_D3D11_STATE_CACHE=0`) are kept. It is checked with the
+  debug layer, the reference scenes and same-build runs with the cache on and off (PERFORMANCE.md 34).
 - **Credits**: every import keeps its author on the commit and gets a line in the fork README's Credits section (the
   user's rule, AGENTS.md).

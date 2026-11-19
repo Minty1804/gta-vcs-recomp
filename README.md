@@ -391,6 +391,7 @@ is listed here (the full list of candidates, done or not: [docs/FORK_IMPORTS.md]
 - **Exposure**: after [willzmkv](https://github.com/willzmkv)'s (dejot) Exposure (commits 02a6d4c, b5edbaf), re-done
   on the picture before the HUD.
 - **Additive cull** (the helicopter dust's GPU cost): [PerikiyoXD](https://github.com/PerikiyoXD) (upstream PR #178).
+- **D3D11 state cache** (less driver time per draw): after [willzmkv](https://github.com/willzmkv)'s (dejot) commit 4fc7828.
 - **Texture packs**: PCSX2's texture names, reproduced from [PCSX2](https://github.com/PCSX2/pcsx2)'s texture
   replacement code; BC1-BC7 decoding by [bcdec](https://github.com/iOrange/bcdec) (Sergii Kudlai, MIT).
 - **Distant lights**: the light table of Project2DFX's VCS version for PCSX2, from ThirteenAG's
