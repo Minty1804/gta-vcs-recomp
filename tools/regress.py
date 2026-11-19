@@ -20,7 +20,8 @@ Steps (each a tool of its own, run in turn; the game window shows):
             the 4:3 ones
   widepref  the game's own (anamorphic) widescreen preference stays off; mission 50's cutscene has its black bars by
             default and none with Display > Cutscene black bars off
-  scopemask the sniper scope and the camera at 16:9: their black mask reaches the screen edges (no world beside it)
+  scopemask the sniper scope and the camera at 16:9: their black mask reaches the screen edges (no world beside it),
+            level and looking up at the sky
   menushape every presented frame into and out of the pause menu at 32:9 on a 16:9 screen: a 4:3 shape shows the menu,
             a wide one the game (the shifted frame at the switch)
             (buildings, peds and cars vanishing at the sides in widescreen)
@@ -244,15 +245,21 @@ def step_scopemask(out, quick):
             time.sleep(1.0)
             g.cmd("key mouseright down")
             time.sleep(1.5)
-            shot = os.path.join(d, "weapon%d.png" % weapon)
-            g.cmd("screenshot " + shot.replace(os.sep, "/"))
+            # level, then looking up at the sky: the sky's full-screen fill shares the mask's corners, and the bars lost
+            # their anchors to it once (willzmkv's ab6d89c, docs/FORK_IMPORTS.md item 27)
+            for view in ("", "_up"):
+                if view:
+                    g.cmd("mouse 0 -4000")
+                    time.sleep(1.5)
+                shot = os.path.join(d, "weapon%d%s.png" % (weapon, view))
+                g.cmd("screenshot " + shot.replace(os.sep, "/"))
+                w, h, rows = tc.read_png(shot)
+                top, bottom = (h - w * 9 // 16) // 2 + 8, (h + w * 9 // 16) // 2 - 8
+                strip = lambda x0, x1: max(max(rows[y][x * 3:x * 3 + 3]) for y in range(top, bottom, 3) for x in range(x0, x1, 2))  # noqa: E731
+                left, right = strip(2, w // 8 - 5), strip(w - w // 8 + 5, w - 2)
+                res[str(weapon) + view] = {"left_max": left, "right_max": right, "pass": left <= 8 and right <= 8}
             g.cmd("key mouseright up")
             time.sleep(1.0)
-            w, h, rows = tc.read_png(shot)
-            top, bottom = (h - w * 9 // 16) // 2 + 8, (h + w * 9 // 16) // 2 - 8
-            strip = lambda x0, x1: max(max(rows[y][x * 3:x * 3 + 3]) for y in range(top, bottom, 3) for x in range(x0, x1, 2))  # noqa: E731
-            left, right = strip(2, w // 8 - 5), strip(w - w // 8 + 5, w - 2)
-            res[str(weapon)] = {"left_max": left, "right_max": right, "pass": left <= 8 and right <= 8}
     finally:
         g.quit()
     res["pass"] = all(r["pass"] for r in res.values())

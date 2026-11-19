@@ -1708,6 +1708,15 @@ code.
   - the exposure pictures (same bits on the sand).
   On this machine it gains little (game-internals.md 6j). The PR's own bound only covers screen-linear u, v.
   Extending it to perspective triangles would be work of our own, left for later and not done here.
+- **Cutscene framing PS2 by default** (after willzmkv's 477cfd0, 2026-11-19): authentic by default. The PS2 showed
+  cutscenes at the 4:3 width under bars, and scenes place actors just outside it; Hor+ shows them waiting. PS2 framing
+  takes the height from the display aspect instead of widening, and the frustum's side planes stay the game's (no
+  objects culled to the wider view drawn for nothing; their commit kept them widened). It applies only to .CUT
+  cutscenes (the cutscene manager's +0x34, the scenes the PS2 put bars over); a script's SWITCH_WIDESCREEN without
+  them keeps Hor+, since cropping it to 4:3 would cut what the PS2 showed full-screen. Wide stays an option with the
+  bars setting as before. Their sky fix (ab1a765) and its scope follow-up (ab6d89c) are taken together: the second
+  only fixes what the first broke. The lookup of the sky's positions is a sorted vector (binary search per HUD vertex)
+  instead of their linear scan.
 - **Free aim from the driver's seat** (after ChrisM-Pek's 741d6a6, a90845f; 2026-11-19): their code merged on ours,
   not a re-write, with the USA disc's addresses. Their aim key was "R1's keys that aren't driving keys", which in our
   PC scheme is none in a car (the right mouse button is the vehicle's secondary fire there). So the aim key is R1's keys

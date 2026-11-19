@@ -45,8 +45,8 @@ The items are in the order we go through them, one at a time. Status: open / don
 
 | # | What | From | Size | How | Status |
 |---|---|---|---|---|---|
-| 26 | Cutscenes: the sky no longer dark during the fade-in; the PS2's framing as an option | willzmkv ab1a765, 477cfd0 | S-M | check ours, re-do | open |
-| 27 | Sniper scope mask bars keep their corners in widescreen | willzmkv ab6d89c | S | check ours, re-do | open |
+| 26 | Cutscenes: the sky no longer dark during the fade-in; the PS2's framing as an option | willzmkv ab1a765, 477cfd0 | S-M | check ours, re-do | done 2026-11-19: both taken (the sky fix in vcs_hud.cpp, the framing in vcs_display.cpp, PS2 by default), the side planes left at the 4:3 width in PS2 framing. Checked: tools/cutscene_check.py passes (the sky at the 16th frame of the fade; VCS_HUD_SKY=0 fails at 168), regress scopemask, hud_check and pc_scheme_check pass, mission 50's .CUT framed as the 4:3 picture. |
+| 27 | Sniper scope mask bars keep their corners in widescreen | willzmkv ab6d89c | S | check ours, re-do | done 2026-11-19 with item 26 (its fix only matters with 26's sky fix); regress scopemask passes |
 
 ## Later (set aside 2026-11-19, the user's choice: maybe later)
 

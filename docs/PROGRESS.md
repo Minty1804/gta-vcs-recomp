@@ -1228,6 +1228,8 @@ Python scripts still usable on their own. docs/LAUNCHER.md has the whole of it; 
 | `VCS_HUD_RW=0` | no HUD context at the RenderWare level (the 16:9 weapon icon goes back to the screen edge; no native HUD, no anchoring) |
 | `VCS_HUD=0/2/1` | HUD in widescreen: keep 4:3 in the middle / screen edges / stretch (the menu's Display > HUD) |
 | `VCS_WIDE_CULL=0` | widescreen: entities culled by the game's 4:3 camera planes (models vanish at the screen edges, as before 2026-10-27) |
+| `VCS_CUTSCENE_FRAMING=1/0` | cutscenes in the PS2's framing (the 4:3 width, Vert-, no bars) / the Hor+ view, for one run (Display > Cutscene framing) |
+| `VCS_HUD_SKY=0` | the sky's full-screen fill may be taken for a fade by the HUD layer, as before 2026-11-19 (the dark sky in a cutscene's fade-in; tools/cutscene_check.py's control) |
 | `VCS_CUTSCENE_BARS=0/1` | the cutscene letterbox off / on for one run (Display > Cutscene black bars; always on at 4:3) |
 | `VCS_WIDESCREEN=1` / `=game` | the game's own (PS2, anamorphic Vert-) widescreen preference forced on / left to the game and its saves (normally kept off); both show its pause-menu row again |
 | `VCS_SCOPE_FILL=0` | widescreen: the scope / camera mask's side bars squeezed into the middle 4:3 as before 2026-11-06 (the world shows beside the scope) |

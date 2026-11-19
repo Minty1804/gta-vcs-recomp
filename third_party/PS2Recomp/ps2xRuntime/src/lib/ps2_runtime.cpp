@@ -1275,14 +1275,15 @@ bool PS2Runtime::initialize(const char *title)
         // [gta-recomp] "burst DIR N": the next N presented frames as DIR/burst_NNNN.png, one line each in DIR/burst.txt (the
         // shape shown and the renderer's batch) - a transition frame by frame (screenshots manage one every ~50 ms)
         ps2control::addCommand("burst", [](const std::string &args, ps2control::Reply reply) {
-            char dir[512] = {};
-            int n = 0;
-            if (std::sscanf(args.c_str(), "%511s %d", dir, &n) != 2 || n <= 0 || n > 600)
+            // [gta-recomp] the count is the last word, the folder all before it (a path with spaces)
+            const size_t space = args.find_last_of(' ');
+            const int n = space == std::string::npos ? 0 : std::atoi(args.c_str() + space + 1);
+            if (space == std::string::npos || space == 0 || n <= 0 || n > 600)
             {
                 reply("error usage: burst DIR N (1..600)");
                 return;
             }
-            g_burst.dir = dir;
+            g_burst.dir = args.substr(0, space);
             g_burst.left = n;
             g_burst.index = 0;
             if (FILE *f = std::fopen((g_burst.dir + "/burst.txt").c_str(), "w"))

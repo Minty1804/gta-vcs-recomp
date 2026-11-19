@@ -645,7 +645,14 @@ Handling (`src/game/vcs_display.cpp`, the user's decision 2026-11-06, DECISIONS.
 answer to a TV that stretches the picture; on a PC each of its effects but the bars fights the Hor+ view and the
 renderer's HUD squeeze, so it is **kept at 0** - the setter is hooked (a save's 1 is dropped: `[display] the game sets
 its widescreen preference 1 (ra=0x3ad100): kept at 0`), the frame kick puts 0 back after a direct write, and the
-pause menu's row is hidden (6m). The bars are the setting Display > **Cutscene black bars** (default On; always on
+pause menu's row is hidden (6m). (Since 2026-11-19, Display > **Cutscene framing**: PS2, the default, sets the
+view window's aspect to the display's while `TheCamera+0x844` is set and the cutscene manager (`*(0x48F820)`, the
+a0 of the bars' only caller at 0x21F400) has +0x34 set - a .CUT cutscene, the scenes the PS2 drew bars over - the
+4:3 width, the height of what the bars left, Vert- - and draws no bars; a script's SWITCH_WIDESCREEN alone (no
+bars on the PS2 either) keeps Hor+. Wide is the Hor+ view below. After willzmkv's 477cfd0; `vcs_display.cpp`.
+Checked on mission 50's opening .CUT: the fence posts at the same fractions of the width as in 4:3 between its
+bars.)
+The bars are the setting Display > **Cutscene black bars** (default On; always on
 at 4:3, where they are the original picture): off, the whole of `FUN_002804c8` is skipped. `VCS_WIDESCREEN=1` forces the PS2's mode, `=game` leaves the preference to the game
 (both show the row again). Regression check: `tools/regress.py` step "widepref".
 
@@ -919,6 +926,18 @@ Found from frame dumps (`PS2X_HW_DUMP`, draw lists with depth) during the widesc
 - 3D-projected sprites - clouds (64x64 textures at z ~0.0006), coronas, the mission marker glow -
   take the same RwIm2D path but at their real depth.
 - The sky is a full-width gradient at z = 1 (n=18 strip, x -0..852); a horizon band full width too.
+- **The sky's fill and the fade share their corners** (found by willzmkv (dejot) in their fork, commit ab1a765, on the
+  intro's palms shot: the "dark sky" of a cutscene's first frames; re-checked here 2026-11-19). When the camera looks
+  up, the 2D pass ends the sky with a lone full-screen quad of the top colour (6 vertices on (0,0)-(640,448), z
+  0xFFFFFE); otherwise that colour is part of the gradient's draw. A fade-in is a full-screen black quad in the HUD
+  context at the same corners and the same z. The native HUD layer's classifier goes by vertex positions only, so while
+  a fade was on screen it took the sky's quad for the fade and moved it into the HUD layer: the sky showed the
+  gradient's dark grey top until the fade ended, then jumped to cyan (`VCS_HUD_NATIVE=0` shows the cyan sky fading in).
+  Fix: full-width Im2D drawn outside the HUD context note their positions, which are no anchors in that frame
+  (`src/game/vcs_hud.cpp` `g_otherKeys`; `VCS_HUD_SKY=0` = before; check `tools/cutscene_check.py`). A scope's mask
+  bars and the screen effects keep their anchors whatever the sky did (willzmkv's ab6d89c): with the camera looking up
+  through the sniper scope they lost the corners otherwise, and fell back to their 4:3 places (the world in the strips
+  beside the scope, `regress.py scopemask`).
 - The colour filter / trails effect is drawn as **strips that sample the frame** itself (textures
   inside render targets, `texIsRt`), plus an alpha-only quad (FBMSK 0xFFFFFF) over x 80..560 at
   z = 0.

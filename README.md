@@ -22,6 +22,7 @@ option or can be switched off, and everything else is the same as upstream.
 | **Texture packs** | Not supported | HD texture packs made for PCSX2 work as they are: PNG or DDS (BC1 / BC3 / BC7) |
 | **Keyboard controls** | A key per PS2 button (Shift for Cross, Q for L1...) | The PC games' scheme by default: an action per key, by situation (W walks on foot and accelerates in a car, Shift sprints / honks), Vice City's default keys; Keyboard → **Control scheme** (PC / PS2 buttons) (SkipperSkipTR's work) |
 | **Shooting while driving** | The PS2's drive-by: SMGs only, fired to the side you look | With Free aim on, hold the right mouse button to aim a pistol or SMG from the driver's seat with the mouse; the wheel switches the guns (or the radio: Keyboard → **Mouse wheel in a vehicle**) (ChrisM-Pek's work) |
+| **Cutscenes in widescreen** | The extra width: people the scene keeps off screen stand waiting at the edges; the sky dark grey while a scene fades in | The PS2's framing by default (Display → **Cutscene framing**: PS2 / Wide); the sky fades in with the scene (willzmkv's work) |
 | **Reload key** | None: the gun reloads only when the clip runs out | **R** reloads the gun in hand, with the game's own reload animation |
 | **Reload in a vehicle** | The clip refills only while you are not firing | The reload key fills the clip at once, even during a drive-by |
 | **Walk on a diagonal** | *Walk* + two direction keys (Alt + W + D) left Vic standing still | He walks diagonally, as he does in one direction |
@@ -395,6 +396,8 @@ is listed here (the full list of candidates, done or not: [docs/FORK_IMPORTS.md]
 - **Additive cull** (the helicopter dust's GPU cost): [PerikiyoXD](https://github.com/PerikiyoXD) (upstream PR #178).
 - **PC keyboard control scheme**: [SkipperSkipTR](https://github.com/SkipperSkipTR) (upstream PR #78), merged with our
   Reload key added to both schemes.
+- **Cutscene framing** and the sky in a cutscene's fade-in (and the sniper scope's bars that went with it):
+  [willzmkv](https://github.com/willzmkv) (dejot), from their fork (commits 477cfd0, ab1a765, ab6d89c).
 - **Free aim while driving** and the wheel's weapons in a vehicle: [ChrisM-Pek](https://github.com/ChrisM-Pek), from
   their fork (commits 741d6a6, a90845f), merged on ours with the USA disc's addresses.
 - **D3D11 state cache** (less driver time per draw): after [willzmkv](https://github.com/willzmkv)'s (dejot) commit 4fc7828.

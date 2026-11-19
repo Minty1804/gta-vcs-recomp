@@ -346,7 +346,7 @@ namespace
     // Balanced (until 2026-11-14 "Widescreen, light" at 1x; the user asked for the name and 2x).
     const Preset kBalanced[] = {{"display.aspect", 0}, {"display.hud", 2},    {"display.scale", 2},  {"display.msaa", 1},
                                 {"display.aniso", 4},  {"display.timing", 1}, {"display.fps", 60}, {"display.vsync", kVsyncDefault}};
-    const char *const kPresetKeys[] = {"display.aspect", "display.hud", "display.cutscene_bars", "display.scale", "display.msaa",
+    const char *const kPresetKeys[] = {"display.aspect", "display.hud", "display.cutscene_bars", "display.cutscene_framing", "display.scale", "display.msaa",
                                        "display.aniso",  "display.timing", "display.fps", "display.vsync"};
 
     template <size_t N> void applyPreset(const char *name, const Preset (&values)[N])
@@ -485,8 +485,9 @@ namespace
         s.page = "Display";
         s.section = "Screen";
         s.label = "Cutscene black bars";
-        s.help = "The black bars above and below cutscenes, as on the PS2. Off shows the whole picture in widescreen "
-                 "(the PS2's own widescreen mode had none).";
+        s.help = "The black bars above and below cutscenes, as on the PS2, with Cutscene framing: Wide (PS2 framing "
+                 "leaves out what they covered). Off shows the whole picture in widescreen (the PS2's own widescreen mode "
+                 "had none).";
         s.type = Type::Toggle;
         s.defaultValue = 1;
         s.env = "VCS_CUTSCENE_BARS";
@@ -494,6 +495,26 @@ namespace
         s.locked = [] { return cutsceneBarsLocked(); };
         s.lockedValue = 1;
         s.lockedNote = "Always on at 4:3, as on the PS2: choose a widescreen aspect ratio to change it.";
+        settings::add(s);
+
+        // [Minty1804 fork] after willzmkv's (dejot) 477cfd0 (game/vcs_display.h)
+        s = {};
+        s.key = "display.cutscene_framing";
+        s.page = "Display";
+        s.section = "Screen";
+        s.label = "Cutscene framing";
+        s.help = "PS2: cutscenes show the width the PS2 showed and fill the widescreen screen by leaving out the top and "
+                 "bottom, as its black bars did - people a scene keeps just off screen stay off screen until they walk in "
+                 "(no bars are drawn over it). Wide: gameplay's extra width in cutscenes too (people waiting at the edges "
+                 "can be seen), with or without Cutscene black bars. No difference at 4:3.";
+        s.type = Type::Choice;
+        s.choices = {{"PS2", 1}, {"Wide", 0}};
+        s.defaultValue = 1;
+        s.env = "VCS_CUTSCENE_FRAMING";
+        s.onChange = [](int v) { vcs::setCutsceneFraming(v != 0); };
+        s.locked = [] { return cutsceneBarsLocked(); };
+        s.lockedValue = 1;
+        s.lockedNote = "At 4:3 cutscenes are framed as on the PS2: choose a widescreen aspect ratio to change it.";
         settings::add(s);
 
         s = {};

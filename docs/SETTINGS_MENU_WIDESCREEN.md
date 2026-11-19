@@ -224,7 +224,7 @@ registration order; the vcs.ini keys did not change):
 
 | Page | Section | Settings |
 |---|---|---|
-| Display | Screen | Aspect ratio, HUD (Cutscene black bars since 2026-11-06) |
+| Display | Screen | Aspect ratio, HUD (Cutscene black bars since 2026-11-06, Cutscene framing since 2026-11-19: PS2 keeps the 4:3 width in cutscenes, Vert-, no bars; Wide the Hor+ view) |
 | Display | Frame rate | Game timing, Frame rate cap |
 | Graphics | Image quality | Internal resolution, Anti-aliasing (MSAA), Texture filtering |
 | Game | Start-up | Skip intro movies (`display.skip_intro`) |
