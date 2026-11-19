@@ -24,6 +24,7 @@
 #include "game/vcs_display.h"
 #include "game/vcs_driveby.h"
 #include "game/vcs_aim.h"
+#include "game/vcs_fog.h"
 #include "game/vcs_gps.h"
 #include "game/vcs_lod_lights.h"
 #include "game/vcs_quicksave.h"
@@ -743,6 +744,7 @@ namespace
         vcs::world::registerSettings();   // Enhancements > World: density, draw distance (game/vcs_world_detail.h)
         vcs::lodlights::registerSettings(); // Enhancements > World: distant lights (game/vcs_lod_lights.h)
         vcs::texpack::registerSettings(); // Graphics > Texture packs (game/vcs_texture_pack.h)
+        vcs::fog::registerSettings();     // Graphics > Fog: the game's fog distance / start (game/vcs_fog.h; willzmkv's)
         vcs::driveby::registerSettings(); // Enhancements > Combat: drive-by fire rate (game/vcs_driveby.h)
         vcs::aim::registerSettings();     // the instant first shot (always on; VCS_QUICK_FIRST_SHOT=0 turns it off)
         vcs::gps::registerSettings();     // Enhancements > Radar: GPS route (game/vcs_gps.h)
@@ -973,6 +975,7 @@ int main(int argc, char *argv[])
         vcs::trainer::install(runtime); // the trainer's control-channel command (game/vcs_trainer.h)
         vcs::input::install(runtime);   // the player's bindings feed the pad (game/vcs_input.h)
         vcs::volume::install(runtime);  // the game's music / effects levels follow the settings (game/vcs_volume.h)
+        vcs::fog::install(runtime);     // the fog settings scale the game's fog range (game/vcs_fog.h)
         vcs::gameinfo::install(runtime); // the F3 overlay's game-state panel, the `gameinfo` command (debug/game_info.h)
         vcs::texpack::install(runtime, exeDirectory()); // texture packs for the renderer (game/vcs_texture_pack.h)
         vcs::lodlights::install(runtime, exeDirectory()); // Distant lights' table and camera (game/vcs_lod_lights.h)
