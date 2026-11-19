@@ -3325,6 +3325,28 @@ probes in the game (rig, `worlddetail`).
   polygons, a2; FUN_0021BC50). Off, the three return before storing when the texture is `shad_ped`; cars, bikes and
   lamps keep theirs. Checked at the airport: Vic's shadow gone, nothing else in the picture changed.
 
+### 12e. The GPS route on the radar and the pause map (2026-11-18, olaftnt's upstream PR #183)
+
+Brought in from olaftnt's fork (src/game/vcs_gps.cpp; their notes, in Polish: docs/mods/GPS_ROUTE.md). What it rests on:
+
+- **Drawing**: a hook on the entry of the radar's blip pass `FUN_00113418` (a0 = the radar, CRadar at `*0x48F548`).
+  The HUD radar (0x321500) and the pause map (`FUN_0026BA60`, with radar +0x1AD9 = 1) both call it, so one hook draws
+  both. The route's quads go through the game's untextured quad `FUN_003E00A8` (a0 = RGBA, f12..f19 the corners in HUD
+  units), chained as guest tail calls (ra = 0x113418): the hook runs again after each quad and finally the pass itself.
+- **World to radar**: the radar's centre / sin / cos at 0x4D3E68 / 0x4D3E70 / 0x4D3E74, range at radar +0x1AC8 (96 on
+  foot in the test, 1000 on the map); on the map `FUN_00114758`: offset +0x1ADC / +0x1AE0, zoom +0x1AE4 x 0.56 (x 4/3
+  unless the TV is 16:9).
+- **Targets**: the mission's is the nearest blip in use with no sprite (+0x29 = 0), coordinates or the entity of a
+  car / ped blip through its script handle; the player's own target is the pause map's red square (`FUN_00115030`,
+  sprite 0x10).
+- **The road graph**: ThePaths at `*0x487490`; car nodes 10 bytes (x, y as s16 / 8, height s8 at +4 - negative is that
+  - 100 -, first link s16 at +6, link count at +8 & 0xF, **+8 bit 0x100 = boat node**, left out). A* over them; the
+  node nearest the player / the target is taken in 3D (a height difference past 2 m weighs x10: Fort Baxter's upper
+  deck has a road under it).
+- **Seen in our check** (2026-11-18, mission 44 from the Fort Baxter card): the route 108 nodes, 106 quads on the
+  pause map, 5 on the radar on the road. In the barracks nothing shows on the radar: they have no car nodes, the
+  nearest is 183 m away, and a leg off the roads longer than 12 m is not drawn (on foot the radar shows 96 m).
+
 ## 13. Open questions / next research targets
 
 - Main loop, frame limiter, CTimer (section 4) - milestone 4 (60 fps).

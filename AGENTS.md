@@ -260,6 +260,11 @@ itself ("GTA Vice City Stories Launcher vX"), so the file has no heading. Follow
 
 ## Working style for long autonomous runs
 
+- **No shortcuts** (the user's rule, 2026-11-18): take the longer way when it gives the better result. Don't pick a
+  design because it touches fewer files or is quicker to write, leaving the better one as a "next step". Example:
+  texture packs decoded BC7 to RGBA to avoid adding compressed formats to the RHI. That cost 4x the memory and the
+  decode time, while uploading BC7 as stored was the better design. When the better design costs more, do it, and
+  write down why.
 - Follow docs/NATIVE_PORT_ROADMAP.md milestone by milestone without pausing for routine decisions;
   record decisions in DECISIONS.md and progress / numbers in PROGRESS.md.
 - Measure before and after anything on the hot path (perf lines from `gamectl.py perf`, scenes'

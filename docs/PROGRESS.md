@@ -1128,6 +1128,7 @@ Python scripts still usable on their own. docs/LAUNCHER.md has the whole of it; 
 | `PS2X_HW_CUTOUT_SPLIT=0\|1`, `PS2X_HW_CUTOUT_LOG=1` | the far-fence split (always on) off / on for one run; count the split draws |
 | `PS2X_HW_SKIP_KEYS=<hex>,...` | diagnostics: skip the draws of those texture keys (what is behind them) |
 | `VCS_AIM_CIRCLE=0\|1\|2` | Enhancements > Combat > Aiming circle (Original / Small / Spread) for one run |
+| `VCS_GPS=0\|1\|2`, `VCS_GPS_HOOKS=0` | Enhancements > Radar > GPS route (Off / In a vehicle / Always) for one run; no GPS hook at all (game-internals.md 12e; `gps` command) |
 | `VCS_AIM_SPEED=1\|2\|3` | Enhancements > Combat > Aim speed (Original / Fast / Faster) for one run |
 | `VCS_AIM_LOG=1` | free aim per frame: camera, IK flags / torso, the raise animation's time (`[aim-log]`) |
 | `PS2X_HW_CUTOUT_REF=<n>` | the far-fence split's alpha (0x60 = 96) for one run |

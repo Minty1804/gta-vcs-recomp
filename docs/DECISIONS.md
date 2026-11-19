@@ -1660,3 +1660,20 @@ choices:
   sprints are fixes of our driver (it lost the game's own chance to aim), always on. The jump, its landing and the
   end of a sprint play whole (the user's choice: no animation cut, only the aim the moment they end); a first version
   that cut the landing short with Aim speed was taken out the same day.
+
+## 2026-11-18 - No shortcuts (the user's rule)
+
+The user prefers work that takes longer if the result is better. A design is never chosen for being quicker to write or
+for touching fewer files when a better one exists (AGENTS.md "Working style"). The texture packs' RGBA decode of BC7
+(above) was such a shortcut: BC7 uploaded as stored, with RGBA only where the alpha-coverage mips need it, is the
+design to go to.
+
+## 2026-11-18 - Bringing in other forks' work (docs/FORK_IMPORTS.md)
+
+The player asked for everything from the other forks we could use, one item at a time. The list and its order are in
+docs/FORK_IMPORTS.md. An open upstream PR merges as it is (author kept); a fork far behind upstream is re-done on our
+code.
+
+- **GPS route** (olaftnt, upstream PR #183): merged as it is, off by default (Enhancements > Radar > GPS route). Its
+  notes stay in Polish under docs/mods/; the facts the code rests on are in game-internals.md 12e. The radar shows
+  nothing until a road is within its range (no leg off the roads past 12 m): that is how the PR draws it, kept.

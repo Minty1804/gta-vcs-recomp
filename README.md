@@ -33,6 +33,7 @@ option or can be switched off, and everything else is the same as upstream.
 | **Far fences** | A chain-link fence far away turns into a band of sky, hiding the buildings behind it | They show what is behind them (always on) |
 | **Aim speed** | Vic raises his gun about 0.2 s after the aim button | Fast raises it in about two thirds of the time, Faster in about half; his arms and body turn faster too (Enhancements → Combat, Original by default) |
 | **Aim after a jump or sprint** | The aim could come up to a second late after a jump, or after sprinting with the button held | It comes the frame the sprint or the landing ends (the animations play whole) |
+| **GPS route** | No route: only the blip to follow | A line along the roads to the mission's target and a red one to the target you set on the pause map, on the radar and the map (Enhancements → Radar, off by default; olaftnt's work) |
 | **Free aim up close** | Firing at a man right next to you swung the gun instead of shooting; shotgun pellets left from the gun, not through the circle, and missed close targets | Every gun fires up close, and shotgun pellets spread around the circle |
 | **Aiming circle** | The game's large circle | Original, Small, or Spread: a small dot for guns (they hit its centre), the pellet spread for shotguns (Enhancements → Combat, Original by default) |
 | **Character shadows** | Always on under Vic and everyone on foot | Can be turned off (option, on by default) |
@@ -291,6 +292,13 @@ Vulkan on Linux -, sound and streaming run on the PC, and the movies are decoded
 - Saves on a memory card (`%LOCALAPPDATA%\VCSRecomp` on Windows, `~/.local/share/VCSRecomp` on Linux), written and
   read by the game's own save code.
 - Every setting kept in `vcs.ini` next to the game.
+
+**Extras** (off by default, in F2 > Enhancements)
+- **GPS route** (*Radar > GPS route*: Off / In a vehicle / Always; `VCS_GPS=0/1/2`): a line along the roads to the
+  mission's target on the radar and on the pause menu's map, as in the later games and the remasters, in the
+  target blip's colour. A second, red line leads to your own target (the red square you place on the pause map).
+  It avoids water, picks the right level where roads run over each other, and recomputes as you drive
+  ([docs/mods/GPS_ROUTE.md](docs/mods/GPS_ROUTE.md)).
 
 ## Updating
 
