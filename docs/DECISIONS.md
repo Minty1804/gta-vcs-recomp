@@ -1677,3 +1677,8 @@ code.
 - **GPS route** (olaftnt, upstream PR #183): merged as it is, off by default (Enhancements > Radar > GPS route). Its
   notes stay in Polish under docs/mods/; the facts the code rests on are in game-internals.md 12e. The radar shows
   nothing until a road is within its range (no leg off the roads past 12 m): that is how the PR draws it, kept.
+- **Quick save** (olaftnt, upstream PR #184): merged, off by default (Enhancements > Saving > Quick save; F12). Its
+  own check failed here on loads with a vehicle and on a cold boot (the player under the map): three fixes of ours on
+  top, marked `[Minty1804 fork]` in vcs_quicksave.cpp (game-internals.md 12f). They are worth sending back to the PR.
+- **Credits**: every import keeps its author on the commit and gets a line in the fork README's Credits section (the
+  user's rule, AGENTS.md).

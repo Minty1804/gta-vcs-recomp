@@ -3347,6 +3347,31 @@ Brought in from olaftnt's fork (src/game/vcs_gps.cpp; their notes, in Polish: do
   pause map, 5 on the radar on the road. In the barracks nothing shows on the radar: they have no car nodes, the
   nearest is 183 m away, and a leg off the roads longer than 12 m is not drawn (on foot the radar shows 96 m).
 
+### 12f. Quick save (2026-11-18, olaftnt's upstream PR #184)
+
+Brought in from olaftnt's fork (src/game/vcs_quicksave.cpp; the header comment has the design, their notes in Polish
+are docs/mods/QUICKSAVE.md). The key (Keyboard > Menus, F12) runs the main script's safehouse save subroutine (IP
+0xC646) as a script of its own; the player's place goes into the save's spawn globals G678..680 and heading G177, the
+rest (vehicle, stars, a parked car's place) into G1106 and G177's fraction; INITSAV and a host restore put it back on a
+load.
+
+- **INITSAV zeroes G680 and G177** (found 2026-11-18 here): at the first game frame of a load G678..680 hold the
+  saved place (a quick save made in a car: 304.03, 209.25, **12.13**, G1106 = 0xB5A60000); ~1.3 s of game time later,
+  when INITSAV is done and the PR's restore read them, G680 = 0.0 and G177 = 0.0 (x, y kept). The player and his car
+  were put at z 0 under the road (the game then moved them up a few metres away) and the stars / the parked car's
+  height, in G177's fraction, were lost. The four words are now taken at the load (`g_armSpawn`).
+- **The car after the player has landed**: `SET_CHAR_COORDINATES` puts the player ~1.7 m up; the car made from his
+  height while he dropped was 2 m in the air. The restore now waits for the placing script to end and for CPed +0x1C8
+  bit 0 (standing).
+- **The car script's slot taken by the game**: the restore read the new car's handle from the ended script's L0, but at
+  30 fps the game had already started a script of its own in that slot (`[rig] script slot ... holds the game's
+  'id174'`): the car was left needed and its height never checked. The car script now ends with a WAIT 250 and the
+  handle is read while it waits.
+- `tools/quicksave_check.py` (13 checks: saves in the barracks / on foot / in a car / next to a parked car, each
+  loaded back, a refusal in a mission, a normal save after, two cold boots): load_vehicle, load_near failed and, with
+  the player's settings (30 fps, draw distance 300 %), boot_quick (the player at z -166 after a cold boot) and, after the
+  first two fixes, load_near (the slot); all 13 pass since, with the game's settings and with the player's.
+
 ## 13. Open questions / next research targets
 
 - Main loop, frame limiter, CTimer (section 4) - milestone 4 (60 fps).

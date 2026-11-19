@@ -11,7 +11,7 @@ The items are in the order we go through them, one at a time. Status: open / don
 | # | What | From | Size | How | Status |
 |---|---|---|---|---|---|
 | 1 | GPS route on the radar and the pause map (mission target and the map's own target) | olaftnt, upstream PR #183 | S | merge; conflict only in main.cpp | done 2026-11-18 (game-internals 12e) |
-| 2 | Quick save key: the game's Save menu outside missions (vehicle height, wanted level kept) | olaftnt, PR #184 | S | merge; main.cpp; its F12 is free here (our F12 dump is behind an env var) | open |
+| 2 | Quick save key: the game's Save menu outside missions (vehicle height, wanted level kept) | olaftnt, PR #184 | S | merge; main.cpp; its F12 is free here (our F12 dump is behind an env var) | done 2026-11-18, three load fixes of ours (game-internals 12f) |
 | 3 | Fog distance / fog start as settings (the game's RSL fog-range setter FUN_002F6008 scaled) | willzmkv 0d63f27 | S | re-do (vcs_fog.cpp) | open |
 | 4 | Exposure on the shown picture | willzmkv 02a6d4c, b5edbaf | S | re-do in the presenter | open |
 | 5 | GS: additive pixels that add nothing skipped (the hovercraft's glow) | PerikiyoXD, PR #178 | S | merge; conflict in gs_hw.cpp | open |

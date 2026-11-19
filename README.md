@@ -34,6 +34,7 @@ option or can be switched off, and everything else is the same as upstream.
 | **Aim speed** | Vic raises his gun about 0.2 s after the aim button | Fast raises it in about two thirds of the time, Faster in about half; his arms and body turn faster too (Enhancements → Combat, Original by default) |
 | **Aim after a jump or sprint** | The aim could come up to a second late after a jump, or after sprinting with the button held | It comes the frame the sprint or the landing ends (the animations play whole) |
 | **GPS route** | No route: only the blip to follow | A line along the roads to the mission's target and a red one to the target you set on the pause map, on the radar and the map (Enhancements → Radar, off by default; olaftnt's work) |
+| **Quick save** | Saving only at a safehouse | F12 opens the game's Save menu anywhere outside a mission; loading puts you back there, in your car or next to it, with your wanted level (Enhancements → Saving, off by default; olaftnt's work, with three load fixes of ours) |
 | **Free aim up close** | Firing at a man right next to you swung the gun instead of shooting; shotgun pellets left from the gun, not through the circle, and missed close targets | Every gun fires up close, and shotgun pellets spread around the circle |
 | **Aiming circle** | The game's large circle | Original, Small, or Spread: a small dot for guns (they hit its centre), the pellet spread for shotguns (Enhancements → Combat, Original by default) |
 | **Character shadows** | Always on under Vic and everyone on foot | Can be turned off (option, on by default) |
@@ -368,6 +369,20 @@ on the code; the documentation is in [docs/](docs).
 | `tools` | Disc reader, build pipeline, launcher back end, test and analysis scripts |
 | `launcher` | The launcher (Windows and Linux, its own renderer and UI; runs the tools) |
 | `docs` | How the game works, decisions, progress |
+
+## Credits
+
+This fork stands on other people's work. Every change brought in from another fork keeps its author on its commit and
+is listed here (the full list of candidates, done or not: [docs/FORK_IMPORTS.md](docs/FORK_IMPORTS.md)).
+
+- **The port itself**: [gothamor/gta-vcs-recomp](https://github.com/gothamor/gta-vcs-recomp) and its contributors, on
+  [PS2Recomp](https://github.com/ran-j/PS2Recomp).
+- **GPS route**: [olaftnt](https://github.com/olaftnt) (upstream PR #183).
+- **Quick save**: [olaftnt](https://github.com/olaftnt) (upstream PR #184).
+- **Texture packs**: PCSX2's texture names, reproduced from [PCSX2](https://github.com/PCSX2/pcsx2)'s texture
+  replacement code; BC1-BC7 decoding by [bcdec](https://github.com/iOrange/bcdec) (Sergii Kudlai, MIT).
+- **Distant lights**: the light table of Project2DFX's VCS version for PCSX2, from ThirteenAG's
+  [WidescreenFixesPack](https://github.com/ThirteenAG/WidescreenFixesPack) (MIT).
 
 ## License
 

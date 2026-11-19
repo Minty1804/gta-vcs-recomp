@@ -114,6 +114,7 @@ namespace vcs::quicksave
 
         enum : uint16_t
         {
+            WAIT = 0x0001,
             TERMINATE_THIS_SCRIPT = 0x0023,
             SET_CHAR_COORDINATES = 0x0044,
             CREATE_CAR = 0x0048,
@@ -226,6 +227,10 @@ namespace vcs::quicksave
         bool g_haveData = false;
         Data g_data;
         uint32_t g_restoreAt = 0, g_carScript = 0, g_legacySafehouse = 0;
+        uint32_t g_placeScript = 0; // place()'s script on a load: the vehicle waits for it (the player's height)
+        uint32_t g_armSpawn[4] = {}; // G678..680, G177 as a quick save loaded them (onGameFrame's load), for takeData
+        bool g_armSpawnValid = false;
+        uint32_t g_carHandle = 0; // the restored vehicle's handle, read from the car script's L0 while it waits
 
         // status (any thread)
         std::atomic<int> g_saves{0}, g_refused{0}, g_restores{0}, g_legacyFixes{0}, g_clockSkips{0};
@@ -455,6 +460,12 @@ namespace vcs::quicksave
             const auto metres = [](uint32_t u) { return static_cast<int8_t>(u & 0xFFu) * 0.8f; };
             d = {};
             d.x = globalf(ram, 678), d.y = globalf(ram, 679), d.z = globalf(ram, 680), d.heading = globalf(ram, G_HEADING);
+            if (g_armSpawnValid) // [Minty1804 fork] as loaded, before INITSAV zeroed the height and the heading
+            {
+                const auto f = [](uint32_t bits) { float v; std::memcpy(&v, &bits, 4); return v; };
+                d.x = f(g_armSpawn[0]), d.y = f(g_armSpawn[1]), d.z = f(g_armSpawn[2]), d.heading = f(g_armSpawn[3]);
+                g_armSpawnValid = false;
+            }
             d.vehicle = (w >> 26) & 3u, d.model = (w >> 17) & 0x1FFu;
             d.vx = d.x, d.vy = d.y, d.vz = d.z - 1.0f, d.vheading = d.heading;
             const uint32_t code =
@@ -487,7 +498,7 @@ namespace vcs::quicksave
             return -1;
         }
 
-        void place(uint8_t *ram, float x, float y, float z, float heading, bool outdoors)
+        uint32_t place(uint8_t *ram, float x, float y, float z, float heading, bool outdoors)
         {
             Code c;
             if (outdoors)
@@ -497,7 +508,7 @@ namespace vcs::quicksave
             c.op(SET_CHAR_HEADING).player().f(heading);
             c.op(SET_CAMERA_BEHIND_PLAYER).op(RESTORE_CAMERA_JUMPCUT);
             const std::vector<uint8_t> bytes = c.done();
-            vcs::rig::startCodeScript(ram, bytes.data(), bytes.size(), kScriptName);
+            return vcs::rig::startCodeScript(ram, bytes.data(), bytes.size(), kScriptName);
         }
 
         void restore(uint8_t *ram, uint32_t time, bool running, bool inGame)
@@ -539,9 +550,10 @@ namespace vcs::quicksave
                 g_restores.fetch_add(1, std::memory_order_relaxed);
                 // outdoors: the player once more at his place, after LOAD_SCENE (its collision). At boot INITSAV put
                 // him there before the ground around was loaded and he fell through the map
+                g_placeScript = 0;
                 if (static_cast<int32_t>(global(ram, G_IN_SAFEHOUSE)) == -1 &&
                     static_cast<int32_t>(global(ram, G_IN_EMPIRE)) == -1)
-                    place(ram, d.x, d.y, d.z, d.heading, true);
+                    g_placeScript = place(ram, d.x, d.y, d.z, d.heading, true);
                 if (d.stars) // the wanted level as saved
                 {
                     Code c;
@@ -575,6 +587,25 @@ namespace vcs::quicksave
                     }
                     return;
                 }
+                // [Minty1804 fork] and not before place()'s script has put the player back: a model already in memory
+                // (the vehicle he sat in, streamed fast) came before it, and the car was made from his old height - z
+                // ~1 under the road (tools/quicksave_check.py load_vehicle / load_near)
+                if (g_placeScript && vcs::rig::scriptActive(ram, g_placeScript))
+                {
+                    if (!(running && time - g_restoreAt > kModelTimeoutMs))
+                        return;
+                    std::fprintf(stderr, "[quicksave] the player's placing did not finish: the vehicle goes ahead\n");
+                }
+                // [Minty1804 fork] and on his feet: SET_CHAR_COORDINATES puts him ~1.7 m up and he drops for a few
+                // frames; read in the air, the car was made 2 m up and fell (CPed +0x1C8 bit 0: standing, docs
+                // game-internals.md 12c)
+                if (const uint32_t pp = rd32(ram, kPlayerPed); pp && !(ram[(pp + 0x1C8u) & kRamMask] & 1u))
+                {
+                    if (!(running && time - g_restoreAt > kModelTimeoutMs))
+                        return;
+                    std::fprintf(stderr, "[quicksave] the player did not land: the vehicle goes ahead\n");
+                }
+                g_placeScript = 0;
                 // the heights from where the player stands now: G680 is not the saved height any more (the save /
                 // INITSAV rewrite it: 1.8 m lower in a car, and the car created there fell through the road). The
                 // player stands on the ground (his centre 1 m up), put there with LOAD_SCENE.
@@ -593,6 +624,10 @@ namespace vcs::quicksave
                 if (d.vehicle == 1)
                     c.op(WARP_CHAR_INTO_CAR).player().local(0);
                 c.op(MARK_MODEL_AS_NO_LONGER_NEEDED).i(static_cast<int32_t>(d.model));
+                // [Minty1804 fork] alive a moment longer, its handle in L0: once ended, the game may give its slot to a
+                // script of its own before Restore::Car reads it (at 30 fps: 'id174', the car never marked or raised)
+                c.op(WAIT).i(250);
+                g_carHandle = 0;
                 const std::vector<uint8_t> bytes = c.done();
                 g_carScript = vcs::rig::startCodeScript(ram, bytes.data(), bytes.size(), kScriptName);
                 g_restore = g_carScript ? Restore::Car : Restore::Idle;
@@ -617,10 +652,14 @@ namespace vcs::quicksave
             }
             case Restore::Car:
             {
+                // the car script's output: its handle in L0, read while the slot is still the script's (its WAIT)
                 if (vcs::rig::scriptActive(ram, g_carScript))
+                {
+                    g_carHandle = rd32(ram, g_carScript + kLocal0);
                     return;
-                // the car script's output: its handle in L0 (the slot keeps its locals until the next script there)
-                const uint32_t handle = rd32(ram, g_carScript + kLocal0);
+                }
+                const uint32_t handle = g_carHandle;
+                g_carHandle = 0;
                 const uint32_t car = vehicleAt(ram, handle);
                 if (car)
                 {
@@ -665,6 +704,14 @@ namespace vcs::quicksave
         {
             g_restore = Restore::Armed;
             g_haveData = false;
+            // [Minty1804 fork] the place as the save holds it, taken now: by the time INITSAV is done (Restore::Armed)
+            // it has zeroed G680 and G177 (the height, and the heading whose fraction carries the stars and the parked
+            // vehicle's height) - seen in a load of a quick save made in a car: G680 12.13 here, 0.0 then, and the
+            // player and the car put at z 0, under the road (tools/quicksave_check.py load_vehicle / load_near)
+            g_armSpawnValid = inGame && ((global(ram, G_DATA) >> 28) == kMark || (global(ram, G_DATA) >> 28) == kMarkOld);
+            if (g_armSpawnValid)
+                for (uint32_t k = 0; k < 4; ++k)
+                    g_armSpawn[k] = global(ram, kSpawnGlobals[k]);
             if (g_prompt)
                 g_prompt = false, g_promptDrops.fetch_add(1, std::memory_order_relaxed);
             g_lastVehicle = 0;
