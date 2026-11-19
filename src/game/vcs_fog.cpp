@@ -37,7 +37,7 @@ namespace vcs::fog
         constexpr uint32_t kSetFogRange = 0x002F6008u;
 
         PS2Runtime::RecompiledFunction g_original = nullptr;
-        std::atomic<int> g_distance{100}; // percent of the game's end distance (and its start with it)
+        std::atomic<int> g_distance{175}; // percent of the game's end distance (and its start with it)
         std::atomic<int> g_start{100};    // percent of the game's start, on top of the distance
         // [Minty1804 fork] Fog distance above 100 %: the fog curve (gs_hw.h gsHwSetFogCurve); the half point stops at
         // this fraction of the range, so the last stretch before the far plane still fogs over smoothly
@@ -109,14 +109,14 @@ namespace vcs::fog
         s.page = "Graphics";
         s.section = "Fog";
         s.label = "Fog distance";
-        s.help = "Where the game's distance fog swallows the city, percent of the original (100). Lower is thicker fog, "
+        s.help = "Where the game's distance fog swallows the city, percent of the original (100; the default 175). Lower is thicker fog, "
                  "closer to the camera, in the time of day's own fog colour. Above 100 the fog thins out in the middle "
                  "distance so the city shows further, and still closes in before the edge of the world.";
         s.type = Type::Integer;
         s.min = 10;
         s.max = 175; // [Minty1804 fork] above 100: the fog curve (was 100)
         s.format = "%d%%";
-        s.defaultValue = 100;
+        s.defaultValue = 175; // [Minty1804 fork] the player's choice (2026-11-19, DECISIONS.md); 100 is the original
         s.env = "VCS_FOG_DISTANCE";
         s.onChange = [](int v) { g_distance.store(v, std::memory_order_relaxed); };
         settings::add(s);
