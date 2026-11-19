@@ -23,7 +23,7 @@ The items are in the order we go through them, one at a time. Status: open / don
 | # | What | From | Size | How | Status |
 |---|---|---|---|---|---|
 | 10 | Pack DDS uploaded compressed (BC1-BC7, ~1/4 of the memory, no decode) - except textures that need our alpha-coverage mips (the palms: the pack's stored mips lose them, measured) | willzmkv 37c9194, 5f1b1c2 | M-L | re-do: RHI BC formats in D3D11 / Vulkan / Metal, a hybrid in vcs_texture_pack.cpp | done 2026-11-19: block-compressed images with no clear texel go up as stored (88 % of a real pack's images in a city run; cache 238 vs 713 KB an image), cut-outs decoded as before. texpack_check (fixtures + --real, every classification verified) passes on D3D11 and on Vulkan (Windows); Metal written to the same contract, not built or run here |
-| 14 | Streaming memory past the PS2's 32 MB (5.4 MB heap -> up to 30 MB) | willzmkv 58a854f | L | re-do; touches guest memory size | open |
+| 14 | Streaming memory past the PS2's 32 MB (5.4 MB heap -> up to 30 MB) | willzmkv 58a854f | L | re-do; touches guest memory size | evaluated 2026-11-19, not started: their reason was VC car mods (4-5x VCS's cars), which this fork has no loader for; here it would only give more car models in traffic. It needs EE RAM past 32 MB with the game still seeing 32 MB, and 185 literal 0x01FFFFFF / 0x02000000 masks in 48 files of src/ and the runtime (plus the generated code's reads) checked one by one, a full rebuild, the regression rig and a soak. Worth doing together with a car-mod loader, on its own branch |
 
 ## C. Controls
 
@@ -36,9 +36,9 @@ The items are in the order we go through them, one at a time. Status: open / don
 
 | # | What | From | Size | How | Status |
 |---|---|---|---|---|---|
-| 21 | Detailed city further (the detailed sectors of neighbour cells instead of the low-detail city) | willzmkv "HD world" (~40 commits) | XL | re-do; theirs went through crashes before a 3 h soak passed | open |
-| 22 | Far street-lamp / traffic-light coronas to the detailed distance | willzmkv 635e6bc ... 36ee818 | M | re-do next to our distant lights (7c) | open |
-| 23 | Distant traffic and crowds (proxies on the real models), crowd bands | willzmkv T2, 8c7e1be, b08463c, cecdd55... | XL | re-do; experimental there | open |
+| 21 | Detailed city further (the detailed sectors of neighbour cells instead of the low-detail city) | willzmkv "HD world" (~40 commits) | XL | re-do; theirs went through crashes before a 3 h soak passed | evaluated 2026-11-19, not started: ~30 commits, +17,000 lines in their fork, a 3 h soak (soak.py) and memcheck.py are the bar before it may be merged. A project of its own, on a branch |
+| 22 | Far street-lamp / traffic-light coronas to the detailed distance | willzmkv 635e6bc ... 36ee818 | M | re-do next to our distant lights (7c) | evaluated 2026-11-19, waits for 21: their far coronas are drawn from the HD world's sectors and object pool (635e6bc, 36ee818); without 21 our distant lights (7c) already cover the low-detail city |
+| 23 | Distant traffic and crowds (proxies on the real models), crowd bands | willzmkv T2, 8c7e1be, b08463c, cecdd55... | XL | re-do; experimental there | evaluated 2026-11-19, waits for 21: the proxies stand on the detailed city's reach; experimental in their fork too |
 | 24 | Parked cars at the population distance; police spawn ring kept while wanted | willzmkv 0c41004, 57d661f | S-M | re-do in vcs_world_detail.cpp | done 2026-11-19: the generators' 160 / 170 m follow Car distance (patched immediates, game-internals 12d); the police ring needs nothing here (Car distance never moved it). Checked (tools/world_check.py cargen, at a city spot): 9 generators in range at 100 %, 19 at 200 %, 9 again back at 100 %; the whole check passes. Not seen here: an extra parked car. A generator entering the range spawns only when a flag on the player ped allows (game-internals 12d): 0 throughout the player's save tested (on foot, driving, any hour), so no generator rolled at all, at 100 % either. What sets it is not known yet; the fix is hoped to show where it is 1. |
 
 ## E. Presentation
