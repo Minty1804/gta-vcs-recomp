@@ -1814,6 +1814,17 @@ maths, then checked in the game (`tools/world_check.py`, the free camera).
   tower across the water from (-739, -1158) (looking east at 18:41), and the lit and unlit window blocks of the
   buildings above the sea wall at (-749, -1031). Both look the same drawn natively and emulated (`PS2X_HLE=0`), at 100%
   and 300% draw distance, and with anisotropic filtering 16x or bilinear: not our renderer nor the draw distance.
+  The roof, looked at closer (2026-11-19, the user asked whether it can be fixed): it is the tower's **far model**.
+  Walking east along y -1158 at 18:41 and 22:00, the far model (a separate tan slab over the body, sky between them,
+  no neon) shows up to x -739 and the detailed one (the crown attached, two neon rims) from x -650 on: about 610 m
+  against 520 m from the tower, the same at 100% and 300% draw distance. The F12 draw log on the emulated path with
+  every vertex (`PS2X_HW_DUMP_ALLVERTS=1`): the slab is part of the far city's single batch (3,861 vertices, 32x32
+  texture, alpha test > 8), opaque (vertex alpha 0x80) and not fading; the body is its own draw whose top starts
+  where the slab ends (y 187 of 448). `VCS_TRACE_CELL=1`: no sector with its model missing at either spot. The swap
+  is the level's current hex cell changing from (13, 7) to (14, 7): the detailed buildings come with the cells
+  streamed around the camera (6b), not with the LOD distances the draw distance scales. So the gap is in the far
+  model as authored; drawing the detailed tower further would mean streaming more cells (more cell slots and a
+  larger stream buffer than `0xCB7A80..0x112A660`) - not done.
 - `vcs_world_detail.cpp` writes `0x4887F8` (Enhancements > Draw distance) as set, nothing held back. It reports the
   packet use at the frame kick = (cursor `+0x18` - (half start - 0x10)) + (half end - data `+0x1C`), as
   `FUN_00476770` computes it (`worlddetail`: packets / peak).

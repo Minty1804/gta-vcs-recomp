@@ -379,7 +379,8 @@ The HUD, text and radar are drawn over the shown picture at the window's size in
   bars and fades starting at alpha 1-9. Measured over a 3.5-minute walk and drive with rain: 15 frames with the HUD
   under 20 draws before, 0 after (the only gaps left are loading screens, where the game draws no HUD); 65
   consecutive frames all with the HUD. `PS2X_HW_HUD_OVER=0` = as before; `PS2X_HW_HUD_WATCH=1` logs every layer
-  made stale or restarted within its own frame and every shown layer that shrank.
+  made stale or restarted within its own frame and every shown layer that shrank. `tools/hud_check.py` walks 15 s in
+  the rain with it first: 0 such frames with the fix, 76 with `--control` (`PS2X_HW_HUD_OVER=0`).
 - **Drawing.** `composeDisplay` makes the picture at the output size (`gsHwSetOutputSize`: the window's letterboxed
   area, set by the runtime each host frame), blits the displayed buffer into it (bilinear, as the presenter scaled it
   before) and draws the displayed buffer's layer on top with the same draw shaders, textures and blend modes: target

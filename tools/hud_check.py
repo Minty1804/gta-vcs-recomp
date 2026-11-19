@@ -2,7 +2,12 @@
 """HUD "Screen edges" check (src/game/vcs_hud.cpp, game-internals.md 6f "Radar and text"): the radar stays at the left
 edge and centred text lines in the middle, whatever else is on screen.
 
-    python tools/hud_check.py [OUT] [--port 47630]
+    python tools/hud_check.py [OUT] [--port 47630] [--control]
+
+First a 15 s walk in the rain with PS2X_HW_HUD_WATCH=1 (2026-11-19, the user's report: the top-right HUD doubled or
+with artefacts for single frames): 2D the game draws after the HUD in the same frame - rain drops, radar blips, fades
+- must go over the HUD layer, never make it stale in its own frame (no such [hud-watch] line from the rain on).
+--control runs with PS2X_HW_HUD_OVER=0, the layer as before, and passes when the rain does break it.
 
 From the Fort Baxter card at 16:9 with the HUD at the screen edges (VCS_ASPECT=169, VCS_HUD=2; hidden): a car at the
 airport thrown into the air three times, so the game shows its insane stunt texts ("Distance: ... Height: ...", "INSANE
@@ -43,15 +48,43 @@ def read_anchors(log):
     return out
 
 
-def check(out, port=None):
+def count_watch(log, start, end=None):
+    """PS2X_HW_HUD_WATCH lines between two byte offsets of the log: (layers made stale in their own frame, layers
+    restarted in it)"""
+    stale = restarts = 0
+    with open(log, "rb") as f:
+        f.seek(start)
+        text = f.read(-1 if end is None else end - start).decode(errors="replace")
+        for line in text.splitlines():
+            if line.startswith("[hud-watch]"):
+                stale += "made stale in its own frame" in line
+                restarts += "restarts within its frame" in line
+    return stale, restarts
+
+
+def check(out, port=None, control=False):
     os.makedirs(out, exist_ok=True)
-    env = {"VCS_ASPECT": "169", "VCS_HUD": "2", "VCS_TRACE_HUDANCHOR": "100000", "VCS_TRACE_IM2D_DELAY": "0"}
+    env = {"VCS_ASPECT": "169", "VCS_HUD": "2", "VCS_TRACE_HUDANCHOR": "100000", "VCS_TRACE_IM2D_DELAY": "0",
+           "PS2X_HW_HUD_WATCH": "1"}
+    if control:
+        env["PS2X_HW_HUD_OVER"] = "0"
     g = rig.Game.start(save=rig.default_save(), name="hud_check", port=port,
                        env=env)
     try:
         g.wait_ingame()
         g.invincible(True)
         g.prime()
+        # The HUD in the rain (fixed 2026-11-19): rain drops, radar blips and fades are 2D drawn after the HUD in the
+        # same frame; each made the native HUD layer stale, and the frame showed the HUD missing or half drawn.
+        g.weather(2)
+        time.sleep(3)
+        rain_from = os.path.getsize(g.log_path)
+        g.cmd("press w 15000")
+        for s in range(6):
+            time.sleep(2.5)
+            g.cmd("screenshot " + os.path.join(out, "rain_%02d.png" % s))
+        rain_to = os.path.getsize(g.log_path)
+        g.weather(0)
         g.teleport(AIRPORT[0], AIRPORT[1], -100.0)
         time.sleep(3)
         g.spawn_car(211)
@@ -67,6 +100,8 @@ def check(out, port=None):
             time.sleep(1)
     finally:
         g.quit()
+    rain_stale, rain_restarts = count_watch(g.log_path, rain_from, rain_to)
+    stale, restarts = count_watch(g.log_path, rain_from)
     anchors = read_anchors(g.log_path)
     radar = [a for a in anchors if a[1] == 1]
     centred = [a for a in anchors if a[1] == 2]
@@ -79,9 +114,18 @@ def check(out, port=None):
         "centred_not_middle": len([a for a in centred if a[4] != "centre"]),
         "centred_off_centre": len(off_centre),
         "off_centre_examples": off_centre[:5],
+        "rain_layer_stale": rain_stale,
+        "rain_layer_restarts": rain_restarts,
+        "layer_stale_after_rain_start": stale,
+        "layer_restarts_after_rain_start": restarts,
+        "control": control,
     }
-    res["pass"] = (res["radar_prims"] > 0 and res["radar_not_left"] == 0 and res["centred_frames"] >= 30 and
-                   res["centred_not_middle"] == 0 and res["centred_off_centre"] == 0)
+    if control:  # PS2X_HW_HUD_OVER=0: the check must see the broken frames the fix removed
+        res["pass"] = rain_stale > 0
+    else:
+        res["pass"] = (res["radar_prims"] > 0 and res["radar_not_left"] == 0 and res["centred_frames"] >= 30 and
+                       res["centred_not_middle"] == 0 and res["centred_off_centre"] == 0 and stale == 0 and
+                       restarts == 0)
     json.dump(res, open(os.path.join(out, "result.json"), "w"), indent=1)
     return res
 
@@ -90,9 +134,11 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("out", nargs="?")
     ap.add_argument("--port", type=int)
+    ap.add_argument("--control", action="store_true",
+                    help="PS2X_HW_HUD_OVER=0 (the HUD layer as before 2026-11-19): passes when the rain breaks it")
     a = ap.parse_args()
     out = os.path.abspath(a.out or os.path.join(ROOT, "build", "hud_check", time.strftime("%Y%m%d-%H%M%S")))
-    res = check(out, a.port)
+    res = check(out, a.port, a.control)
     print(json.dumps(res))
     print("PASS" if res["pass"] else "FAIL", "-", out)
     return 0 if res["pass"] else 1
