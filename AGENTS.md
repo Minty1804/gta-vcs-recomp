@@ -115,6 +115,8 @@ python tools/pc_scheme_check.py [OUT]                         # the keyboard's P
                                                               # foot, fighting, in a vehicle, pause), keys shared by situation
 python tools/driver_aim_check.py [OUT]                       # aiming from the driver's seat (both schemes), the
                                                               # wheel's weapons in a vehicle, a motorcycle
+python tools/texpack_check.py [OUT] [--real]                # texture packs: DDS as stored vs decoded (memory, picture,
+                                                              # every classification checked); --real: a PCSX2 pack too
 python tools/hud_check.py [OUT]                               # HUD at the screen edges: radar left, centred text in the middle
 python tools/menu_check.py [OUT]                              # the pause menu: Escape / Enter, the mouse (hover, click, sliders,
                                                               # map drag), the gamepad as before

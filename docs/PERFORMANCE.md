@@ -1126,3 +1126,26 @@ worst frames, where the city streams in, have 5,000-11,000 draws and wait on the
 - **Memory:** `memcheck.py` (15 minutes) passes. Memory levels off at ~1,450 MB, against ~1,470 MB without the join; the rise over the second half is 2.4 MB a minute (limit 8). A 12-minute run had failed at 10.5 MB a minute: there the climb came later on the route, and its window caught it before the level (minutes 7-11 were flat).
 - **The mesh cache:** it fills to its bound and stays there. It made 0-500 meshes a 600 frames in steady views, and up
   to ~9,000 while driving through the city.
+
+### 36. Texture packs: DDS as stored (2026-11-19)
+
+After willzmkv's (dejot) commits 37c9194 / 5f1b1c2 in their fork (docs/FORK_IMPORTS.md item 10), re-done as a hybrid
+(game-internals.md 7b).
+
+**Before:** every DDS was decoded to RGBA on a loader thread and the renderer made its mip chain: a 2048x2048 BC7 image
+became 21 MB in the pack's cache and on the GPU instead of 5.6 MB.
+
+**Now** block-compressed images with their whole chain and no clear texel go up as stored; cut-outs (the palms) keep
+the RGBA path and its alpha-coverage mips.
+
+Measured with the real 6,279-file BC7 pack (`tools/texpack_check.py --real`, the city spot; D3D11, then Vulkan alike):
+
+| | as stored | decoded (`PS2X_HW_BLOCK_TEXTURES=0`) |
+|---|---|---|
+| images as stored | 337 of 384 | 0 |
+| pack cache | 91 MB, 238 KB an image | 274 MB, 713 KB an image |
+| picture | - | 0.00-0.67 % of pixels differ (the scene's own motion) |
+
+The GPU copy (`keepPackGpu`) shrinks the same way. Load time an image, from a drive with the pack (the first run of a
+session reads the files cold, so runs alternated): 0.5 ms as stored against 1.4-1.8 ms decoded. The classification
+needs no decode: before the endpoint bounds, the first version decoded level 0 of every BC7 image to check it.

@@ -57,6 +57,10 @@ namespace rhi
             case Format::RGBA8: return MTLPixelFormatRGBA8Unorm;
             case Format::R32F: return MTLPixelFormatR32Float;
             case Format::D32F: return MTLPixelFormatDepth32Float;
+            case Format::BC1: return MTLPixelFormatBC1_RGBA;
+            case Format::BC2: return MTLPixelFormatBC2_RGBA;
+            case Format::BC3: return MTLPixelFormatBC3_RGBA;
+            case Format::BC7: return MTLPixelFormatBC7_RGBAUnorm;
             default: return MTLPixelFormatInvalid;
             }
         }
@@ -483,14 +487,23 @@ namespace rhi
 
             bool freeThreadedCreation() const override { return true; } // MTLDevice is thread-safe; a new texture is no one's yet
 
+            // [Minty1804 fork] Apple silicon has BC (macOS 11+): asked, not assumed
+            bool blockCompression() const override
+            {
+                if (@available(macOS 11.0, *))
+                    return [m_device supportsBCTextureCompression];
+                return false;
+            }
+
             std::unique_ptr<Texture> createTextureLevels(const TextureDesc &desc, const void *const *levels, uint32_t levelCount) override
             {
                 TextureDesc sized = desc;
                 sized.width = std::max(1u, desc.width);
                 sized.height = std::max(1u, desc.height);
                 sized.mipLevels = std::min(std::max(1u, levelCount), 16u);
+                const Format format = blockCompressed(desc.format) ? desc.format : Format::RGBA8;
                 auto t = std::make_unique<MtlTexture>(this, sized);
-                MTLTextureDescriptor *td = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
+                MTLTextureDescriptor *td = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:pixelFormat(format)
                                                                                               width:sized.width
                                                                                              height:sized.height
                                                                                           mipmapped:NO];
@@ -505,7 +518,7 @@ namespace rhi
                 for (uint32_t i = 0; i < sized.mipLevels; ++i)
                 {
                     const uint32_t w = std::max(1u, sized.width >> i), h = std::max(1u, sized.height >> i);
-                    [t->texture replaceRegion:MTLRegionMake2D(0, 0, w, h) mipmapLevel:i withBytes:levels[i] bytesPerRow:w * 4u];
+                    [t->texture replaceRegion:MTLRegionMake2D(0, 0, w, h) mipmapLevel:i withBytes:levels[i] bytesPerRow:rowBytes(format, w)];
                 }
                 return t;
             }

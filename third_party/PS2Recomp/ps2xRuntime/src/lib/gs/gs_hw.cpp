@@ -115,6 +115,7 @@ namespace
     std::unordered_map<uint32_t, uint64_t> g_rasterTextures;                // [gta-recomp] raster address -> texture key
     std::atomic<GSHwTexturePack *> g_texturePack{nullptr};                   // [gta-recomp] gsHwSetTexturePack
     std::atomic<uint64_t> g_packHashed{0}, g_packReplaced{0};
+    std::atomic<bool> g_blockCompression{false}; // [gta-recomp] gsHwBlockCompression
 }
 
 // [gta-recomp] Texture packs: each image's GPU texture by its pack handle, kept after the game's texture goes (LRU,
@@ -478,6 +479,43 @@ namespace
             at += size_t(lw) * lh;
         }
         return count;
+    }
+
+    // [gta-recomp] A pack's block-compressed image (GSHwReplacement::blocks) as the GPU texture it is stored as: every
+    // level from the file, no decode, no chain built. `bytes` what it holds.
+    rhi::Format blockFormatOf(uint32_t f)
+    {
+        switch (f)
+        {
+        case GSHwBlockBC1: return rhi::Format::BC1;
+        case GSHwBlockBC2: return rhi::Format::BC2;
+        case GSHwBlockBC3: return rhi::Format::BC3;
+        default: return rhi::Format::BC7;
+        }
+    }
+    std::unique_ptr<rhi::Texture> makeBlockTexture(rhi::Device &dev, const GSHwReplacement &image, size_t &bytes)
+    {
+        rhi::TextureDesc d;
+        d.width = image.width;
+        d.height = image.height;
+        d.usage = rhi::UsageSampled;
+        d.name = "gs texture (pack, block-compressed)";
+        d.format = blockFormatOf(image.blockFormat);
+        const void *levels[16];
+        uint32_t count = 0;
+        size_t at = 0;
+        for (uint32_t lw = image.width, lh = image.height; count < 16u; lw = std::max(1u, lw >> 1), lh = std::max(1u, lh >> 1))
+        {
+            const size_t size = size_t(rhi::rowBytes(d.format, lw)) * rhi::rowCount(d.format, lh);
+            if (at + size > image.blocks.size())
+                break; // (the loader keeps whole chains only)
+            levels[count++] = image.blocks.data() + at;
+            at += size;
+            if (lw == 1u && lh == 1u)
+                break;
+        }
+        bytes = at;
+        return count ? dev.createTextureLevels(d, levels, count) : nullptr;
     }
 
     // [gta-recomp] The mip chain of a w x h RGBA8 texture, levels 1.. down to 1x1 one after the other: each texel the
@@ -1246,6 +1284,11 @@ namespace
                         t.early->done.wait(false);
                         m_textures[t.key] = std::move(t.early->made);
                     }
+                    else if (t.image && t.image->blockFormat) // [gta-recomp] a pack's DDS as stored (makeBlockTexture)
+                    {
+                        size_t bytes = 0;
+                        m_textures[t.key] = makeBlockTexture(m_dev, *t.image, bytes);
+                    }
                     else if (!t.mips.empty()) // [gta-recomp] the chain built on the GS stage: one plain creation (buildMipChain)
                     {
                         const void *levels[16];
@@ -1262,14 +1305,17 @@ namespace
                     else
                         m_cutOutTextures.erase(t.key);
                     if (t.packHandle && t.early && !t.shared && m_textures[t.key]) // [gta-recomp] kept for the next time (m_packGpu)
-                        keepPackGpu(t.packHandle, m_textures[t.key], size_t(t.w) * t.h * 4u * 4u / 3u);
+                        keepPackGpu(t.packHandle, m_textures[t.key], t.early->bytes); // (what was uploaded: RGBA or blocks)
                     ps2perf::add(ps2perf::Counter::TexCreateUs, static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
                                                                     ps2x::hostNow() - createStart).count()));
                     ps2perf::add(ps2perf::Counter::TexKBytes,
-                                 t.shared ? 0u : ((t.early ? t.early->bytes : (t.pixels.size() + t.mips.size()) * 4u) + 1023u) / 1024u);
+                                 t.shared ? 0u : ((t.early ? t.early->bytes
+                                                           : t.image && t.image->blockFormat ? t.image->blocks.size()
+                                                                                             : (t.pixels.size() + t.mips.size()) * 4u) +
+                                                  1023u) / 1024u);
                     // [gta-recomp] PS2X_HW_DUMP_TEX=<key hex>: write that decoded texture, each creation (hw_tex_<key>_<n>.ppm, its alpha as grey in _alpha.ppm)
                     static const uint64_t dumpTex = std::getenv("PS2X_HW_DUMP_TEX") ? std::strtoull(std::getenv("PS2X_HW_DUMP_TEX"), nullptr, 16) : 0u;
-                    if (dumpTex && t.key == dumpTex)
+                    if (dumpTex && t.key == dumpTex && t.pixels.size() == size_t(t.w) * t.h) // (not a block-compressed image)
                     {
                         char name[96];
                         static int dumpCount = 0;
@@ -5504,6 +5550,7 @@ namespace
             }();
             const bool earlyOn = early == 1 || (early < 0 && (device.backend() == rhi::Backend::D3D11 ||
                                                               device.backend() == rhi::Backend::Metal));
+            g_blockCompression.store(device.blockCompression(), std::memory_order_relaxed); // [gta-recomp] gsHwBlockCompression
             if (earlyOn && !m_earlyDevice.load(std::memory_order_relaxed) && device.freeThreadedCreation())
                 m_earlyDevice.store(&device, std::memory_order_release);
             if (m_nativeFrame) // [gta-recomp] the picture's targets follow the window (gsHwSetFrameSize)
@@ -5990,7 +6037,7 @@ namespace
                     std::shared_ptr<const GSHwReplacement> image;
                     if (const uint64_t handle = pack->lookup(info, image))
                     {
-                        if (image && image->width && image->height && image->pixels.size() == size_t(image->width) * image->height)
+                        if (image && image->valid())
                         {
                             tc.w = image->width;
                             tc.h = image->height;
@@ -6036,7 +6083,9 @@ namespace
         void finishTexture(Frame &f, TexCreate &tc, decltype(ps2x::hostNow()) decodeStart)
         {
             // [gta-recomp] gsHwSetCutOutSplit's draws: told by their texture (before the pixels move to a helper thread)
-            tc.cutOut = hasHoles(tc.image ? tc.image->pixels : tc.pixels, tc.image ? tc.image->width : tc.w,
+            // (a block-compressed image has none: the loader keeps blocks only with no clear texel)
+            tc.cutOut = !(tc.image && tc.image->blockFormat) &&
+                        hasHoles(tc.image ? tc.image->pixels : tc.pixels, tc.image ? tc.image->width : tc.w,
                                  tc.image ? tc.image->height : tc.h);
             // [gta-recomp] litScissor (PR #178): the peak map of the game's own pixels. A texture pack's image is not the
             // texture the peaks would describe (its lit texels may lie elsewhere): none for it, the cull leaves its draws
@@ -6058,11 +6107,12 @@ namespace
                 const char *e = std::getenv("PS2X_HW_CPU_MIPS");
                 return !(e && *e == '0');
             }();
-            if (tc.image && tc.pixels.empty() && !m_earlyDevice.load(std::memory_order_acquire))
+            const bool blocks = tc.image && tc.image->blockFormat; // [gta-recomp] made from tc.image itself (makeBlockTexture)
+            if (tc.image && !blocks && tc.pixels.empty() && !m_earlyDevice.load(std::memory_order_acquire))
                 tc.pixels = tc.image->pixels; // [gta-recomp] no helper threads: the main thread makes it from a copy
             const bool mipChain = (m_anisotropy > 1u || tc.replaced) && cpuMips && tc.w <= 4096u && tc.h <= 4096u &&
                                   (tc.image || tc.pixels.size() == size_t(tc.w) * tc.h);
-            if (!makeTextureEarly(tc, mipChain))
+            if (!makeTextureEarly(tc, mipChain || blocks) && !blocks)
             {
                 if (tc.image && tc.pixels.empty())
                     tc.pixels = tc.image->pixels;
@@ -6100,8 +6150,7 @@ namespace
                 if (!pack || pack->poll(m_packPending[i].handle, image))
                 {
                     const uint64_t key = m_packPending[i].texKey;
-                    if (image && image->width && image->height && image->pixels.size() == size_t(image->width) * image->height &&
-                        m_texLru.count(key))
+                    if (image && image->valid() && m_texLru.count(key))
                     {
                         TexCreate tc;
                         tc.key = key;
@@ -6111,7 +6160,7 @@ namespace
                         tc.replaced = true;
                         tc.packHandle = m_packPending[i].handle;
                         tc.shared = m_earlyDevice.load(std::memory_order_acquire) ? packGpu(tc.packHandle) : nullptr;
-                        tc.cutOut = hasHoles(tc.image->pixels, tc.w, tc.h); // [gta-recomp] gsHwSetCutOutSplit (no finishTexture here)
+                        tc.cutOut = !tc.image->blockFormat && hasHoles(tc.image->pixels, tc.w, tc.h); // [gta-recomp] gsHwSetCutOutSplit (no finishTexture here)
                         m_texPeak.erase(key); // [gta-recomp] litScissor: no peak map for a pack's image (finishTexture)
                         g_packReplaced.fetch_add(1u, std::memory_order_relaxed);
                         // the game's own texture stays in use until the image's GPU texture is made on a helper thread:
@@ -6120,7 +6169,8 @@ namespace
                             const char *e = std::getenv("PS2X_HW_CPU_MIPS");
                             return !(e && *e == '0');
                         }();
-                        if (!tc.shared && cpuMips && tc.w <= 4096u && tc.h <= 4096u && makeTextureEarly(tc, true, true))
+                        if (!tc.shared && ((cpuMips && tc.w <= 4096u && tc.h <= 4096u) || tc.image->blockFormat) &&
+                            makeTextureEarly(tc, true, true))
                             m_packMaking.push_back(std::move(tc));
                         else
                             finishTexture(f, tc, ps2x::hostNow());
@@ -6209,7 +6259,9 @@ namespace
                 d.name = "gs texture";
                 // [gta-recomp] a pack's image: its pixels and the mips its loader made, in place (no copies)
                 const std::vector<uint32_t> &base = job->image ? job->image->pixels : job->pixels;
-                if (job->mipChain)
+                if (job->image && job->image->blockFormat) // [gta-recomp] a pack's DDS as stored, every level from the file
+                    job->made = makeBlockTexture(dev, *job->image, job->bytes);
+                else if (job->mipChain)
                 {
                     const bool ready = job->image && !job->image->mips.empty();
                     if (!ready)
@@ -6734,6 +6786,15 @@ void gsHwSetFogCurve(float exponent) // [gta-recomp]
 float gsFogCurve() // [gta-recomp]
 {
     return g_fogCurve.load(std::memory_order_relaxed);
+}
+
+bool gsHwBlockCompression()
+{
+    static const bool off = [] {
+        const char *e = std::getenv("PS2X_HW_BLOCK_TEXTURES");
+        return e && *e == '0';
+    }();
+    return !off && g_blockCompression.load(std::memory_order_relaxed);
 }
 
 // [gta-recomp] texture packs' loaders build the chain once, off the renderer (gs_hw.h)

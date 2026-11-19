@@ -1708,6 +1708,12 @@ code.
   - the exposure pictures (same bits on the sand).
   On this machine it gains little (game-internals.md 6j). The PR's own bound only covers screen-linear u, v.
   Extending it to perspective triangles would be work of our own, left for later and not done here.
+- **Texture packs' DDS: a hybrid, not all as stored** (after willzmkv's 37c9194, 2026-11-19): uploading every DDS as
+  stored would drop the alpha-coverage mips and the cut-out split for the palms and fences (measured on the palms,
+  2026-11-18), and decoding every one costs 3x the memory. Only images with no clear texel go up as stored, chosen from
+  the blocks' alpha bounds (no decode, checked against a full decode with VCS_TEXPACK_VERIFY). The RHI took the BC
+  formats in all three backends rather than D3D11 only; Vulkan asks for textureCompressionBC and falls back to RGBA
+  without it.
 - **Parked cars follow Car distance, the police not touched** (after willzmkv's 0c41004 / 57d661f, 2026-11-19): the
   generators' two ranges are patched immediates read from guest RAM (a recompile), not a hook re-implementing
   CCarGenerators::Process as their fork first did: the game's own loop and chances stay, only the distance moves. Their

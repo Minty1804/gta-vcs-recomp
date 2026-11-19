@@ -1968,6 +1968,20 @@ PaletteKeyHash, TextureName) and another VCS port that loads PCSX2 packs (its gs
   there first), not per draw; every textured draw - the native world, lit models, 2D - goes through that one place.
   The same texture hashes to the same name in every session (a test pack made from one run's dump: 825 of 825 made
   textures replaced in the next).
+- **DDS as stored** (2026-11-19, after willzmkv's (dejot) 37c9194 / 5f1b1c2): a block-compressed DDS goes to the GPU
+  as the file holds it - BC1 / BC2 / BC3 / BC7 with its own mip chain, a quarter (an eighth for BC1) of the RGBA bytes
+  and no decode - when it holds the whole chain down to 1x1, level 0's sides are multiples of 4 and level 0 has no clear
+  texel (none at a tenth of its top alpha or under). The last keeps the palms and every cut-out on the RGBA path: the
+  cut-out split (`hasHoles`) and the alpha-coverage mips (`isCutOut`) both need a share of clear texels, and the pack's
+  stored mips would lose the coverage (the palms above). "One alpha everywhere" was tried first: none of the real pack's
+  1,379 BC7 images loaded in a drive passed it. The test reads each block's alpha range from its endpoints without
+  decoding - BC1 (3-colour mode with index 3: 0), BC2 nibbles, BC3 by the indices used, BC7 modes 0-3 (no alpha, 255),
+  5 (rotation 0), 6, 7 - bounds never looser than the texels; BC7 mode 4 and rotated mode 5 blocks are decoded.
+  `VCS_TEXPACK_VERIFY=1` decodes every image too and logs whether the two agree: 384 of 384 agreed in the real pack's
+  city run, none accepted with a clear texel, none kept decoded that had none. In that run 337 of 384 images (88 %)
+  went up as stored. `PS2X_HW_BLOCK_TEXTURES=0` decodes all of them as before (the reference). Checked with
+  `tools/texpack_check.py [--real]` on D3D11 and on Vulkan (Windows, VCS_RHI=vulkan, with and without the helper
+  threads); Metal is written to the same contract and not built here.
 - **Palms see-through at a distance** (2026-11-18, the player's screenshot at the airport): the fronds are blended, not
   cut out, and their texture is mostly clear or solid - the game's 128x128 frond (`57b7e3bafb5f1991-...-00001dd4`,
   the far palm `288caf79954eee6b-...`) ~60 % clear, ~20 % at 0x70+, the pack's 512x512 BC7 53 % clear, 21 % solid. A

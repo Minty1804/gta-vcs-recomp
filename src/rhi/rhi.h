@@ -20,7 +20,22 @@ namespace rhi
         RGBA8,  // 8-bit unorm, R in the lowest byte
         R32F,
         D32F,   // depth
+        // [Minty1804 fork] block-compressed unorm, 4x4 texels a block (after willzmkv's (dejot) 37c9194): sampled only,
+        // through createTextureLevels (texture packs' DDS, uploaded as stored); Device::blockCompression() says whether
+        // they can be made. Level 0's width and height are multiples of 4 (D3D11's rule; the caller checks).
+        BC1,
+        BC2,
+        BC3,
+        BC7,
     };
+
+    constexpr bool blockCompressed(Format f) { return f == Format::BC1 || f == Format::BC2 || f == Format::BC3 || f == Format::BC7; }
+    // a level's rows as stored: rows of 4-byte texels, or of 4x4 blocks (BC1 8 bytes a block, the others 16)
+    constexpr uint32_t rowBytes(Format f, uint32_t width)
+    {
+        return blockCompressed(f) ? ((width + 3u) / 4u) * (f == Format::BC1 ? 8u : 16u) : width * 4u;
+    }
+    constexpr uint32_t rowCount(Format f, uint32_t height) { return blockCompressed(f) ? (height + 3u) / 4u : height; }
 
     enum TextureUsage : uint32_t
     {
@@ -294,10 +309,14 @@ namespace rhi
         virtual void resolveTexture(Texture &dst, Texture &src) = 0;
         // the mip chain of a texture made with mipLevels 0, from level 0
         virtual void generateMips(Texture &texture) = 0;
-        // A sampled RGBA8 texture with its mip chain given: `levels[i]` is level i (max(1, width >> i) x max(1, height >>
-        // i), tightly packed), `levelCount` of them. Not a render target and no generateMips: a burst of new textures
-        // costs one plain creation each (PERFORMANCE.md 21).
+        // A sampled texture of desc.format (RGBA8 or block-compressed) with its mip chain given: `levels[i]` is level i
+        // (max(1, width >> i) x max(1, height >> i), tightly packed rows of rowBytes / rowCount), `levelCount` of them.
+        // Not a render target and no generateMips: a burst of new textures costs one plain creation each
+        // (PERFORMANCE.md 21).
         virtual std::unique_ptr<Texture> createTextureLevels(const TextureDesc &desc, const void *const *levels, uint32_t levelCount) = 0;
+        // [Minty1804 fork] Whether block-compressed textures can be made (D3D11: always, feature level 11; Vulkan:
+        // textureCompressionBC; Metal: supportsBCTextureCompression).
+        virtual bool blockCompression() const { return false; }
         // True when createTexture (one level, with data, not a target) and createTextureLevels may be called from any
         // thread while the owner draws (D3D11: device creation calls are free-threaded; Vulkan: the image is made there
         // and its first contents staged, then recorded into the set-up commands at the owner's next submit).

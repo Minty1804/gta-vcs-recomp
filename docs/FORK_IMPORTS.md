@@ -22,7 +22,7 @@ The items are in the order we go through them, one at a time. Status: open / don
 
 | # | What | From | Size | How | Status |
 |---|---|---|---|---|---|
-| 10 | Pack DDS uploaded compressed (BC1-BC7, ~1/4 of the memory, no decode) - except textures that need our alpha-coverage mips (the palms: the pack's stored mips lose them, measured) | willzmkv 37c9194, 5f1b1c2 | M-L | re-do: RHI BC formats in D3D11 / Vulkan / Metal, a hybrid in vcs_texture_pack.cpp | open |
+| 10 | Pack DDS uploaded compressed (BC1-BC7, ~1/4 of the memory, no decode) - except textures that need our alpha-coverage mips (the palms: the pack's stored mips lose them, measured) | willzmkv 37c9194, 5f1b1c2 | M-L | re-do: RHI BC formats in D3D11 / Vulkan / Metal, a hybrid in vcs_texture_pack.cpp | done 2026-11-19: block-compressed images with no clear texel go up as stored (88 % of a real pack's images in a city run; cache 238 vs 713 KB an image), cut-outs decoded as before. texpack_check (fixtures + --real, every classification verified) passes on D3D11 and on Vulkan (Windows); Metal written to the same contract, not built or run here |
 | 14 | Streaming memory past the PS2's 32 MB (5.4 MB heap -> up to 30 MB) | willzmkv 58a854f | L | re-do; touches guest memory size | open |
 
 ## C. Controls

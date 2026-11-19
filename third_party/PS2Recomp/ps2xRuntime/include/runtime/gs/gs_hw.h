@@ -185,6 +185,15 @@ struct GSHwTextureInfo
     const uint32_t *pixels = nullptr;   // the texture as the renderer decoded it (RGBA8, alpha 0x80 = opaque): for dumps;
     uint32_t width = 0, height = 0;     // null when the texture was not decoded
 };
+// [gta-recomp] A pack image's block compression (GSHwReplacement::blockFormat)
+enum : uint32_t
+{
+    GSHwBlockNone = 0,
+    GSHwBlockBC1 = 1,
+    GSHwBlockBC2 = 2,
+    GSHwBlockBC3 = 3,
+    GSHwBlockBC7 = 7,
+};
 struct GSHwReplacement
 {
     uint32_t width = 0, height = 0;
@@ -192,7 +201,21 @@ struct GSHwReplacement
     // [gta-recomp] its mip chain (levels 1.. after each other, gsHwBuildMipChain), made by the pack's loader thread once:
     // the renderer only uploads it (empty: the renderer builds it)
     std::vector<uint32_t> mips;
+    // [gta-recomp] A DDS uploaded as stored (gsHwBlockCompression): blockFormat GSHwBlockBC*, `blocks` its whole mip
+    // chain down to 1x1, level 0 first, as the file holds it (width and height multiples of 4); pixels and mips empty.
+    // A quarter (BC7, BC2 / BC3) or an eighth (BC1) of the RGBA8 bytes, and no decode. Only for images without holes
+    // (no clear texel): cut-out textures keep the RGBA path (their alpha-coverage mips, the cut-out split).
+    uint32_t blockFormat = GSHwBlockNone;
+    std::vector<uint8_t> blocks;
+    bool valid() const
+    {
+        return width && height && (blockFormat ? !blocks.empty() : pixels.size() == size_t(width) * height);
+    }
+    size_t bytes() const { return (pixels.size() + mips.size()) * 4u + blocks.size(); }
 };
+// [gta-recomp] Whether the renderer's device takes block-compressed textures (rhi::Device::blockCompression; false until
+// the device is up). PS2X_HW_BLOCK_TEXTURES=0: never (a pack's DDS decoded to RGBA, as before). Any thread.
+bool gsHwBlockCompression();
 // [gta-recomp] Cut-out textures (fences, leaves) at a distance: an alpha-tested draw of one (GEQUAL, AFAIL KEEP, Z
 // written, blended) writes depth only where its alpha is at least half, and draws its fainter pixels blended without
 // depth - what lies behind it and is drawn later still shows through the gaps (docs/game-internals.md 6q). Off: the

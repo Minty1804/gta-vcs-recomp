@@ -19,7 +19,7 @@ option or can be switched off, and everything else is the same as upstream.
 
 | | Upstream | This fork |
 |---|---|---|
-| **Texture packs** | Not supported | HD texture packs made for PCSX2 work as they are: PNG or DDS (BC1 / BC3 / BC7) |
+| **Texture packs** | Not supported | HD texture packs made for PCSX2 work as they are: PNG or DDS (BC1 / BC3 / BC7); DDS images go to the graphics card compressed where nothing is lost (a third of the memory; after willzmkv's work) |
 | **Keyboard controls** | A key per PS2 button (Shift for Cross, Q for L1...) | The PC games' scheme by default: an action per key, by situation (W walks on foot and accelerates in a car, Shift sprints / honks), Vice City's default keys; Keyboard → **Control scheme** (PC / PS2 buttons) (SkipperSkipTR's work) |
 | **Shooting while driving** | The PS2's drive-by: SMGs only, fired to the side you look | With Free aim on, hold the right mouse button to aim a pistol or SMG from the driver's seat with the mouse; the wheel switches the guns (or the radio: Keyboard → **Mouse wheel in a vehicle**) (ChrisM-Pek's work) |
 | **Cutscenes in widescreen** | The extra width: people the scene keeps off screen stand waiting at the edges; the sky dark grey while a scene fades in | The PS2's framing by default (Display → **Cutscene framing**: PS2 / Wide); the sky fades in with the scene (willzmkv's work) |
@@ -405,7 +405,8 @@ is listed here (the full list of candidates, done or not: [docs/FORK_IMPORTS.md]
 - **Native draws joined** (half the draw calls, fewer hitches): after [willzmkv](https://github.com/willzmkv)'s (dejot)
   commit 0bc5067, re-done so that fences' two-pass draws and render-target reads draw exactly as before.
 - **Texture packs**: PCSX2's texture names, reproduced from [PCSX2](https://github.com/PCSX2/pcsx2)'s texture
-  replacement code; BC1-BC7 decoding by [bcdec](https://github.com/iOrange/bcdec) (Sergii Kudlai, MIT).
+  replacement code; BC1-BC7 decoding by [bcdec](https://github.com/iOrange/bcdec) (Sergii Kudlai, MIT); DDS uploaded
+  compressed after [willzmkv](https://github.com/willzmkv)'s (dejot) commits 37c9194 and 5f1b1c2.
 - **Distant lights**: the light table of Project2DFX's VCS version for PCSX2, from ThirteenAG's
   [WidescreenFixesPack](https://github.com/ThirteenAG/WidescreenFixesPack) (MIT).
 

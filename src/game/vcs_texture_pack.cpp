@@ -11,8 +11,12 @@
 // on two worker threads; the renderer draws the original until its image is ready, then swaps it in. Decoded images are
 // kept up to VCS_TEXPACK_CACHE_MB (1024) for a texture that is made again; the GPU keeps its own copy while in use.
 //
-// Images are PNG or DDS (BC1 / BC2 / BC3 / BC7, or uncompressed RGBA8): a DDS's top level is decoded to RGBA on the
-// loader thread and the renderer makes the mip chain from it, as for a PNG.
+// Images are PNG or DDS (BC1 / BC2 / BC3 / BC7, or uncompressed RGBA8). [Minty1804 fork] A block-compressed DDS with
+// its whole mip chain, width and height multiples of 4 and no clear texel goes to the GPU as stored (after
+// willzmkv's (dejot) 37c9194; gs_hw.h GSHwReplacement::blocks): its own mips, a quarter or an eighth of the memory, no
+// decode. Any other DDS has its top level decoded to RGBA on the loader thread and the mip chain made from it, as for a
+// PNG - cut-out textures that way keep the renderer's alpha-coverage mips and the cut-out split. PS2X_HW_BLOCK_TEXTURES=0
+// decodes them all (the reference).
 // Not supported (yet): region-clamped textures' "-r<w>x<h>-" names and "-mip<n>" levels (counted at start).
 // VCS_TEXPACK=0: nothing hashed or replaced (the original).
 #include "game/vcs_texture_pack.h"
@@ -129,9 +133,12 @@ namespace vcs::texpack
 
         // A DDS file's top mip level as RGBA8 (bytes R, G, B, A in memory, as readPng gives). BC1 / BC2 / BC3 / BC7 by
         // their DX10 DXGI format or legacy FourCC, and 32-bit uncompressed RGBA / BGRA; anything else fails (logged).
-        bool readDds(const std::string &path, uint32_t &width, uint32_t &height, std::vector<uint32_t> &pixels,
-                     std::string &why)
+        // [Minty1804 fork] With `keepBlocks` (the device takes them) a block-compressed file that can go up as stored
+        // fills image.blocks instead (the file's bytes, moved: no copy, no decode).
+        bool readDds(const std::string &path, GSHwReplacement &image, bool keepBlocks, std::string &why)
         {
+            uint32_t &width = image.width, &height = image.height;
+            std::vector<uint32_t> &pixels = image.pixels;
             FILE *f = nullptr;
 #ifdef _WIN32
             const std::u8string u(path.begin(), path.end());
@@ -214,6 +221,154 @@ namespace vcs::texpack
                 why = "bad size";
                 return false;
             }
+            const size_t blockBytes = (kind == Kind::BC1) ? 8u : 16u;
+            // [Minty1804 fork] as stored: the whole chain in the file (mip count in the header, the bytes there),
+            // level 0's sides multiples of 4 (D3D11's rule), no clear texel in level 0 (below)
+            if (keepBlocks && kind != Kind::RGBA && kind != Kind::BGRA && width % 4u == 0u && height % 4u == 0u)
+            {
+                uint32_t full = 1u;
+                for (uint32_t s = std::max(width, height); s > 1u; s >>= 1)
+                    ++full;
+                size_t chain = 0;
+                for (uint32_t i = 0, lw = width, lh = height; i < full; ++i, lw = std::max(1u, lw >> 1), lh = std::max(1u, lh >> 1))
+                    chain += size_t((lw + 3u) / 4u) * ((lh + 3u) / 4u) * blockBytes;
+                // No clear texel in level 0 (none at a tenth of its top alpha or under): gs_hw's hasHoles / isCutOut,
+                // and with them the cut-out split and the alpha-coverage mips, all need a share of clear texels, so such
+                // an image loses nothing as stored. (Not "one alpha everywhere": none of the 1379 BC7 images a real pack
+                // loaded in a drive had that.) Each block's alpha range is read from its endpoints where the format allows -
+                // BC1 / BC2 / BC3, BC7 modes 0-3 (no alpha: 255), 5 (rotation 0), 6, 7 - an upper bound for the top and a
+                // lower bound for the least, so the test is never looser than the texels'; BC7 modes 4 and 5 rotated are
+                // decoded (bcdec).
+                auto noClearTexels = [&] {
+                    const uint8_t *src = file.data() + offset;
+                    const size_t blocks = size_t(width / 4u) * (height / 4u);
+                    unsigned least = 255u, top = 0u;
+                    auto range = [&](unsigned lo, unsigned hi) {
+                        least = std::min(least, lo);
+                        top = std::max(top, hi);
+                    };
+                    // bit `pos` (n bits, n <= 8) of a 128-bit BC7 block
+                    auto bits = [](const uint8_t *b, unsigned pos, unsigned n) {
+                        unsigned v = 0;
+                        for (unsigned i = 0; i < n; ++i, ++pos)
+                            v |= unsigned((b[pos >> 3] >> (pos & 7u)) & 1u) << i;
+                        return v;
+                    };
+                    uint32_t block[16];
+                    for (size_t i = 0; i < blocks; ++i, src += blockBytes)
+                    {
+                        if (kind == Kind::BC1) // 255, or 0 for index 3 of a block in 3-colour mode (colour0 <= colour1)
+                        {
+                            uint16_t c0, c1;
+                            uint32_t idx;
+                            std::memcpy(&c0, src, 2);
+                            std::memcpy(&c1, src + 2, 2);
+                            std::memcpy(&idx, src + 4, 4);
+                            range(c0 <= c1 && ((idx & (idx >> 1)) & 0x55555555u) ? 0u : 255u, 255u);
+                            continue;
+                        }
+                        if (kind == Kind::BC2) // 16 explicit 4-bit alphas (x 17)
+                        {
+                            for (int k = 0; k < 8; ++k)
+                                range(std::min(src[k] & 15u, unsigned(src[k] >> 4)) * 17u,
+                                      std::max(src[k] & 15u, unsigned(src[k] >> 4)) * 17u);
+                            continue;
+                        }
+                        if (kind == Kind::BC3) // by the indices used: 0 / 1 the endpoints, 2-7 between them - except
+                        {                      // 6 / 7 with alpha0 <= alpha1: 0 / 255
+                            const unsigned a0 = src[0], a1 = src[1];
+                            uint64_t idx = 0;
+                            std::memcpy(&idx, src + 2, 6);
+                            for (int k = 0; k < 16; ++k)
+                            {
+                                const unsigned v = unsigned(idx >> (3 * k)) & 7u;
+                                if (v == 0u)
+                                    range(a0, a0);
+                                else if (v == 1u)
+                                    range(a1, a1);
+                                else if (a0 <= a1 && v >= 6u)
+                                    range(v == 6u ? 0u : 255u, v == 6u ? 0u : 255u);
+                                else
+                                    range(std::min(a0, a1), std::max(a0, a1));
+                            }
+                            continue;
+                        }
+                        const unsigned mode = src[0] ? static_cast<unsigned>(__builtin_ctz(src[0])) : 8u;
+                        if (mode < 4u)
+                        {
+                            range(255u, 255u);
+                            continue;
+                        }
+                        if (mode == 5u && bits(src, 6, 2) == 0u) // alpha endpoints: 8 bits at 50 and 58
+                        {
+                            const unsigned a0 = bits(src, 50, 8), a1 = bits(src, 58, 8);
+                            range(std::min(a0, a1), std::max(a0, a1));
+                            continue;
+                        }
+                        if (mode == 6u) // 7 bits at 49 / 56, p-bits at 63 / 64
+                        {
+                            const unsigned a0 = (bits(src, 49, 7) << 1) | bits(src, 63, 1);
+                            const unsigned a1 = (bits(src, 56, 7) << 1) | bits(src, 64, 1);
+                            range(std::min(a0, a1), std::max(a0, a1));
+                            continue;
+                        }
+                        if (mode == 7u) // 4 endpoints: 5 bits at 74 + 5k, p-bits at 94 + k, 6 bits expanded to 8
+                        {
+                            for (unsigned k = 0; k < 4; ++k)
+                            {
+                                const unsigned v = (bits(src, 74 + 5 * k, 5) << 1) | bits(src, 94 + k, 1);
+                                const unsigned a = (v << 2) | (v >> 4);
+                                range(a, a);
+                            }
+                            continue;
+                        }
+                        bcdec_bc7(src, block, 16); // modes 4, 5 rotated (an invalid block decodes to 0: clear)
+                        for (uint32_t texel : block)
+                            range(texel >> 24, texel >> 24);
+                    }
+                    const bool ok = top > 0u && least > top / 10u;
+                    // VCS_TEXPACK_VERIFY=1: every image the bounds accept is decoded and its texels checked (the
+                    // reference; texpack_check's real-pack run)
+                    static const bool verify = [] {
+                        const char *e = std::getenv("VCS_TEXPACK_VERIFY");
+                        return e && *e == '1';
+                    }();
+                    if (verify)
+                    {
+                        unsigned realLeast = 255u, realTop = 0u;
+                        const uint8_t *b = file.data() + offset;
+                        for (size_t i = 0; i < blocks; ++i, b += blockBytes)
+                        {
+                            switch (kind)
+                            {
+                            case Kind::BC1: bcdec_bc1(b, block, 16); break;
+                            case Kind::BC2: bcdec_bc2(b, block, 16); break;
+                            case Kind::BC3: bcdec_bc3(b, block, 16); break;
+                            default: bcdec_bc7(b, block, 16); break;
+                            }
+                            for (uint32_t texel : block)
+                                realLeast = std::min(realLeast, unsigned(texel >> 24)), realTop = std::max(realTop, unsigned(texel >> 24));
+                        }
+                        const bool real = realTop > 0u && realLeast > realTop / 10u;
+                        std::fprintf(stderr, "[texpack] verify %s: bounds %u..%u, texels %u..%u: %s\n", path.c_str(), least,
+                                     top, realLeast, realTop,
+                                     ok == real ? "agree" : ok ? "MISMATCH (accepted with clear texels)" : "stricter (kept decoded)");
+                    }
+                    return ok;
+                };
+                if (u32(28) >= full && file.size() - offset >= chain && noClearTexels())
+                {
+                    image.blockFormat = kind == Kind::BC1   ? GSHwBlockBC1
+                                        : kind == Kind::BC2 ? GSHwBlockBC2
+                                        : kind == Kind::BC3 ? GSHwBlockBC3
+                                                            : GSHwBlockBC7;
+                    file.erase(file.begin(), file.begin() + static_cast<std::ptrdiff_t>(offset));
+                    file.resize(chain);
+                    file.shrink_to_fit();
+                    image.blocks = std::move(file);
+                    return true;
+                }
+            }
             pixels.assign(size_t(width) * height, 0u);
             if (kind == Kind::RGBA || kind == Kind::BGRA)
             {
@@ -234,7 +389,6 @@ namespace vcs::texpack
                 }
                 return true;
             }
-            const size_t blockBytes = (kind == Kind::BC1) ? 8u : 16u;
             const uint32_t bw = (width + 3u) / 4u, bh = (height + 3u) / 4u;
             if (file.size() - offset < size_t(bw) * bh * blockBytes)
             {
@@ -387,11 +541,12 @@ namespace vcs::texpack
                 char text[256];
                 std::snprintf(text, sizeof(text),
                               "ok indexed=%zu hashed=%llu/%llu replaced=%llu loaded=%llu failed=%llu dumped=%llu cache_mb=%zu "
-                              "load_ms_avg=%.1f",
+                              "load_ms_avg=%.1f blocks=%llu cache_kb=%zu",
                               m_entries.size(), (unsigned long long)m_hashed.load(), (unsigned long long)hashed,
                               (unsigned long long)replaced,
                               (unsigned long long)m_loaded, (unsigned long long)m_failed, (unsigned long long)m_written.load(),
-                              m_cacheBytes >> 20, m_loaded ? m_loadUs / 1000.0 / double(m_loaded) : 0.0);
+                              m_cacheBytes >> 20, m_loaded ? m_loadUs / 1000.0 / double(m_loaded) : 0.0,
+                              (unsigned long long)m_blockLoaded, m_cacheBytes >> 10);
                 return text;
             }
 
@@ -474,17 +629,41 @@ namespace vcs::texpack
                     auto image = std::make_shared<GSHwReplacement>();
                     const auto start = std::chrono::steady_clock::now();
                     std::string why;
-                    const bool ok = (dds ? readDds(path, image->width, image->height, image->pixels, why)
-                                         : platform::readPng(path.c_str(), image->width, image->height, image->pixels)) &&
-                                    image->width <= 8192u && image->height <= 8192u;
-                    if (ok) // the mip chain here, once per image: the renderer only uploads it (PERFORMANCE.md 33)
+                    static const uint32_t maxSize = [] {
+                        const char *e = std::getenv("VCS_TEXPACK_MAX");
+                        return e && *e ? static_cast<uint32_t>(std::strtoul(e, nullptr, 10)) : 0u;
+                    }();
+                    bool ok = (dds ? readDds(path, *image, gsHwBlockCompression(), why)
+                                   : platform::readPng(path.c_str(), image->width, image->height, image->pixels)) &&
+                              image->width <= 8192u && image->height <= 8192u;
+                    // [Minty1804 fork] block-compressed, larger than the limit: the file's first level that fits becomes
+                    // the image (its sides multiples of 4 still; otherwise decoded as any other DDS)
+                    if (ok && image->blockFormat && maxSize >= 16u && (image->width > maxSize || image->height > maxSize))
+                    {
+                        const bool bc1 = image->blockFormat == GSHwBlockBC1;
+                        uint32_t w = image->width, h = image->height;
+                        size_t at = 0;
+                        while (w > maxSize || h > maxSize)
+                        {
+                            at += size_t((w + 3u) / 4u) * ((h + 3u) / 4u) * (bc1 ? 8u : 16u);
+                            w = std::max(1u, w >> 1), h = std::max(1u, h >> 1);
+                        }
+                        if (w % 4u == 0u && h % 4u == 0u && at < image->blocks.size())
+                        {
+                            image->blocks.erase(image->blocks.begin(), image->blocks.begin() + static_cast<std::ptrdiff_t>(at));
+                            image->blocks.shrink_to_fit();
+                            image->width = w, image->height = h;
+                        }
+                        else
+                        {
+                            image = std::make_shared<GSHwReplacement>();
+                            ok = readDds(path, *image, false, why);
+                        }
+                    }
+                    if (ok && !image->blockFormat) // the mip chain here, once per image: the renderer only uploads it (PERFORMANCE.md 33)
                     {
                         gsHwBuildMipChain(image->pixels, image->width, image->height, image->mips);
                         // larger than the limit: the chain's first level that fits becomes the image
-                        static const uint32_t maxSize = [] {
-                            const char *e = std::getenv("VCS_TEXPACK_MAX");
-                            return e && *e ? static_cast<uint32_t>(std::strtoul(e, nullptr, 10)) : 0u;
-                        }();
                         if (maxSize >= 16u && (image->width > maxSize || image->height > maxSize))
                         {
                             uint32_t w = image->width, h = image->height;
@@ -515,11 +694,13 @@ namespace vcs::texpack
                         continue;
                     }
                     ++m_loaded;
+                    m_blockLoaded += image->blockFormat ? 1u : 0u;
                     m_loadUs += static_cast<uint64_t>(us);
                     if (m_loaded <= 5u)
-                        std::fprintf(stderr, "[texpack] loaded %s (%ux%u, %.1f ms)\n",
-                                     utf8(fs::u8path(path).filename()).c_str(), image->width, image->height, us / 1000.0);
-                    m_cacheBytes += (image->pixels.size() + image->mips.size()) * 4u;
+                        std::fprintf(stderr, "[texpack] loaded %s (%ux%u%s, %.1f ms)\n",
+                                     utf8(fs::u8path(path).filename()).c_str(), image->width, image->height,
+                                     image->blockFormat ? ", block-compressed as stored" : "", us / 1000.0);
+                    m_cacheBytes += image->bytes();
                     e.image = std::move(image);
                     trimCache();
                 }
@@ -536,7 +717,7 @@ namespace vcs::texpack
                             oldest = &e;
                     if (!oldest)
                         return;
-                    m_cacheBytes -= (oldest->image->pixels.size() + oldest->image->mips.size()) * 4u;
+                    m_cacheBytes -= oldest->image->bytes();
                     oldest->image.reset();
                 }
             }
@@ -573,7 +754,7 @@ namespace vcs::texpack
             std::deque<WriteJob> m_writes;
             std::vector<std::thread> m_loaders;
             std::thread m_writer;
-            uint64_t m_useClock = 0, m_loaded = 0, m_failed = 0, m_loadUs = 0;
+            uint64_t m_useClock = 0, m_loaded = 0, m_failed = 0, m_loadUs = 0, m_blockLoaded = 0;
             size_t m_cacheBytes = 0, m_cacheLimit = size_t(1024) << 20;
             std::atomic<uint64_t> m_hashed{0}, m_written{0};
         };
