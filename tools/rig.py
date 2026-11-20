@@ -13,6 +13,7 @@ gameplay. The user's own card is never used directly.
 
 As a library: `import rig; g = rig.Game.start(save=...); g.cmd('peekf 0x6f4500 3'); g.quit()`.
 """
+import math
 import os
 import shutil
 import subprocess
@@ -270,6 +271,15 @@ class Game:
 
     def set_time(self, hours, minutes=0):
         return self.scm(Scm.op(Scm.SET_TIME_OF_DAY, Scm.i(hours), Scm.i(minutes)))
+
+    def campose(self, x, y, z, yaw, pitch):
+        """The free camera at (x, y, z) looking along yaw / pitch (degrees; yaw from +x toward +y); None: back behind the
+        player. (willzmkv's `campose` command, here through the trainer's free camera.)"""
+        if x is None:
+            return self.cmd("trainer toggle freecam 0")
+        r = math.pi / 180.0
+        self.cmd("trainer freecam %.2f %.2f %.2f %.5f %.5f" % (x, y, z, yaw * r, pitch * r))
+        return self.cmd("trainer toggle freecam 1")
 
     def weather(self, kind=None):
         """Force a weather type (0 sunny ...), or None to release it."""

@@ -90,8 +90,8 @@ def main():
     try:
         g.wait_ingame(timeout=240)
         g.invincible(True)
-        g.cmd("setting world.vehicle_density 0") # (the game's own numbers: the sliders' 0)
-        g.cmd("setting world.pedestrian_density 0")
+        g.cmd("setting enhance.traffic 100")  # (the game's own numbers)
+        g.cmd("setting enhance.peds 100")
         done = 0
         for x, y in points:
             if a.limit and done >= a.limit:
@@ -106,14 +106,14 @@ def main():
             done += 1
             views = []
             for yaw in (0, 90, 180, 270):
-                g.cmd("campose %.2f %.2f %.2f %d -15" % (px, py, pz + 3.0, yaw))
+                g.campose(px, py, pz + 3.0, yaw, -15)
                 time.sleep(5.0 if yaw == 0 else 2.5) # (the first: "Free camera on" gone from the screen)
                 views.append((yaw, os.path.join(shots, "%d_%d_%d_hd3.png" % (x, y, yaw)).replace("\\", "/")))
                 g.cmd("screenshot " + views[-1][1])
             g.cmd("setting world.hd_radius 0")
             time.sleep(5)
             for yaw, hd3 in views:
-                g.cmd("campose %.2f %.2f %.2f %d -15" % (px, py, pz + 3.0, yaw))
+                g.campose(px, py, pz + 3.0, yaw, -15)
                 time.sleep(2.0)
                 hd0 = hd3.replace("_hd3.png", "_hd0.png")
                 g.cmd("screenshot " + hd0)
@@ -123,7 +123,7 @@ def main():
                 results.append(rec)
                 with open(os.path.join(a.out, "results.jsonl"), "a") as f:
                     f.write(json.dumps(rec) + "\n")
-            g.cmd("campose off")
+            g.campose(None, 0, 0, 0, 0)
             print("[hd_overlap] %d,%d: %s" % (x, y, [r["differ"] for r in results[-4:]]), flush=True)
     finally:
         g.quit()

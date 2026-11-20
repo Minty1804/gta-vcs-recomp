@@ -75,6 +75,8 @@ Taken out of the working order; each keeps its number and can come back to it.
 | 35 | Launcher: graphics presets from the PC's hardware, shader warm-up, controls on a picture of the pad | willzmkv 283bb56, 9c01e8f | L |
 | 36 | Direct3D 12 backend | willzmkv ae6c99e, 28ef950, d9f73ed | XL |
 
+Rows 11 and 13 looked at again on 2026-11-20 (the user: mods "if needed" after the detailed city): their first commit (cc86fcc) replaces our Graphics > Texture packs page with a Mods page over their `texture_replacements.cpp`, which we do not use (ours: `vcs_texture_pack.cpp`, DDS as stored). A cherry-pick conflicts in main.cpp and every doc. The way to do it: a mod loader of our own that scans `modloader/` folders and hands each mod's textures to `vcs_texture_pack.cpp` as one more source with a priority, then row 13's `vcs_stream.cpp` part, which applies almost as it is (our stream code is theirs before 96edbbe, plus `PS2_RAM_MASK` / `hostNow`), with their `mods_check.py` and `gamefiles_check.py` as the bar. Not started, to keep the detailed city's merge apart.
+
 ## Not for us
 
 PAL disc (ChrisM-Pek), browser port (floriandotorg), Android (batinium, KenRylo-One), Intel Macs (knox29 PR #190),

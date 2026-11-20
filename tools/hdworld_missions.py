@@ -248,7 +248,7 @@ def main():
                 g0.teleport(px, py, pz)
                 time.sleep(0.5)
                 cx, cy, cz, yaw = cam_pos_toward(look, px, py)
-                g0.cmd("campose %.1f %.1f %.1f %.1f -10" % (cx, cy, cz, yaw))
+                g0.campose(cx, cy, cz, yaw, -10)
                 time.sleep(2.0)
                 for val in (0, 1):
                     set_switch(g0, kind, val)
@@ -256,7 +256,7 @@ def main():
                     shot = os.path.join(shots_dir, "%s_v%d_%s_r0.png" % (name, val, side)).replace("\\", "/")
                     g0.cmd("screenshot " + shot)
                 set_switch(g0, kind, 0)
-            g0.cmd("campose off")
+            g0.campose(None, 0, 0, 0, 0)
     finally:
         g0.quit()
 
@@ -283,12 +283,12 @@ def main():
                     for idx, (px, py, pz) in enumerate(steps):
                         g.teleport(px, py, pz)
                         cx, cy, cz, yaw = cam_pos_toward(look, px, py)
-                        g.cmd("campose %.1f %.1f %.1f %.1f -10" % (cx, cy, cz, yaw))
+                        g.campose(cx, cy, cz, yaw, -10)
                         time.sleep(3.5)
                         if idx == len(steps) - 1:
                             shot = os.path.join(shots_dir, "%s_v%d_%s_r3.png" % (name, val, side)).replace("\\", "/")
                             g.cmd("screenshot " + shot)
-                g.cmd("campose off")
+                g.campose(None, 0, 0, 0, 0)
             set_switch(g, kind, 0)
         finally:
             g.quit()

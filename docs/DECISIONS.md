@@ -1918,6 +1918,11 @@ current list's low-detail sectors they lie inside are hidden, as the game hides 
   hd_overlap_scan, hdworld_missions).
 - **The bar** (FORK_IMPORTS row 21, theirs crashed before a 3 h soak passed): `soak.py --hours 3`, `memcheck.py`,
   `cruise.py` hitches measured with it on, the regression rig green with it off.
+- **The radius-0 check, corrected (2026-11-20).** Commit 2eb2cdf said shots at radius 0 matched an item20 build within
+  noise; the sea shots it leaned on differ from run to run whatever the build. The deterministic check: `scenes.py
+  capture` from an empty card with this build and with the item20 reference build (same texture pack), then `scenes.py
+  compare`: every scene the same (pause map 0.00, the static flyover road 0.02; the moving scenes within their usual
+  spread, the same draws and frame times) except `loading`, whose illustration the game picks at random each boot.
 
 ## 2026-11-20 - Sharp trails: an option, off by default (the user's request)
 

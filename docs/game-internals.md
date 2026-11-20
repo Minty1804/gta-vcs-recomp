@@ -2046,7 +2046,13 @@ measurement and the tools behind it.
     (`vcs::memory::packetHeapRange`) - and not on the ring already (pushes and `FUN_002BC9F8` frees tracked) is ever
     pushed, ours or the game's; a packet put on the ring leaves every entry that holds it. The `[hdworld]` line counts
     them: `kept` (let go of without a push), `shared` (entries emptied that way - each of the game's pushes counts its own entry, which the game empties right
-    after), `walks`. Heap block header: `-8` size,
+    after), `walks`. Checked 2026-11-20: 15-minute runs with 10 s legs at radius 3 (with and without the texture
+    pack, `VCS_HD_PKTDEBUG=1`) and 27-minute memchecks at radius 0 and 3 all ran to the end; at radius 0 with
+    `VCS_HD_PKTDEBUG=1` not one push or free was refused (the guard changes nothing there). **Open:** at radius 3 an
+    entry of ours still now and then holds a pointer to no block in use (~70 in 15 minutes of 10 s legs, 4 KB-aligned
+    addresses, all found by the sweep of released pieces); the allocator (`FUN_002BC730`: pools for <= 0x100 bytes,
+    else `FUN_002BC7E8` splitting a free block) only ever hands out block starts, so these are left over from a free
+    that did not empty the entry - where is not found yet. They are refused and emptied now. Heap block header: `-8` size,
     `-4` flags (bit 31 free; bits 30 and 29 a neighbour free - the free merges with it -; the low 28 bits the offset back
     to the previous block); blocks
     at or above `heap + 0x10` come from small-block pools (no header; `heap + 0x128` the pool table).
@@ -2420,6 +2426,11 @@ cars made `LOAD_ALL_MODELS_NOW` spin), read with headless Ghidra and a RAM dump 
 - willzmkv measured (Vice Point, 30 MB): the main heap's use drops from 24.2 to 18.6 MB (the 5.4 MB it no longer gives);
   the streaming heap holds ~6 MB. The game keeps only what it asks for: more room shows as more car models in traffic
   (fewer repeats) and fewer models read again, not as more world detail (that is the cells, 6t).
+- Checked here (2026-11-20, `memcheck.py` 15 minutes over its 16 spots, `VCS_STREAMING_MB=30`, radius 0 and 3): the
+  `[memory] streaming heap: 30720 KB at 0x02000000` line, the main heap 18.8 MB used instead of 24.5, the streaming
+  heap 10 MB used after 2 minutes and 13 MB after 12 (more than the PS2's whole 5.4); both runs to the end, memory
+  +2.1 / +5.5 MB a minute (limit 8). The cap's call never came (`cap_skips` 0): on that route CStreaming's list at
+  `+0xD8` stayed under 51.
 
 ## 10. Memory card and saves
 
