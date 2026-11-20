@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """Soak run (milestone 2 "done when": several hours without crash, hang, leak or falling through the world).
 
-    python tools/soak.py [OUT] [--hours 3] [--leg 240] [--port N]
+    python tools/soak.py [OUT] [--hours 3] [--leg 240] [--port N] [ENV=VAL ...]
 
 From a copy of the Fort Baxter card: invincible player, an AI-driven car (rig autodrive) with the player riding
 along, moved to the next road spot every --leg seconds; game time runs (a game day is ~24 minutes). Every 30 s a row
 in OUT/soak.csv: game frames, frame time, the process's private / working-set memory, the player's position and
 classes - "hang" (no game frames for 30 s), "falling" (z below -40 away from the sea: tools/tour.py's rule),
 "crash" (the process is gone). OUT/summary.txt has the memory trend (MB per hour after the first 20 minutes) and the
-counts. A screenshot per leg. OUT defaults to build/soak/<date-time>.
+counts. A screenshot per leg. OUT defaults to build/soak/<date-time>. ENV=VAL arguments go to the game (VCS_HD_RADIUS=3:
+the detailed city further, game-internals.md 6t).
 """
 import argparse
 import csv
@@ -48,11 +49,13 @@ def main():
     ap.add_argument("--hours", type=float, default=3.0)
     ap.add_argument("--leg", type=float, default=240.0, help="seconds per spot")
     ap.add_argument("--port", type=int, default=47650)
+    ap.add_argument("env", nargs="*", help="ENV=VAL for the game")
     a = ap.parse_args()
+    env = dict(kv.split("=", 1) for kv in a.env)
     out = os.path.abspath(a.out or os.path.join(ROOT, "build", "soak", time.strftime("%Y%m%d-%H%M%S")))
     os.makedirs(out, exist_ok=True)
     g = rig.Game.start(save=rig.default_save(), name="soak",
-                       seconds=a.hours * 3600 + 600, data_dir=os.path.join(out, "data"), port=a.port)
+                       seconds=a.hours * 3600 + 600, data_dir=os.path.join(out, "data"), port=a.port, env=env)
     pid = game_pid(g.proc.pid)
     rows, events = [], []
     t0 = time.time()

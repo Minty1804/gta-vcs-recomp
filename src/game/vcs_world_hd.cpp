@@ -474,10 +474,99 @@ namespace vcs::world_hd
         std::mutex g_pendingMutex;
         int g_pktLogged = 0;
 
+        // Cached packets on the free ring, not freed yet (the ring frees two frames after the push): the game's pushes
+        // (ringPushHook) and ours, out again when FUN_002BC9F8 frees them (heapFreeHook)
+        std::unordered_set<uint32_t> g_onRing;
+
+        // A table entry's packet that is the game's to free: a block of the packet heap (FUN_002BB768's memory, here or
+        // in the main heap). An entry can also hold a packet of the level's own data (resident gids, built with the
+        // level: 0x608000, 0x54A800 in a radius-3 run) - the game never frees those, and FUN_002BC9F8 given one
+        // corrupts the heap: its size taken from the word before, its free list linked into the level's data, the heap's
+        // use (+0x14) wrapping round, until its free-list walk (FUN_002BBAD0) loops for ever (the radius-3 hang,
+        // 2026-11-20).
+        bool inPacketHeap(uint32_t packet)
+        {
+            uint32_t from, to;
+            return vcs::memory::packetHeapRange(from, to) && packet >= from + 8u && packet < to && !(packet & 3u);
+        }
+
+        // The packet heap's blocks in use (their data addresses), from a walk of its chain: headers {size with the
+        // header, flags: bit 31 free, low 28 bits the previous block's size} from heap + 0xC up to heap + 0x10 (the
+        // small-block pools above). Walked again after any free (heapFreeHook) and every frame: a block allocated since
+        // the last walk is not in it, and is kept rather than freed until the next walk.
+        std::unordered_set<uint32_t> g_blocks;
+        bool g_blocksDirty = true, g_blocksOk = false;
+        uint64_t g_blockWalks = 0;
+
+        void walkBlocks()
+        {
+            g_blocksDirty = false;
+            g_blocksOk = false;
+            g_blocks.clear();
+            ++g_blockWalks;
+            uint32_t from, to;
+            if (!vcs::memory::packetHeapRange(from, to))
+                return;
+            const uint32_t pools = rd32(kPacketHeapObject + 0x10u);
+            uint32_t hdr = rd32(kPacketHeapObject + 0xCu);
+            if (hdr < from || pools > to || hdr >= pools)
+                return;
+            for (uint32_t n = 0; hdr < pools; ++n)
+            {
+                const uint32_t size = rd32(hdr), flags = rd32(hdr + 4u);
+                if (size < 8u || (size & 7u) || hdr + size > pools || n > 0x40000u)
+                {
+                    g_blocks.clear(); // a chain that does not add up: nothing is the heap's to free
+                    return;
+                }
+                if (!(flags & 0x80000000u))
+                    g_blocks.insert(hdr + 8u);
+                hdr += size;
+            }
+            g_blocksOk = true;
+        }
+
+        // a block FUN_002BC9F8 may free from the packet heap: inside it, the start of a block in use (or one of the
+        // small-block pools', which have no header), and not on the ring already
+        bool packetBlockGood(uint32_t packet, const char *&why)
+        {
+            why = "";
+            if (!inPacketHeap(packet))
+                return why = "outside the packet heap", false;
+            if (packet < rd32(kPacketHeapObject + 0x10u))
+            {
+                if (g_blocksDirty)
+                    walkBlocks();
+                if (g_blocksOk && !g_blocks.count(packet))
+                    walkBlocks(); // (allocated since the walk?)
+                if (!g_blocksOk)
+                    return why = "the heap's chain unreadable", false;
+                if (!g_blocks.count(packet))
+                    return why = (rd32(packet - 4u) & 0x80000000u) ? "already free" : "not a block in use", false;
+            }
+            std::lock_guard<std::mutex> lock(g_pendingMutex);
+            if (g_onRing.count(packet))
+                return why = "on the ring already", false;
+            return true;
+        }
+
+        void noteOnRing(uint32_t packet)
+        {
+            std::lock_guard<std::mutex> lock(g_pendingMutex);
+            g_onRing.insert(packet);
+        }
+
+        // (VCS_HD_PKTDEBUG; called before the push, with the block checked as packetBlockGood does)
         void notePush(uint32_t packet, uint32_t by)
         {
             if (!g_pktDebug || !packet)
                 return;
+            if (const char *why; !packetBlockGood(packet, why) && g_pktLogged < 300)
+            {
+                ++g_pktLogged;
+                std::fprintf(stderr, "[hdworld-pkt] 0x%08x put on the ring by 0x%08x frame %llu: %s\n", packet, by,
+                             (unsigned long long)g_frame, why);
+            }
             uint32_t holder = 0;
             if (g_ram && valid(g_info, 4u))
                 for (uint32_t gid = 1, table = rd32(g_info); gid < kMaxGid && !holder; ++gid)
@@ -502,21 +591,55 @@ namespace vcs::world_hd
         bool g_collect = false; // the setting on, or entries of ours left
         uint64_t g_dependents = 0;
 
-        // FUN_0023B830: a cached packet onto the level's deferred free ring
+        uint64_t g_packetsKept = 0; // packets an entry let go of that were not the heap's to free (packetBlockGood)
+        uint64_t g_sharedDropped = 0; // other entries that held a packet put on the ring (dropOtherHolders)
+        uint32_t g_maxGid = 0; // the highest gid any piece names (the table's used part)
+
+        // A packet going on the ring leaves every table entry: one held by two entries (seen with the detailed city: a
+        // packet put on the ring from one entry, then found in another's - 2026-11-20) would be freed again from the
+        // other, or, once the heap has given the block to a new packet, free that one under its owner. (The entry the
+        // packet is pushed from is emptied by its caller anyway.)
+        void dropOtherHolders(uint32_t packet)
+        {
+            if (!g_ram || !valid(g_info, 4u))
+                return;
+            const uint32_t table = rd32(g_info);
+            for (uint32_t gid = 1; gid <= g_maxGid && gid < kMaxGid; ++gid)
+            {
+                const uint32_t e = table + gid * 0xCu;
+                if (rd32(e + 4u) == packet)
+                {
+                    wr32(e + 4u, 0);
+                    ++g_sharedDropped;
+                }
+            }
+        }
+
+        // FUN_0023B830: a cached packet onto the level's deferred free ring - only a block the heap may free
+        // (packetBlockGood); the caller empties the entry either way
         void freePacket(uint32_t packet, uint32_t site)
         {
             notePush(packet, 0xF0000000u | site);
-            if (g_collect)
-                g_pushed.push_back(packet);
+            if (const char *why; !packetBlockGood(packet, why))
+            {
+                ++g_packetsKept;
+                // a pointer to no block in use is stale wherever it is held (a packet of the level's own data is not)
+                if (inPacketHeap(packet))
+                    dropOtherHolders(packet);
+                return;
+            }
             const uint32_t ring = rd32(g_level + 0x5ACu), index = rd32(g_level + 0x5BCu), size = rd32(g_level + 0x5C0u);
             if (!valid(ring) || size == 0 || (size & (size - 1u)) || !valid(ring + index * 4u))
                 return;
+            if (g_collect)
+                g_pushed.push_back(packet);
+            noteOnRing(packet);
+            dropOtherHolders(packet);
             wr32(ring + index * 4u, packet);
             wr32(g_level + 0x5BCu, (index + 1u) & (size - 1u));
         }
 
         std::unordered_map<uint32_t, uint32_t> g_registered; // gid -> the geometry of ours its table entry holds
-        uint32_t g_maxGid = 0; // the highest gid any piece names (the table's used part)
 
         // What the game's slots hold now: gid -> geometry, from the pairs of every piece of its three cell slots and its
         // three area slots. An entry is good when it is ours or this; anything else is stale - the game never clears an
@@ -697,7 +820,7 @@ namespace vcs::world_hd
                         wr32(e, game != g_game.end() ? game->second : 0u);
                         break;
                     }
-                if (packet && packetPointsInto(packet))
+                if (packet && inPacketHeap(packet) && packetPointsInto(packet))
                 {
                     freePacket(packet, 3u);
                     wr32(e + 4u, 0);
@@ -743,7 +866,7 @@ namespace vcs::world_hd
                 for (uint32_t gid = 1; gid <= g_maxGid && gid < kMaxGid; ++gid)
                 {
                     const uint32_t e = table + gid * 0xCu, packet = rd32(e + 4u);
-                    if (!packet || gone.count(packet) || !callsInto(packet, gone))
+                    if (!packet || gone.count(packet) || !inPacketHeap(packet) || !callsInto(packet, gone))
                         continue;
                     freePacket(packet, 4u);
                     wr32(e + 4u, 0);
@@ -1790,6 +1913,10 @@ namespace vcs::world_hd
                 g_level = level;
                 g_info = info;
                 g_levelLoaded = loaded;
+                {
+                    std::lock_guard<std::mutex> lock(g_pendingMutex);
+                    g_onRing.clear(); // another level's ring
+                }
                 g_imageBase = 0;
             }
             if (loaded != rd32(kLevelId))
@@ -2308,24 +2435,53 @@ namespace vcs::world_hd
             g_sector(rdram, ctx, runtime);
         }
 
-        // FUN_0023B830(level, packet): what goes on the ring, for sweepDependents
+        // FUN_0023B830(level, packet): what goes on the ring, for sweepDependents (g_pushed) and packetBlockGood
+        // (g_onRing). A packet the heap may not free is left off (the game's entries hold none with the PS2's world; with
+        // the detailed city an entry the game empties may have held one of ours - g_packetsKept counts them).
         PS2_GUEST_CC void ringPushHook(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
-            notePush(getRegU32(ctx, 5), getRegU32(ctx, 31));
-            if (g_collect && getRegU32(ctx, 5))
+            const uint32_t packet = getRegU32(ctx, 5);
+            notePush(packet, getRegU32(ctx, 31));
+            uint32_t from, to;
+            if (packet && vcs::memory::packetHeapRange(from, to))
+            {
+                if (const char *why; !packetBlockGood(packet, why))
+                {
+                    ++g_packetsKept;
+                    ctx->pc = getRegU32(ctx, 31); // FUN_0023B830 returns nothing
+                    return;
+                }
+                noteOnRing(packet);
+                std::lock_guard<std::recursive_mutex> lock(g_mutex);
+                dropOtherHolders(packet); // (the game's own entry too: it empties it right after)
+            }
+            if (g_collect && packet)
             {
                 std::lock_guard<std::recursive_mutex> lock(g_mutex);
-                g_pushed.push_back(getRegU32(ctx, 5));
+                g_pushed.push_back(packet);
             }
             g_ringPush(rdram, ctx, runtime);
         }
 
-        // VCS_HD_PKTDEBUG: FUN_002BC9F8(heap, block) for the packet heap
+        // FUN_002BC9F8(heap, block) for the packet heap: the block off g_onRing; with VCS_HD_PKTDEBUG, checked
         PS2_GUEST_CC void heapFreeHook(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
             const uint32_t packet = getRegU32(ctx, 5);
             if (getRegU32(ctx, 4) == kPacketHeapObject && packet)
             {
+                {
+                    std::lock_guard<std::mutex> lock(g_pendingMutex);
+                    g_onRing.erase(packet);
+                }
+                g_blocksDirty = true;
+                if (!g_pktDebug)
+                    return g_heapFree(rdram, ctx, runtime);
+                if (const char *why; !packetBlockGood(packet, why) && g_pktLogged < 300)
+                {
+                    ++g_pktLogged;
+                    std::fprintf(stderr, "[hdworld-pkt] 0x%08x freed (ra 0x%08x frame %llu): %s; heap in use %u\n", packet,
+                                 getRegU32(ctx, 31), (unsigned long long)g_frame, why, rd32(kPacketHeapObject + 0x14u));
+                }
                 Pending was{0, 0};
                 {
                     std::lock_guard<std::mutex> lock(g_pendingMutex);
@@ -2376,8 +2532,21 @@ namespace vcs::world_hd
                 g_stats.costPeakUs = uint32_t(g_costPeakUs);
                 g_costUs = 0.0;
                 Cost cost;
+                g_blocksDirty = true; // blocks allocated since the last walk (packetBlockGood)
                 restore();
                 update();
+                // VCS_HD_PKTDEBUG: the frame the packet heap's use first reads above its size (a bad free)
+                if (g_pktDebug && vcs::memory::packetHeapMoved())
+                {
+                    static bool reported = false;
+                    const uint32_t used = rd32(kPacketHeapObject + 0x14u), size = rd32(kPacketHeapObject);
+                    if (!reported && used > size)
+                    {
+                        reported = true;
+                        std::fprintf(stderr, "[hdworld-pkt] packet heap in use %u above its size %u at frame %llu\n", used,
+                                     size, (unsigned long long)g_frame);
+                    }
+                }
                 // every ~10 s with the setting on: what the log needs for a player's report
                 static auto lastLog = std::chrono::steady_clock::now();
                 const auto now = std::chrono::steady_clock::now();
@@ -2386,11 +2555,13 @@ namespace vcs::world_hd
                     lastLog = now;
                     std::fprintf(stderr,
                                  "[hdworld] radius %d: %zu cells, %zu areas, %u KB; drawn %u sectors (+%u extra, %u low detail "
-                                 "hidden), skipped %u; cost %u us (peak %u); reclaimed %llu, refused %llu, packets swept %llu + %llu callers; loads %llu unloads %llu failures %llu builds %llu; "
+                                 "hidden), skipped %u; cost %u us (peak %u); reclaimed %llu, refused %llu, packets swept %llu + %llu callers, %llu kept, %llu shared, %llu walks; loads %llu unloads %llu failures %llu builds %llu; "
                                  "fallback frames %llu/%llu/%llu/%llu/%llu\n",
                                  g_radius.load(), g_cells.size(), g_areas.size(), g_arena.used / 1024u, g_stats.sectors,
                                  g_stats.added, g_stats.hiddenLod, g_stats.skipped, g_stats.costUs, g_stats.costPeakUs,
                                  (unsigned long long)g_reclaimed, (unsigned long long)g_refused, (unsigned long long)g_sweptPackets, (unsigned long long)g_dependents,
+                                 (unsigned long long)g_packetsKept, (unsigned long long)g_sharedDropped,
+                                 (unsigned long long)g_blockWalks,
                                  (unsigned long long)g_stats.loads, (unsigned long long)g_stats.unloads,
                                  (unsigned long long)g_stats.failures, (unsigned long long)g_stats.builds,
                                  (unsigned long long)g_stats.fallback[0], (unsigned long long)g_stats.fallback[1],
@@ -2534,7 +2705,7 @@ namespace vcs::world_hd
             runtime.replaceFunction(h.at, h.hook);
         if ((g_ringPush = runtime.lookupFunction(kRingPush)))
             runtime.replaceFunction(kRingPush, &ringPushHook);
-        if (g_pktDebug && (g_heapFree = runtime.lookupFunction(kHeapFree)))
+        if ((g_heapFree = runtime.lookupFunction(kHeapFree)))
             runtime.replaceFunction(kHeapFree, &heapFreeHook);
 
         ps2control::addCommand("hdpairs", [](const std::string &, ps2control::Reply reply) {

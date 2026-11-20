@@ -2023,7 +2023,27 @@ measurement and the tools behind it.
     never drawn;
   - conditional pieces by the hour (lit windows) are checked once a second and a cell read again when they change;
   - an entry emptied by a slot drop is taken with our copy at the build (models flipping between detail levels);
-  - extra sectors beyond 250 m fade in and out through the game's own cross-fade (`FUN_0023E548`), opaque buckets only.
+  - extra sectors beyond 250 m fade in and out through the game's own cross-fade (`FUN_0023E548`), opaque buckets only;
+  - **the radius-3 hang** (2026-11-20, ours: a memcheck run at radius 3 stopped after 5 - 13 min, the player dead, nothing
+    drawn, the game thread for ever in `FUN_002BBAD0`). `FUN_002BBB00(heap)` takes the largest free block by walking the
+    heap's free list (`heap + 8`, links at `+0xC`) to its end; the packet heap's list ran into a live packet's DMA data
+    (a link `0x06053F78`, a REF into our cells) and its use (`heap + 0x14`) read 3.2 GB. `VCS_HD_PKTDEBUG` with a check of
+    every block put on the ring (inside the heap, header in use) found the first bad one: our sweeps (packets pointing
+    into a released piece, packets CALLing one that went) put `0x608000` and `0x54A800` on the ring - not blocks of the
+    heap but packets of the level's own data: a resident gid's entry (owner = the gid) holds a packet built with the
+    level, which the game never frees. `FUN_002BC9F8` given one takes its size from the word before it, subtracts it
+    from the heap's use and links it into the free list. A second run with that left out still broke the heap: a packet
+    held by two entries (put on the ring from one by `leave`, found in another by the sweep the same frame); once the
+    block is free, merged or given to a new packet, a push from the second entry frees whatever is there. The fix:
+    only the start of a block in use in the packet heap - from a walk of its chain (headers from `heap + 0xC` to
+    `heap + 0x10`, walked again after a free and once a frame), in its range as `FUN_002BB768` built it
+    (`vcs::memory::packetHeapRange`) - and not on the ring already (pushes and `FUN_002BC9F8` frees tracked) is ever
+    pushed, ours or the game's; a packet put on the ring leaves every entry that holds it. The `[hdworld]` line counts
+    them: `kept` (let go of without a push), `shared` (entries emptied that way - each of the game's pushes counts its own entry, which the game empties right
+    after), `walks`. Heap block header: `-8` size,
+    `-4` flags (bit 31 free; bits 30 and 29 a neighbour free - the free merges with it -; the low 28 bits the offset back
+    to the previous block); blocks
+    at or above `heap + 0x10` come from small-block pools (no header; `heap + 0x128` the pool table).
 - **At the user's spot** (the floating roof, 6o: -739,-1158 heading 273.6 at 18:41): their build at radius 3 draws
   the tower detailed with its lit windows, no slab, and the buildings beside it (2026-11-19, `build/lod/roof_ref3`
   against `roof_ref0` in their build).
@@ -2366,6 +2386,34 @@ of every writer and caller.
   volume only when it changes, so a new sound can start on a voice with its old volume. People near an explosion
   scream (speech sounds). A Voices volume that scaled those voices in the native driver was tried on 2026-10-28 and
   removed (DECISIONS.md).
+
+### 9d. Memory: the main heap, the streaming heap and the port's memory above 32 MB (2026-11-20, Game > Memory)
+
+Found by willzmkv (dejot) in their fork (their game-internals 9e, 2026-11-03, T10: VC car mods 4-5x the size of VCS's
+cars made `LOAD_ALL_MODELS_NOW` spin), read with headless Ghidra and a RAM dump in game; brought over with their code
+(src/game/vcs_memory.cpp, FORK_IMPORTS.md row 14).
+
+- **One heap type** (`FUN_002BB768(heap, base, size, granularity)` builds it): `+0` size, `+4` the out-of-memory
+  callback, `+0xC` first block, `+0x10` end, `+0x14` bytes in use, `+0x24..` 64 pools for blocks up to 256 bytes.
+- **The main heap** `0x51D6A0`: from the end of the executable's data (`0x74DF54`) to `0x1FE0000`, 24.57 MB; ~23 MB in
+  use in game. Out of memory it calls `FUN_0021C468` (removes vehicles and peds the player does not see, retries).
+- **The streaming heap** `0x51F420`: `FUN_002E5688(heap)` takes 0x567000 bytes (5.4 MB) from the main heap
+  (`FUN_002BD178`, kept at `heap + 0x130`; `+0x12C` = 1) and builds it there. Every streamed model and texture dictionary
+  lives in it: CStreaming's request `FUN_003C7ED8` makes room (`FUN_003CB760`), `FUN_003C6478` allocates, the read goes
+  straight in; full, `FUN_0021C300` removes what it can and defragments (`FUN_002BCFC0`). So VCS keeps ~5.4 MB of
+  models at once (a car with its textures 30-120 KB).
+- **The cap of 51**: `FUN_003C7ED8` counts its loaded list (`streaming + 0xD8`); at 0x33 or more it calls
+  `FUN_003C9DE8(streaming, 0x83)` (call `0x3C8030`, return `0x3C8038`), removing the least used resource even with room.
+  The other caller, `FUN_003C9F10` (the make-room loop), is about bytes.
+- **In the port.** The host holds 128 MB of EE RAM; the game sees 32 (`PS2_GUEST_RAM_SIZE`: GetMemorySize, the main
+  thread's stack top), so its own layout stays the PS2's. Above it (`vcs_memory.h`): the streaming heap at `0x2000000`
+  (Streaming memory 12 / 20 / 30 MB: `FUN_002E5688` replaced by the two fields and a tail call to `FUN_002BB768` with
+  the larger size; the cap's call answered 0 for that caller only), the detailed city's cells at `0x4000000` (48 MB, 6t),
+  the sector packet heap at `0x7000000` (8 MB, with the detailed city on at boot). PS2 (the default) leaves the heaps
+  alone. `memstate` (gamectl / rig) prints each heap's base, size and use, and the cap's skipped calls.
+- willzmkv measured (Vice Point, 30 MB): the main heap's use drops from 24.2 to 18.6 MB (the 5.4 MB it no longer gives);
+  the streaming heap holds ~6 MB. The game keeps only what it asks for: more room shows as more car models in traffic
+  (fewer repeats) and fewer models read again, not as more world detail (that is the cells, 6t).
 
 ## 10. Memory card and saves
 

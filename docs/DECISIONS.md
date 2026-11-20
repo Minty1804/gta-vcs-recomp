@@ -1918,3 +1918,13 @@ current list's low-detail sectors they lie inside are hidden, as the game hides 
   hd_overlap_scan, hdworld_missions).
 - **The bar** (FORK_IMPORTS row 21, theirs crashed before a 3 h soak passed): `soak.py --hours 3`, `memcheck.py`,
   `cruise.py` hitches measured with it on, the regression rig green with it off.
+
+## 2026-11-20 - The detailed city's packet frees: only the heap's own blocks (the radius-3 hang)
+
+- The hang at radius 3 was our sweeps freeing packets of the level's own data (game-internals.md 6t). Rather than
+  special-casing the two sweeps, every push onto the free ring - ours and the game's - goes through one check: inside
+  the packet heap, its header in use, not on the ring already. With the PS2's world (radius 0) the game never pushes
+  anything else, so the check changes nothing there; it is always on because a bad free corrupts the heap silently and
+  shows up minutes later as a hang somewhere else.
+- Streaming memory stays at the PS2's 5.4 MB by default (willzmkv's T10 used 30 MB): authentic by default; 12 / 20 / 30
+  MB are choices in Game > Memory.

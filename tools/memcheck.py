@@ -18,6 +18,10 @@ confirmation: src/game/vcs_rsl_world.cpp, trimRecordings).
 
 --recordings-mb sets VCS_RSL_RECORDINGS_MB for the run: 64 by default, so the limit is reached within two minutes and
 most of the run shows the plateau; -1 leaves the game's own default (256), 0 is no limit (the leak, for comparison).
+A texture pack's image cache (vcs_texture_pack.cpp: decoded / stored images kept up to VCS_TEXPACK_CACHE_MB, 1024 by
+default, for a texture that is made again) fills by design as more of the pack is seen - the detailed city further
+(VCS_HD_RADIUS) sees more of it. Its size is asked for every sample (the `texpack` command) and kept in its own column;
+the trend is taken on the memory without it, and the run fails if the cache goes past its limit.
 ENV=VAL arguments go to the game (VCS_RSL_WORLD=0 VCS_RSL_MODELS=0: no recordings at all). OUT defaults to
 build/memcheck/<date-time>; two checks side by side need their own --port and --name.
 """
@@ -222,7 +226,8 @@ def main():
     f = open(os.path.join(out, a.name + ".csv"), "w", newline="")
     w = csv.writer(f)
     w.writerow(["t_s", "private_mb", "working_mb", "memory_mb", "recordings", "recordings_mb", "dropped", "frames",
-                "x", "y", "leg"])
+                "x", "y", "leg", "texpack_mb", "memory_wo_pack_mb"])
+    pack_limit_mb = None
     t0 = time.time()
     try:
         g.wait_ingame()
@@ -251,11 +256,21 @@ def main():
                 _, (px, py, _), _ = g.player()
             except Exception:
                 frames, px, py = None, 0.0, 0.0
+            pack_mb = None
+            try:
+                st = g.cmd("texpack")
+                mk = re.search(r"cache_kb=(\d+)", st)
+                pack_mb = int(mk.group(1)) / 1024.0 if mk else (0.0 if "off" in st else None)
+            except Exception:
+                pass
             m = memory(pid) if pid else None
             log.read()
             r1 = lambda v: round(v, 1) if v is not None else None  # noqa: E731
             row = [round(now)] + [r1(v) for v in (m or (None, None, None))] + [log.recordings, log.held_mb, log.dropped,
-                                                                              frames, round(px), round(py), leg]
+                                                                              frames, round(px), round(py), leg,
+                                                                              r1(pack_mb)]
+            base = m[2] if m and m[2] is not None else (m[0] if m else None)
+            row.append(r1(base - pack_mb) if base is not None and pack_mb is not None else None)
             w.writerow(row)
             f.flush()
             rows.append(row)
@@ -270,7 +285,10 @@ def main():
     log.read()
     col = 3 if any(r[3] is not None for r in rows) else 1  # the private working set, else private bytes
     half = rows[-1][0] / 2.0 if rows else 0.0
-    rise = trend([(r[0] / 60.0, r[col]) for r in rows if r[col] is not None and r[0] >= half])
+    pack = [r[11] for r in rows if r[11] is not None]
+    trend_col = 12 if pack and max(pack) > 0.0 else col  # without the pack's cache, when there is one
+    rise = trend([(r[0] / 60.0, r[trend_col]) for r in rows if r[trend_col] is not None and r[0] >= half])
+    pack_limit_mb = float(env.get("VCS_TEXPACK_CACHE_MB", os.environ.get("VCS_TEXPACK_CACHE_MB", "1024")))
     mem = [r[col] for r in rows if r[col] is not None]
     reasons = []
     if exited:
@@ -279,6 +297,8 @@ def main():
         reasons.append("too few memory samples" if pid else "the game's process was not found")
     elif rise > a.max_rise:
         reasons.append("memory rises by %.1f MB a minute over the second half (limit %.1f)" % (rise, a.max_rise))
+    if pack and max(pack) > pack_limit_mb + 1.0:
+        reasons.append("the texture pack's cache reached %.0f MB (limit %.0f)" % (max(pack), pack_limit_mb))
     if log.from_guest_ram:
         reasons.append("%d skipped blocks had no recording (read from guest RAM)" % log.from_guest_ram)
     summary = {"minutes": round((time.time() - t0) / 60.0, 1), "samples": len(rows), "env": env,
@@ -286,6 +306,8 @@ def main():
                "memory_mb_first": mem[0] if mem else None, "memory_mb_last": mem[-1] if mem else None,
                "memory_mb_max": max(mem) if mem else None,
                "rise_mb_per_min_second_half": round(rise, 2) if rise is not None else None,
+               "trend_without_texpack_cache": trend_col == 12, "texpack_cache_mb_last": pack[-1] if pack else None,
+               "texpack_cache_mb_max": max(pack) if pack else None,
                "recordings": log.recordings, "recordings_mb": log.held_mb, "recordings_limit_mb": log.limit_mb,
                "recordings_dropped": log.dropped, "dropped_recorded_again": log.again, "blocks_skipped": log.skipped,
                "skipped_from_guest_ram": log.from_guest_ram, "ok": not reasons, "failed": reasons}
