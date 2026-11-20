@@ -64,6 +64,7 @@ namespace
     std::atomic<uint32_t> g_outputW{0}, g_outputH{0};   // [gta-recomp] gsHwSetOutputSize
     std::atomic<float> g_aspectWidening{1.0f};          // [gta-recomp] gsHwSetAspectWidening
     std::atomic<bool> g_reducedPostFx{false};           // [gta-recomp] gsHwSetReducedPostFx
+    std::atomic<bool> g_sharpTrails{false};             // [gta-recomp] gsHwSetSharpTrails
     std::atomic<uint32_t> g_frameW{0}, g_frameH{0};     // [gta-recomp] gsHwSetFrameSize
     struct TargetRole                                   // [gta-recomp] gsHwSetTargetRole
     {
@@ -241,6 +242,7 @@ void gsHwSetFrameSize(uint32_t width, uint32_t height)
 
 void gsHwSetAspectWidening(float widening) { g_aspectWidening.store(widening, std::memory_order_relaxed); }
 void gsHwSetReducedPostFx(bool on) { g_reducedPostFx.store(on, std::memory_order_relaxed); }
+void gsHwSetSharpTrails(bool on) { g_sharpTrails.store(on, std::memory_order_relaxed); }
 
 // [gta-recomp] gsHwShownInputNs (gs_hw.h)
 static int64_t steadyNs()
@@ -2328,12 +2330,15 @@ namespace
             uint32_t first;         // into m_postVerts
             rhi::Texture *target;   // a native buffer, or null: the draw's own render target
             rhi::Texture *texture;  // a native buffer read instead of the draw's texture, or null
+            float scaleX = 1.0f, scaleY = 1.0f; // [gta-recomp] target pixels per buffer unit (Sharp trails: the frame's)
         };
 
         // Adds a draw to the pass list: its vertices copied into m_postVerts, positions widened when it draws into a
         // native buffer, texture coordinates remapped when it reads one (texWBase: that buffer's width at 4:3).
+        // [gta-recomp] texScaleX / Y: texels of `texture` per buffer unit it was drawn at (Sharp trails: a buffer drawn at
+        // the frame's resolution, read back 1:1)
         void postAdd(std::vector<PostItem> &items, const Frame &f, const DrawCmd *d, rhi::Texture *target, rhi::Texture *texture,
-                     float w, float texWBase)
+                     float w, float texWBase, float texScaleX = 1.0f, float texScaleY = 1.0f)
         {
             PostItem it{d, d->s, static_cast<uint32_t>(m_postVerts.size()), target, texture};
             const float targetUnits = static_cast<float>(d->s.fbw) * 64.0f; // target width at 4:3
@@ -2349,10 +2354,12 @@ namespace
                 HwVertex v = f.vertices[d->first + i];
                 if (texture)
                 {
-                    const float u = v.s / v.q * su + (w - 1.0f) * slope * v.x; // texels
+                    const float u = (v.s / v.q * su + (w - 1.0f) * slope * v.x) * texScaleX; // texels
                     v.s = d->s.fst ? u : u / static_cast<float>(it.s.tw) * v.q;
                     if (!d->s.fst)
-                        v.t = v.t / v.q * static_cast<float>(d->s.th) / static_cast<float>(it.s.th) * v.q;
+                        v.t = v.t / v.q * static_cast<float>(d->s.th) * texScaleY / static_cast<float>(it.s.th) * v.q;
+                    else
+                        v.t *= texScaleY;
                 }
                 if (target)
                     v.x *= w;
@@ -2389,6 +2396,8 @@ namespace
                 LayerTarget t;
                 t.color = it.target;
                 t.scissorScaleX = it.target ? w : 1.0f;
+                t.scaleX = it.scaleX; // [gta-recomp] 1 but for Sharp trails' buffer
+                t.scaleY = it.scaleY;
                 t.opaque = false;
                 t.texture = it.texture;
                 t.vertices = m_postVb.get();
@@ -2681,6 +2690,11 @@ namespace
 
         // Trails: downsample the frame into a 512x512 buffer, blend it back through warped strips (FIX ~8) and add it
         // with a tint.
+        // [gta-recomp] Sharp trails (gsHwSetSharpTrails; after aap's sharptrails for III / VC on PC, game-internals.md
+        // 6g): the buffer at the frame's own resolution - the downsample reads the frame 1:1 (rtFull) instead of
+        // through PS2 texels - and the warped blend left out: drawn from a buffer that is the frame itself it would only
+        // smear it. The tinted add keeps its colour, at full resolution. The motion blur after it (the trail between
+        // frames, the game's Trails option) is untouched.
         size_t nativeTrails(const Frame &f, size_t ci, bool log)
         {
             const DrawCmd *down = drawAt(f, ci);
@@ -2696,6 +2710,26 @@ namespace
                 tint = nullptr;
             const float w = std::max(1.0f, g_aspectWidening.load(std::memory_order_relaxed));
             const uint32_t th = std::max<uint32_t>(down->s.scy1, 1u);
+            // [gta-recomp] Sharp trails: buffer pixels per buffer unit so that one buffer pixel is one frame pixel - the
+            // frame's scale over the downsample's buffer units per frame texel (its positions against its coordinates)
+            float bx = 1.0f, by = 1.0f;
+            if (g_sharpTrails.load(std::memory_order_relaxed) && tint && sharpTrailsScale(f, down, frame, w, bx, by))
+            {
+                rhi::Texture *t = postBuffer(m_postTrails, static_cast<uint32_t>(std::lround(512.0f * w * bx)),
+                                             static_cast<uint32_t>(std::lround(static_cast<float>(th) * by)), "gs post trails");
+                if (!t)
+                    return 0;
+                m_postVerts.clear();
+                std::vector<PostItem> items;
+                postAdd(items, f, down, t, nullptr, w, 0.0f);
+                items.back().s.rtFull = 1u; // the frame read at its own resolution (sampleRtFull)
+                items.back().scaleX = bx;
+                items.back().scaleY = by;
+                postAdd(items, f, tint, nullptr, t, w, 512.0f, bx, by);
+                postRun(items, w, log, "sharp trails");
+                postWriteBack(t, buffer, 8u, 512u, th);
+                return 3u;
+            }
             rhi::Texture *t = postBuffer(m_postTrails, static_cast<uint32_t>(std::lround(512.0f * w)), th, "gs post trails");
             if (!t)
                 return 0;
@@ -2708,6 +2742,31 @@ namespace
             postRun(items, w, log, "trails");
             postWriteBack(t, buffer, 8u, 512u, th);
             return tint ? 3u : 2u;
+        }
+
+        // [gta-recomp] Sharp trails: from the downsample draw's vertices, buffer units per frame texel (x / y), and with the
+        // frame's own scale the buffer's pixels per unit that make one buffer pixel one frame pixel. False when the draw
+        // does not span a range (nothing to measure) or the frame is not a known target. w: the widening.
+        bool sharpTrailsScale(const Frame &f, const DrawCmd *down, uint32_t frame, float w, float &bx, float &by)
+        {
+            auto rt = m_rts.find(frame);
+            if (rt == m_rts.end() || down->count < 2u)
+                return false;
+            const float su = down->s.fst ? 1.0f : static_cast<float>(down->s.tw);
+            const float sv = down->s.fst ? 1.0f : static_cast<float>(down->s.th);
+            float x0 = 1e30f, x1 = -1e30f, y0 = 1e30f, y1 = -1e30f, u0 = 1e30f, u1 = -1e30f, v0 = 1e30f, v1 = -1e30f;
+            for (uint32_t i = 0; i < down->count; ++i)
+            {
+                const HwVertex &v = f.vertices[down->first + i];
+                const float u = v.s / v.q * su, t = v.t / v.q * sv;
+                x0 = std::min(x0, v.x), x1 = std::max(x1, v.x), y0 = std::min(y0, v.y), y1 = std::max(y1, v.y);
+                u0 = std::min(u0, u), u1 = std::max(u1, u), v0 = std::min(v0, t), v1 = std::max(v1, t);
+            }
+            if (x1 - x0 < 1.0f || y1 - y0 < 1.0f || u1 - u0 < 1.0f || v1 - v0 < 1.0f)
+                return false;
+            bx = rt->second.scale.x * (u1 - u0) / ((x1 - x0) * w); // the buffer's positions are widened by w (postAdd)
+            by = rt->second.scale.y * (v1 - v0) / (y1 - y0);
+            return bx > 0.0f && by > 0.0f && bx < 16.0f && by < 16.0f;
         }
 
         // the HUD layers' bookkeeping for a draw into the frame's buffers: a new scene makes the target's layer stale; a

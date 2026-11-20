@@ -398,6 +398,8 @@ is listed here (the full list of candidates, done or not: [docs/FORK_IMPORTS.md]
 - **Detailed city distance** (the detailed buildings of neighbour cells instead of the low-detail city, and the memory
   above the PS2's 32 MB it lives in) and **Streaming memory** (their T10): [willzmkv](https://github.com/willzmkv) (dejot), from their fork's HD world
   (branch hd-world-merge, last commit 266838d).
+- **Sharp trails**: after [aap](https://github.com/aap)'s [sharptrails](https://github.com/aap/sharptrails) (MIT) for
+  GTA III / Vice City on PC, re-done for VCS's trails pass in the native renderer.
 - **Additive cull** (the helicopter dust's GPU cost): [PerikiyoXD](https://github.com/PerikiyoXD) (upstream PR #178).
 - **PC keyboard control scheme**: [SkipperSkipTR](https://github.com/SkipperSkipTR) (upstream PR #78), merged with our
   Reload key added to both schemes.

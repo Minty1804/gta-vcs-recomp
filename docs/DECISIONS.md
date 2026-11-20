@@ -1919,6 +1919,16 @@ current list's low-detail sectors they lie inside are hidden, as the game hides 
 - **The bar** (FORK_IMPORTS row 21, theirs crashed before a 3 h soak passed): `soak.py --hours 3`, `memcheck.py`,
   `cruise.py` hitches measured with it on, the regression rig green with it off.
 
+## 2026-11-20 - Sharp trails: an option, off by default (the user's request)
+
+- The user asked for something like aap's sharptrails mod for GTA III / VC on PC: the colour filter / trails at full
+  resolution without its blur. VCS's pass (game-internals.md 6g step 7) is the same idea as PC VC's: a downsample
+  blended back through offset strips. With **Sharp trails** (Graphics > Image quality) the buffer is the frame's own
+  size, read 1:1, and the smearing blend is left out; the tint stays. Off by default: the PS2's look is the authentic
+  one. The motion blur (step 8, the game's own Trails option) is a different effect and stays as it is.
+- Done in the runtime's native post pass (gs_hw.cpp `nativeTrails`), not by changing the game's draws: the pass is
+  already replaced there, and its buffer size and sampling are host decisions.
+
 ## 2026-11-20 - The detailed city's packet frees: only the heap's own blocks (the radius-3 hang)
 
 - The hang at radius 3 was our sweeps freeing packets of the level's own data (game-internals.md 6t). Rather than

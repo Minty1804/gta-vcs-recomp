@@ -134,6 +134,10 @@ void gsHwSetAspectWidening(float widening);
 // [gta-recomp] "Reduce Post Processing Effects": the motion blur as before 2026-11-13 - the last picture blended at the
 // game's strength once a frame (no frame history, no weaker blend above 30 fps / 1x). Any thread; takes effect at once.
 void gsHwSetReducedPostFx(bool on);
+// [gta-recomp] Sharp trails (Graphics > Image quality; after aap's sharptrails for GTA III / VC on PC): the trails /
+// colour pass at the frame's own resolution and without its warped blend (the smear) - the colour and the motion
+// blur's trail between frames kept. Off: the PS2's. Any thread; takes effect at once.
+void gsHwSetSharpTrails(bool on);
 // [gta-recomp] Frame pacing between the game and the window. Off (the PS2's timing): the game may run 3 frames ahead and
 // each host frame renders every queued frame, showing the last - game time keeps its pace when the GPU falls behind.
 // On (frame-rate independent timing, where game time follows the clock anyway): one frame queued, one rendered and

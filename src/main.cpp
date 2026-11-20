@@ -722,6 +722,22 @@ namespace
         s.onChange = [](int v) { gsHwSetExposure(static_cast<float>(v) / 100.0f); };
         settings::add(s);
 
+        // [Minty1804 fork] Sharp trails (docs/game-internals.md 6g): after aap's sharptrails for GTA III / VC on PC (the
+        // trails without their blur); the colour pass at full resolution without its warped blend (gs_hw.h)
+        s = {};
+        s.key = "graphics.sharp_trails";
+        s.page = "Graphics";
+        s.section = "Image quality";
+        s.label = "Sharp trails";
+        s.help = "The game's colour / trails pass without its blur: drawn at the picture's own resolution and without the "
+                 "smear that softens the whole picture, its colour kept. The light trails behind moving lights (the game's "
+                 "own Trails option, Display) stay. Off is the PS2's.";
+        s.type = Type::Toggle;
+        s.defaultValue = 0;
+        s.env = "VCS_SHARP_TRAILS";
+        s.onChange = [](int v) { gsHwSetSharpTrails(v != 0); };
+        settings::add(s);
+
         // Fences and leaves at a distance (docs/game-internals.md 6q): their faint, filtered edges write depth and hide
         // what is drawn behind them later - the sky shows through a far fence instead of the building behind it. Always
         // on, no setting (the user's choice, DECISIONS.md 2026-11-18); PS2X_HW_CUTOUT_SPLIT=0 brings the original back

@@ -1148,6 +1148,12 @@ UV mapping per primitive fitted from the vertices, u = du/dx * x + offset in tex
   sampling, tap offsets of a texel), added into 140 at FIX 100 (bilinear upsample, 0.4 x 0.57 texels per pixel).
 - Trails: 640x448 -> 512x512 at FBP 384 (bilinear, 1.25 x 0.875), blended back at FIX 7 from 103 strips with offsets
   of up to 11 texels (a smear), then added at FIX 128 with a tint colour (0x10 0x03 0x09 at noon).
+  **Sharp trails** (2026-11-20, Graphics > Image quality, off by default; after aap's sharptrails for GTA III / VC on PC,
+  which does the same to their colour filter): the 512x512 buffer is made at the frame's own resolution (its scale from
+  the downsample's positions against its coordinates, `sharpTrailsScale` in gs_hw.cpp), the downsample reads the frame
+  1:1 (`rtFull`), the smearing blend is left out and the tinted add reads the buffer 1:1. The colour stays; the blur and
+  the PS2's half resolution go. The motion blur (step 8, the game's Trails option) is untouched. Measured at Fort
+  Baxter (noon, standing): the mean edge strength of a fence crop 9.4 off, 10.6 - 11.0 on; in 16:9 the picture lines up.
 - A 128x128 sample of the picture (5 x 3.5 texels per pixel, no offset) goes into the corner of FBP 420, plus an
   additive sun / glow sprite (64x64); right after, 3D draws (vehicles, z ~0.001) are textured from that 128x128
   corner - a reflection map refreshed every frame. After the bloom (which overwrites FBP 420) the sample is drawn
