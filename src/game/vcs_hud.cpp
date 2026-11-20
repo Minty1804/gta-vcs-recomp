@@ -23,6 +23,7 @@
 // the 2D pass's calls (VCS_TRACE_IM2D_MARKERS=<1..6>), from 30 s on.
 #include "game/vcs_hud.h"
 
+#include "debug/rig.h"
 #include "game/vcs_trainer.h"
 
 #include "ps2_runtime.h"
@@ -85,6 +86,7 @@ namespace vcs
         bool g_traceFlicker = false;
         std::string g_flickerLast;
         uint32_t g_flickerKicks = 0, g_flickerHudDraws = 0;
+        uint32_t g_kickCaptures = 0, g_kickHudCalls = 0; // Im2D captures / CHud::Draw calls this kick (resolveAnchors)
 
         // The scope / camera / binocular mask (game-internals.md 6f "Scope mask"): the 2D pass FUN_0021f348 fills black
         // side bars rect(0, 240 - s1) and rect(240 + s1, 480) (s1 210: 30 units each) through FUN_003e0b10(rect, colour,
@@ -248,6 +250,7 @@ namespace vcs
 
         void capture(uint8_t *rdram, R5900Context *ctx)
         {
+            ++g_kickCaptures;
             const bool maskBar = g_maskBar;
             g_maskBar = false;
             if (!g_anchoring.load(std::memory_order_relaxed) || g_prims.size() >= 8192u)
@@ -362,12 +365,38 @@ namespace vcs
                     shape += std::string(side) + ",";
                 }
                 if (shape != g_flickerLast)
-                    std::fprintf(stderr, "[hud-flicker] kick %u: top right %s (%u prims; CHud::Draw %u since the last change):%s\n",
+                    std::fprintf(stderr, "[hud-flicker] kick %u: top right %s (%u prims; CHud::Draw %u since the last change; "
+                                         "this kick: %u CHud::Draw, %u Im2D, %u HUD prims; game frame %llu):%s\n",
                                  g_flickerKicks, shape.empty() ? "gone" : shape.c_str(), prims, draws - g_flickerHudDraws,
-                                 now.c_str());
+                                 g_kickHudCalls, g_kickCaptures, n,
+                                 static_cast<unsigned long long>(vcs::rig::gameFrames()), now.c_str());
                 if (shape != g_flickerLast)
                     g_flickerHudDraws = draws;
                 g_flickerLast = shape;
+            }
+            // [Minty1804 fork] Always on (the user's HUD glitch, 2026-11-20, not reproduced here): a frame sent without
+            // CHud::Draw right after one with it - no HUD for that frame - counted, one line at most every 10 s with the
+            // last game frame and its Im2D count (a pause menu draws many, the game's loading frame 1 - 3)
+            {
+                static uint32_t lastHad = 0, missed = 0, missedIm2D = 0;
+                static uint64_t missedFrame = 0;
+                static auto lastLog = ps2x::hostNow();
+                if (g_kickHudCalls == 0 && lastHad)
+                {
+                    ++missed;
+                    missedFrame = vcs::rig::gameFrames();
+                    missedIm2D = g_kickCaptures;
+                }
+                lastHad = g_kickHudCalls;
+                const auto t = ps2x::hostNow();
+                if (missed && t - lastLog >= std::chrono::seconds(10))
+                {
+                    std::fprintf(stderr, "[hud] %u frame(s) sent without the HUD in the last 10 s (the last: game frame %llu, "
+                                         "%u Im2D)\n", missed, static_cast<unsigned long long>(missedFrame), missedIm2D);
+                    missed = 0;
+                    lastLog = t;
+                }
+                g_kickHudCalls = g_kickCaptures = 0;
             }
             const bool traceFrame = g_traceAnchors > 0 &&
                                     ps2x::hostNow() - g_traceStart >= std::chrono::seconds(g_traceDelay);
@@ -525,6 +554,7 @@ namespace vcs
                 return;
             }
             g_hudDraws.fetch_add(1, std::memory_order_relaxed);
+            ++g_kickHudCalls;
             if (!g_hooked) // VCS_HUD_RW=0: only for Hide HUD
                 return g_origHudDraw(rdram, ctx, runtime);
             if (traceNow())

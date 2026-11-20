@@ -1330,13 +1330,14 @@ Python scripts still usable on their own. docs/LAUNCHER.md has the whole of it; 
 | `PS2X_HW_CLUT_FROM_UPLOAD=0`, `PS2X_HW_CLUT_VERIFY=1` | CLUT loads read emulated VRAM (writing the queued uploads there first) instead of the queued upload's data; both, compared (`[gs-hw] clut from upload`) |
 | `VCS_TRACE_IM2D_DELAY=s`, `VCS_TRACE_IM2D_STACK=1` | start the Im2D trace after s seconds (default 30); print the guest stack's return addresses per call |
 | `VCS_TRACE_HUDKEY=n` | log n 2D primitives the HUD classifier did not find (positions) |
-| `VCS_TRACE_HUDFLICKER=1` | log every frame kick where the top-right HUD (clock, bars, weapon, money: elements above y 150 and right of x 470) changes its anchors or goes: `[hud-flicker] kick N: top right right,|gone (P prims; CHud::Draw D since the last change)`. 2026-11-19: 3.5 min walking and driving at 16:9 with the user's HUD settings showed no change after loading (only around teleports) |
+| `VCS_TRACE_HUDFLICKER=1` | log every frame kick where the top-right HUD (clock, bars, weapon, money: elements above y 150 and right of x 470) changes its anchors or goes: `[hud-flicker] kick N: top right right,|gone (P prims; CHud::Draw D since the last change; this kick: C CHud::Draw, I Im2D, H HUD prims; game frame F)`. 2026-11-19: 3.5 min walking and driving at 16:9 with the user's HUD settings showed no change after loading (only around teleports) |
 | `VCS_TRACE_HUDANCHOR=n` | log n frames of HUD elements (box, part: 1 radar / 2 centred text, anchor) and each text line's justify and rect, from `VCS_TRACE_IM2D_DELAY` on (`tools/hud_check.py`) |
 | `PS2X_HW_OUTPUT=WxH` | the renderer's output size whatever the window (full-screen sizes in test runs; with `PS2X_CAPTURE_SIZE`) |
 | `PS2X_HW_DUMP_TEX=<key hex>` | write that decoded texture (colour + alpha PPM, keys from the F12 draw log) - analysis only, never commit |
 | `PS2X_HW_HUD_LOG=1` | the renderer's HUD layers (per frame buffer, stale or not) and the output size, every 2 s |
 | `PS2X_HW_HUD_OVER=0` | 2D the classifier does not name, drawn after the HUD in the same frame, makes the HUD layer stale again (the HUD missing or half drawn for a frame, as before 2026-11-19; NATIVE_RENDERER.md "HUD layer") |
 | `PS2X_HW_HUD_WATCH=1` | `[hud-watch]` lines: a HUD layer made stale or restarted within its own frame (the draw that did it: bbox, texture, rgba) and each shown layer whose draw count changed |
+| `PS2X_HW_HUD_WATCH=2` | as 1, and every HUD layer a scene draw makes stale: the layer's frame, the frame and kind of the draw (upload, clear, native, post, draw / target read) |
 | `VCS_TRACE_HUDKEY_NEAR=1` | with `VCS_TRACE_HUDKEY=<n>`: only small 2D misses with a HUD vertex within 6 px (`[hud-key] near miss`) |
 | `VCS_TRACE_IM2D=n`, `VCS_TRACE_IM2D_MARKERS=1..5` | log n Im2D calls (caller, primitive, vertices) / the 2D pass's calls, from 30 s on |
 | `PS2X_HLE_STATS=1` | native draw counters; 0x0030 stage tables still on the VU1 every 10 s (+ one code / data sample each) |

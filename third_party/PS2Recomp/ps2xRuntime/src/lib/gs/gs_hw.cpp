@@ -1352,11 +1352,11 @@ namespace
                     m_hud.erase(f.rtDrops[c.index]);
                     break;
                 case CmdType::RtUpload:
-                    hudSceneDraw(f.rtUploads[c.index].fbp);
+                    hudSceneDraw(f.rtUploads[c.index].fbp, "upload");
                     rtUpload(f.rtUploads[c.index]);
                     break;
                 case CmdType::Clear:
-                    hudSceneDraw(f.clears[c.index].s.fbp);
+                    hudSceneDraw(f.clears[c.index].s.fbp, "clear");
                     clear(f.clears[c.index]);
                     break;
                 case CmdType::HudDraw:
@@ -1471,7 +1471,7 @@ namespace
                     if (logDraws)
                         std::fprintf(stderr, "[draw] native kind=%u n=%u mesh=%016llx fbp=%u zbp=%u tme=%u abe=%u fge=%u\n", n.kind, n.drawCount,
                                      (unsigned long long)n.meshKey, n.s.fbp, n.s.zbp, n.s.tme, n.s.abe, n.s.fge);
-                    hudSceneDraw(n.s.fbp);
+                    hudSceneDraw(n.s.fbp, "native");
                     sources.nativeDraw();
                     const bool timed = gpuTimingMarkers();
                     if (timed)
@@ -1544,6 +1544,29 @@ namespace
                 auto it = m_hud.find(f.displayFbp);
                 if (f.displayFromRt && it != m_hud.end() && !it->second.stale && !it->second.draws.empty())
                     layer = &it->second;
+                // [gta-recomp] always on (a player's HUD glitch, 2026-11-20): a shown 3D frame without the HUD layer the
+                // frame before it had - the HUD gone for a frame - counted, one line at most every 10 s
+                {
+                    static bool lastHad = false;
+                    static uint32_t missed = 0;
+                    static uint64_t missedSerial = 0;
+                    static auto lastLog = ps2x::hostNow();
+                    if (!layer && lastHad && f.had3d)
+                    {
+                        ++missed;
+                        missedSerial = m_execSerial;
+                    }
+                    lastHad = layer != nullptr;
+                    const auto t = ps2x::hostNow();
+                    if (missed && t - lastLog >= std::chrono::seconds(10))
+                    {
+                        std::fprintf(stderr, "[gs-hw] %u shown 3D frame(s) without their HUD layer in the last 10 s (the last: "
+                                             "frame %llu, %s)\n", missed, static_cast<unsigned long long>(missedSerial),
+                                     it == m_hud.end() ? "none for this buffer" : it->second.stale ? "stale" : "empty");
+                        missed = 0;
+                        lastLog = t;
+                    }
+                }
                 if (hudWatch()) // [gta-recomp] a shown frame's HUD layer: its size, or why there is none
                 {
                     static size_t lastDraws = 0;
@@ -2116,7 +2139,15 @@ namespace
         {
             static const bool on = [] {
                 const char *e = std::getenv("PS2X_HW_HUD_WATCH");
-                return e && e[0] == '1';
+                return e && (e[0] == '1' || e[0] == '2');
+            }();
+            return on;
+        }
+        static bool hudWatchAll() // [gta-recomp] PS2X_HW_HUD_WATCH=2: also every layer a scene draw makes stale
+        {
+            static const bool on = [] {
+                const char *e = std::getenv("PS2X_HW_HUD_WATCH");
+                return e && e[0] == '2';
             }();
             return on;
         }
@@ -2394,7 +2425,7 @@ namespace
             m_dev.pushMarker(what);
             for (const PostItem &it : items)
             {
-                hudSceneDraw(it.d->s.fbp);
+                hudSceneDraw(it.d->s.fbp, "post");
                 LayerTarget t;
                 t.color = it.target;
                 t.scissorScaleX = it.target ? w : 1.0f;
@@ -2808,7 +2839,7 @@ namespace
 
         void hudOnDraw(const HwState &ds)
         {
-            hudSceneDraw(ds.fbp);
+            hudSceneDraw(ds.fbp, ds.texIsRt ? (ds.abe ? "draw (target read, blended)" : "draw (target read)") : "draw", &ds);
             if (ds.tme && ds.texIsRt && !ds.abe && ds.rtFbp != ds.fbp) // [gta-recomp] a copy takes its picture's shape along
                 if (auto it = m_shapeOf.find(ds.rtFbp); it != m_shapeOf.end())
                     m_shapeOf[ds.fbp] = it->second;
@@ -2823,7 +2854,8 @@ namespace
         }
 
         // a draw into the buffer outside the HUD (and not over it, hudOverDraw): the next frame's scene, the layer is stale
-        void hudSceneDraw(uint32_t fbp)
+        // [gta-recomp] why / ds: for PS2X_HW_HUD_WATCH=2, which logs every layer a scene draw makes stale
+        void hudSceneDraw(uint32_t fbp, const char *why = "draw", const HwState *ds = nullptr)
         {
             m_shapeOf[fbp] = m_execWide; // [gta-recomp] drawn for the executing frame's shape
             if (!m_hud.empty())
@@ -2832,6 +2864,12 @@ namespace
                     if (hudWatch() && !it->second.stale && !it->second.closed && it->second.frame == m_execSerial &&
                         !it->second.draws.empty())
                         m_hudWatchStale = fbp + 1u; // logged by the draw that did it (hudWatchLog)
+                    if (hudWatchAll() && !it->second.stale && !it->second.draws.empty())
+                        std::fprintf(stderr, "[hud-watch] fbp %u: layer of frame %llu (%zu draws%s) made stale in frame %llu by a %s"
+                                             " (rt %u, fbw %u, tme %u)\n",
+                                     fbp, static_cast<unsigned long long>(it->second.frame), it->second.draws.size(),
+                                     it->second.closed ? ", closed" : "", static_cast<unsigned long long>(m_execSerial), why,
+                                     ds && ds->texIsRt ? ds->rtFbp : 0u, ds ? ds->fbw : 0u, ds ? ds->tme : 0u);
                     it->second.stale = true;
                 }
         }

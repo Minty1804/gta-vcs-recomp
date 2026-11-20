@@ -946,6 +946,25 @@ Found from frame dumps (`PS2X_HW_DUMP`, draw lists with depth) during the widesc
   (`PS2X_HW_HUD_WATCH=1` caught each one). Ruled out first: anchors from the previous frame (62 matches against 90k
   from the current one) and a pixel of rounding (a 3x3 neighbourhood changed nothing). Now drawn over the HUD in its
   layer (NATIVE_RENDERER.md "HUD layer", `hudOverDraw`).
+- **The HUD glitch again** (2026-11-20, the user: "artefacts or duplications, under a second, always, just walking
+  around"; their log had nothing). Not reproduced in hidden runs with their vcs.ini at 30 and at 60 fps (independent
+  timing), 1920x1080 output, on the beach and in Downtown's streets (-675, 1425), 30 - 45 s of walking each.
+  What was learnt on the way, by `VCS_TRACE_CALLERS` (src/debug/call_trace.cpp) and the rig's `trace`:
+  - The frame (FUN_0021E9xx) takes another path - FUN_002653F0 instead of the 2D pass FUN_0021F348 - when
+    CCamera::GetScreenFadeStatus (FUN_00377418: TheCamera +0xAF4, 0 -> 0, 255 -> 2 faded out, else 1) is 2, or when
+    the menu manager's active flag (FUN_003B5130: +0x40 of 0x729480) is set. Both stay 0 while walking.
+  - The 2D pass calls CHud::Draw at 0x21F768 unconditionally; the display-list kick FUN_002723E8 comes once per
+    frame from 0x272248. Walking: kicks = 2D passes = CHud::Draw calls (2718 of each in 45 s at 60 fps).
+  - The calls after FUN_00476770 (0x21EBF4 FUN_0021EFB8, 0x21EC1C FUN_0037BF10) are skipped when fewer than
+    0x12C00 bytes of the packet buffer half are left: a skip, not an early kick.
+  - Frames sent without the HUD (0 CHud::Draw, 1 - 3 Im2D) are the game's loading frames while the rig sets the
+    scene up (teleport, models loaded at once); the shown frame after one has no HUD layer (`PS2X_HW_HUD_WATCH=1`
+    "- stale"). None while walking.
+  - The radar missing for seconds is the game's blink while help text mentions the radar ("... blip on your
+    radar ...").
+  Two detectors are now always on, so a player's log shows the moment: `[hud] N frame(s) sent without the HUD`
+  (vcs_hud.cpp, the kick without CHud::Draw after one with it) and `[gs-hw] N shown 3D frame(s) without their HUD
+  layer` (gs_hw.cpp), each at most one line per 10 s.
 - The colour filter / trails effect is drawn as **strips that sample the frame** itself (textures
   inside render targets, `texIsRt`), plus an alpha-only quad (FBMSK 0xFFFFFF) over x 80..560 at
   z = 0.
