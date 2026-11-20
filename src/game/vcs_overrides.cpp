@@ -5,6 +5,7 @@
 // unity batch (~9 min), while this file only needs a relink.
 // Once a binding is settled it can move to overrides.toml.
 #include "game_overrides.h"
+#include "debug/call_trace.h"
 #include "debug/game_info.h"
 #include "debug/profiler.h"
 #include "debug/rig.h"
@@ -1287,6 +1288,7 @@ namespace
         const bool sound = vcs::installSoundHooks(runtime);   // sound without the IOP (game/vcs_sound.h)
         vcs::retireIop(stream && sound);                      // then no emulated IOP at all
         vcs::installInflate(runtime);                         // zlib's inflate_fast natively (game/vcs_inflate.h)
+        vcs::calltrace::install(runtime); // VCS_TRACE_CALLERS: a function's callers counted (debug/call_trace.h)
         if (!std::getenv("VCS_NATIVE_PARAMS") || std::getenv("VCS_NATIVE_PARAMS")[0] != '0')
         {
             g_origCollectParams = runtime.lookupFunction(0x00254B90u);

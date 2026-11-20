@@ -1904,6 +1904,16 @@ distance: the game's art, left as it is.
   original's, or a mission's escort could die from one bullet. The damage is raised inside the game's own
   InflictDamage, so peds the game makes bullet-proof stay so and the death is the game's (game-internals.md 12c).
 
+## 2026-11-20 - Smooth sky gradients: a dither, on by default (the user's report)
+
+The dusk sky's bands are one 8-bit level each: the GS rounds the gradient's interpolated colour per pixel
+(game-internals.md 6g). Wider render targets would hold the same rounded values - the shader quantises to GS values
+itself, and the emulation's blends depend on that - and a dither at present comes after the rounding, so it cannot
+bring the lost steps back. The dither goes where the rounding is: an untextured, not alpha-tested Gouraud draw rounds
+through a 4x4 ordered pattern (static by pixel, not temporal noise, which would smear through the motion blur). Only
+those draws: textured world models keep the PS2's values exactly, and an alpha mask compared against AREF stays
+exact. On by default because the user asked for it; off is bit-identical to before.
+
 ## 2026-11-19 - Detailed city further: willzmkv's HD world carried over, by stages (the user's request)
 
 The floating roof over a Downtown tower is that tower's far model, and the far model is what a cell's list draws

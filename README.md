@@ -45,6 +45,7 @@ option or can be switched off, and everything else is the same as upstream.
 | **Aiming circle** | The game's large circle | Original, Small, or Spread: a small dot for guns (they hit its centre), the pellet spread for shotguns (Enhancements → Combat, Original by default) |
 | **Far view from interiors** | Inside a building the normal camera sees half as far: distant towers through a window show only while aiming | The city stays in view through the windows (always on) |
 | **Headshots** | Most guns need several shots to the head: a pistol takes a quarter of a man's health wherever it hits | Your bullet to the head kills, from any gun; every other hit does the damage it always did (Enhancements → Combat: **Headshots always kill**, on by default) |
+| **Sky at dusk** | The sky's gradient shows colour bands | The bands are broken up by a fine dither (Graphics → Image quality: **Smooth sky gradients**, on by default) |
 | **Character shadows** | Always on under Vic and everyone on foot | Can be turned off (option, on by default) |
 | **Distant lights** | Street lights vanish past their short corona distance: the city is dark far away at night | Project2DFX's far lights glow over the city at night (option, off by default) |
 

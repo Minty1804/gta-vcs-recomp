@@ -739,6 +739,21 @@ namespace
         s.onChange = [](int v) { gsHwSetSharpTrails(v != 0); };
         settings::add(s);
 
+        // [Minty1804 fork] Smooth gradients (docs/game-internals.md 6g, the user's report 2026-11-20): the sky's colour
+        // gradient rounded through an ordered dither instead of in bands (gs_hw.h gsHwSetGradientDither)
+        s = {};
+        s.key = "graphics.smooth_gradients";
+        s.page = "Graphics";
+        s.section = "Image quality";
+        s.label = "Smooth sky gradients";
+        s.help = "The sky's colours blend without visible bands: each pixel between two shades takes one of them in a "
+                 "fine pattern, so the gradient looks smooth at dusk and dawn. Off is the PS2's banded sky.";
+        s.type = Type::Toggle;
+        s.defaultValue = 1;
+        s.env = "VCS_SMOOTH_GRADIENTS";
+        s.onChange = [](int v) { gsHwSetGradientDither(v != 0); };
+        settings::add(s);
+
         // Fences and leaves at a distance (docs/game-internals.md 6q): their faint, filtered edges write depth and hide
         // what is drawn behind them later - the sky shows through a far fence instead of the building behind it. Always
         // on, no setting (the user's choice, DECISIONS.md 2026-11-18); PS2X_HW_CUTOUT_SPLIT=0 brings the original back

@@ -31,7 +31,8 @@ cbuffer Draw : register(b0)
     float4 fogColor;       // rgb 0..255
     float4 filterSize;     // a filtered read (atstArefAfailRt.w == 3, sampleRtFiltered): xy the footprint of one target
                            // PS2 pixel in source texels (the tent's half-width), zw the source's size in texels (clamp)
-    float4 filterDest;     // a filtered read: xy the target's own scale (target pixels per PS2 pixel)
+    float4 filterDest;     // a filtered read: xy the target's own scale (target pixels per PS2 pixel); z: 1 = the
+                           // interpolated colour rounded through an ordered dither (gsHwSetGradientDither)
 };
 
 struct VSIn
@@ -379,7 +380,17 @@ PSOut ps_main(VSOut i)
 #if SHADER_DEPTH
     o.depth = i.depth;
 #endif
-    const float4 vc = floor((linearIipFgeAte.y == 1 ? i.col : i.colFlat) * 255.0 + 0.5);
+    // [gta-recomp] gsHwSetGradientDither (untextured Gouraud draws only): floor(x + d) with d from a 4x4 Bayer matrix by
+    // target pixel, 1/32 .. 31/32 (mean 1/2, as the rounding): a colour between two levels shows as a pattern of both in
+    // its proportion instead of a band of one; a whole level (a vertex's colour, a flat colour) is unchanged
+    float rounding = 0.5;
+    if (filterDest.z > 0.5)
+    {
+        const uint2 p = uint2(i.pos.xy) & 3u;
+        const uint b = ((p.x ^ p.y) & 1u) * 8u + (p.y & 1u) * 4u + (((p.x ^ p.y) >> 1) & 1u) * 2u + ((p.y >> 1) & 1u);
+        rounding = (float(b) + 0.5) / 16.0;
+    }
+    const float4 vc = floor((linearIipFgeAte.y == 1 ? i.col : i.colFlat) * 255.0 + rounding);
     float4 c = vc;
 #if SAMPLE_MODE != 1
     if (tmeTfxTccFst.x == 1)

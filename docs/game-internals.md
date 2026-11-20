@@ -1154,6 +1154,29 @@ UV mapping per primitive fitted from the vertices, u = du/dx * x + offset in tex
   1:1 (`rtFull`), the smearing blend is left out and the tinted add reads the buffer 1:1. The colour stays; the blur and
   the PS2's half resolution go. The motion blur (step 8, the game's Trails option) is untouched. Measured at Fort
   Baxter (noon, standing): the mean edge strength of a fence crop 9.4 off, 10.6 - 11.0 on; in 16:9 the picture lines up.
+- **The sky's gradient** (2026-11-20, F12 at 19:30 from (575, 135) looking up): the first draw after the depth fills,
+  24 vertices, untextured Gouraud (tme 0, iip 1), blend 0222 (opaque), z the far plane - a band of quads from the
+  horizon colour (e.g. 87 50 35) to the sky's (56 38 7e) over 224 PS2 rows, then a thin horizon strip (blend 0101).
+  The GS rounds the interpolated colour to 8 bits per pixel: one level every 3 - 5 PS2 rows, so at the window's
+  resolution the dusk sky shows bands (one level each, measured on PNG screenshots; the same with the game's Trails
+  off). Graphics > Image quality > **Smooth sky gradients** (`graphics.smooth_gradients`, on - the user's report;
+  `VCS_SMOOTH_GRADIENTS`, `gsHwSetGradientDither`) rounds an untextured, not alpha-tested Gouraud draw's colour
+  through a 4x4 ordered dither by target pixel (floor(x + d), d 1/32 .. 31/32): whole levels - vertex colours, flat
+  colours - are unchanged, a colour between two levels becomes a pattern of both. Off is bit-identical to before
+  (the shader's + 0.5). The pattern shows at Match window; a picture rendered larger than the window averages it
+  back into the gradient. The colour / trails pass afterwards (textured, through its 1x buffer) rounds again; at
+  the window's resolution the dither still breaks the band edges (contrast-stretched crops, build/night/s0_*).
+- **Headlight streaks over the player** (2026-11-20, the user's report "car lights through my character"): with a
+  car's headlights toward the camera and Vic between, the horizontal streaks through each headlight cross Vic. They
+  are GS LINE primitives (20 - 40 vertices, ZTST ALWAYS, z 0, additive blend 0221 FIX 128, untextured, colour 25 25 32
+  fading to 06 06 08 from the headlight's screen point), drawn after the coronas (which are depth tested, ZTST
+  GEQUAL, and hide behind Vic) and before the bloom / trails - so the PS2 draws them over everything as well; the
+  game's Trails byte (0x48653C) does not turn them off. Not from RenderWare's immediate mode: `VCS_TRACE_CALLERS` on
+  Im2D RenderPrimitive / indexed (0x2FBE08 / 0x2FBE68) and Im3D Transform / RenderIndexedPrimitive / RenderLine /
+  RenderPrimitive (0x2FBFA8 / 0x2FC2E8 / 0x2FC0F8 / 0x2FC210) in that scene sees only triangle lists and fans (types
+  3 and 5) and no RenderLine at all: the streaks' packets are built by the game's own code. Ruled out by reading:
+  FUN_0016A048, FUN_001AC1F8, FUN_00227348, FUN_00245768, FUN_0025F260, FUN_002BAFD0. A RAM search for the colours
+  (u32, packed bytes, floats) found nothing (scratchpad / VU1 data likely).
 - A 128x128 sample of the picture (5 x 3.5 texels per pixel, no offset) goes into the corner of FBP 420, plus an
   additive sun / glow sprite (64x64); right after, 3D draws (vehicles, z ~0.001) are textured from that 128x128
   corner - a reflection map refreshed every frame. After the bloom (which overwrites FBP 420) the sample is drawn

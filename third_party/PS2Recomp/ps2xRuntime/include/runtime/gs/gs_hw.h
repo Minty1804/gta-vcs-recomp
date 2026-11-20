@@ -138,6 +138,11 @@ void gsHwSetReducedPostFx(bool on);
 // colour pass at the frame's own resolution and without its warped blend (the smear) - the colour and the motion
 // blur's trail between frames kept. Off: the PS2's. Any thread; takes effect at once.
 void gsHwSetSharpTrails(bool on);
+// [gta-recomp] Smooth gradients (Graphics > Image quality): an untextured Gouraud draw (the sky's colour gradient) rounds
+// its interpolated colour to 8 bits through an ordered 4x4 dither by target pixel instead of to the nearest value, so the
+// steps between neighbouring levels become a fine pattern instead of bands. Vertex colours and flat colours stay exact;
+// textured draws and alpha-tested ones are untouched. Off: the PS2's rounding. Any thread; takes effect at once.
+void gsHwSetGradientDither(bool on);
 // [gta-recomp] Frame pacing between the game and the window. Off (the PS2's timing): the game may run 3 frames ahead and
 // each host frame renders every queued frame, showing the last - game time keeps its pace when the GPU falls behind.
 // On (frame-rate independent timing, where game time follows the clock anyway): one frame queued, one rendered and

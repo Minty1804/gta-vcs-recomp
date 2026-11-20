@@ -65,6 +65,7 @@ namespace
     std::atomic<float> g_aspectWidening{1.0f};          // [gta-recomp] gsHwSetAspectWidening
     std::atomic<bool> g_reducedPostFx{false};           // [gta-recomp] gsHwSetReducedPostFx
     std::atomic<bool> g_sharpTrails{false};             // [gta-recomp] gsHwSetSharpTrails
+    std::atomic<bool> g_gradientDither{false};          // [gta-recomp] gsHwSetGradientDither
     std::atomic<uint32_t> g_frameW{0}, g_frameH{0};     // [gta-recomp] gsHwSetFrameSize
     struct TargetRole                                   // [gta-recomp] gsHwSetTargetRole
     {
@@ -243,6 +244,7 @@ void gsHwSetFrameSize(uint32_t width, uint32_t height)
 void gsHwSetAspectWidening(float widening) { g_aspectWidening.store(widening, std::memory_order_relaxed); }
 void gsHwSetReducedPostFx(bool on) { g_reducedPostFx.store(on, std::memory_order_relaxed); }
 void gsHwSetSharpTrails(bool on) { g_sharpTrails.store(on, std::memory_order_relaxed); }
+void gsHwSetGradientDither(bool on) { g_gradientDither.store(on, std::memory_order_relaxed); }
 
 // [gta-recomp] gsHwShownInputNs (gs_hw.h)
 static int64_t steadyNs()
@@ -3167,6 +3169,9 @@ namespace
             c.fogColor[1] = s.fogG;
             c.fogColor[2] = s.fogB;
             c.fogColor[3] = gsFogCurve(); // [gta-recomp] gsHwSetFogCurve (1: the GS's linear fog)
+            // [gta-recomp] gsHwSetGradientDither: an untextured Gouraud draw's colour through the shader's ordered dither
+            // (not with the alpha test on: a mask's alpha compared against AREF stays exact)
+            c.filterDest[2] = (s.iip && !s.tme && !s.ate && g_gradientDither.load(std::memory_order_relaxed)) ? 1.0f : 0.0f;
 
             GsBlend b;
             if (!gsBlend(s, b))
