@@ -993,6 +993,11 @@ dropped on uploads (lazy render-target patching).
   shotguns' pellets go down the camera's line with their fan kept; shotgun, SPAS and pistol fire and kill at 2-7 m
   (14 of 15). Enhancements > Combat > **Aiming circle** (Original / Small / Spread). Palms and bushes further: not
   done - limited by the streamed world cells, not by LOD distances (DECISIONS.md 2026-11-18).
+- **Detailed city further, streaming memory, sharp trails (2026-11-19 - 20, branch hd-world, merged)**: Enhancements
+  > World > **Detailed city distance** (willzmkv's HD world; Original by default): our radius-3 hang - bad frees into the
+  packet heap - fixed with a check of every free against the heap's block chain; the bar passed at radius 3 (3 h soak
+  all ok, memchecks, cruise 5 hitches against 2, overlap scan, mission buildings; game-internals.md 6t). Game > Memory
+  > **Streaming memory** (PS2 by default; 9d). Graphics > Image quality > **Sharp trails** (off by default; 6g).
 
 ## Milestone 9 - Linux (started 2026-10-30)
 

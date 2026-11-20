@@ -2056,6 +2056,18 @@ measurement and the tools behind it.
     `-4` flags (bit 31 free; bits 30 and 29 a neighbour free - the free merges with it -; the low 28 bits the offset back
     to the previous block); blocks
     at or above `heap + 0x10` come from small-block pools (no header; `heap + 0x128` the pool table).
+- **The bar, passed at radius 3 (2026-11-20):**
+  - `soak.py --hours 3 VCS_HD_RADIUS=3`: 360 samples, every one `ok`: no crash, no hang, no fall; frame median 33.3 ms,
+    max 35.1 (the soak's 30 fps cap). The process's memory: 966 MB at the start, 2,267 after 15 minutes, 2,803 at the
+    end; after the first 15 minutes it rises in steps when the drive reaches new places (+166 MB around minute 105)
+    and is nearly flat between them (+3 MB over minutes 90 - 105, +9 over the last 15): caches filling, not a steady
+    leak. The packet heap stayed small throughout (`memstate`: 32 - 470 KB of 8 MB in use).
+  - `cruise.py` (the city route, 60 fps cap): radius 0: p99 16.9 ms, p99.9 19.3, max 33.4; 2 hitches (14.4 ms lost a
+    minute). Radius 3: p99 16.9, p99.9 28.0, max 38.8; 5 hitches (41.7 ms lost a minute), four of them game-thread
+    frames of ~30 ms with almost no draws (a cell's lists built in one frame), the fifth a texture-upload frame.
+  - `hd_overlap_scan.py` at radius 3 against 0: 872 views at 218 map points; no building drawn twice near the camera.
+    The largest differences are sea points (the respawn or the clock moved between the two shots) and traffic.
+  - `hdworld_missions.py`: all 6 mission-switched buildings PASS in both switch states.
 - **At the user's spot** (the floating roof, 6o: -739,-1158 heading 273.6 at 18:41): their build at radius 3 draws
   the tower detailed with its lit windows, no slab, and the buildings beside it (2026-11-19, `build/lod/roof_ref3`
   against `roof_ref0` in their build).
