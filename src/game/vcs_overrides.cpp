@@ -13,6 +13,7 @@
 #include "debug/rsl_trace.h"
 #include "game/vcs_display.h"
 #include "game/vcs_driveby.h"
+#include "game/vcs_headshots.h"
 #include "game/vcs_gps.h"
 #include "game/vcs_quicksave.h"
 #include "game/vcs_framerate.h"
@@ -1271,6 +1272,7 @@ namespace
         vcs::footcam::install(runtime);    // the on-foot camera held where the mouse puts it (game/vcs_footcam.h)
         vcs::world::install(runtime);      // density and draw distance (game/vcs_world_detail.h)
         vcs::driveby::install(runtime);    // the NPC drive-by's fire rate (game/vcs_driveby.h)
+        vcs::headshots::install(runtime);  // a gunshot to the head kills (game/vcs_headshots.h)
         vcs::gps::install(runtime);        // the GPS route on the radar (game/vcs_gps.h)
         vcs::quicksave::install(runtime);  // the quick save key: the game's Save menu anywhere (game/vcs_quicksave.h)
         vcs::installFrameRateHooks(runtime); // 30 / 60 fps (game/vcs_framerate.h)

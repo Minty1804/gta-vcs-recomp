@@ -23,6 +23,7 @@
 #include "disc/vcs_disc_id.h"
 #include "game/vcs_display.h"
 #include "game/vcs_driveby.h"
+#include "game/vcs_headshots.h"
 #include "game/vcs_aim.h"
 #include "game/vcs_fog.h"
 #include "game/vcs_gps.h"
@@ -805,6 +806,7 @@ namespace
         vcs::texpack::registerSettings(); // Graphics > Texture packs (game/vcs_texture_pack.h)
         vcs::fog::registerSettings();     // Graphics > Fog: the game's fog distance / start (game/vcs_fog.h; willzmkv's)
         vcs::driveby::registerSettings(); // Enhancements > Combat: drive-by fire rate (game/vcs_driveby.h)
+        vcs::headshots::registerSettings(); // Enhancements > Combat: headshots always kill (game/vcs_headshots.h)
         vcs::aim::registerSettings();     // the instant first shot (always on; VCS_QUICK_FIRST_SHOT=0 turns it off)
         vcs::gps::registerSettings();     // Enhancements > Radar: GPS route (game/vcs_gps.h)
         vcs::quicksave::registerSettings(); // Enhancements > Saving + Keyboard > Menus: quick save, F12 (game/vcs_quicksave.h)

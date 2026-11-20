@@ -1893,6 +1893,17 @@ the aiming camera already does; the fog end moves with it, the near plane (0.3 i
 reports (a tower's floating roof edge, distant window blocks) look the same natively and emulated at 100% draw
 distance: the game's art, left as it is.
 
+## 2026-11-20 - Far view from interiors always on; headshots kill (the user's requests)
+
+- The user asked for **Far view from interiors** to be always on, with no setting: it is gone from the menu, and an
+  old vcs.ini that still has the key loads as before (unknown keys are kept and ignored). `VCS_INTERIOR_FAR_VIEW=0`
+  gives the original game's 1000 m indoors back for a run (rule 1: the way back).
+- "Every headshot kills, even with a pistol; leave the rest of the damage as it is": Enhancements > Combat >
+  **Headshots always kill**, on by default (the user's wish over "authentic by default"). Only the player's shots,
+  only instant-hit guns (not fists, blades, explosions, fire or cars), only other peds: an enemy's headshot stays the
+  original's, or a mission's escort could die from one bullet. The damage is raised inside the game's own
+  InflictDamage, so peds the game makes bullet-proof stay so and the death is the game's (game-internals.md 12c).
+
 ## 2026-11-19 - Detailed city further: willzmkv's HD world carried over, by stages (the user's request)
 
 The floating roof over a Downtown tower is that tower's far model, and the far model is what a cell's list draws

@@ -1813,8 +1813,8 @@ maths, then checked in the game (`tools/world_check.py`, the free camera).
   moves the player in from the save point when he walks west; a teleport with area 2 loads no collision and leaves
   the player and camera frozen): `0x4CD12C` follow 1000, aiming 2000, after 1000 again; through the window the
   follow camera shows the bridge, the aiming one the towers behind it - at 100% draw distance as well (fainter), so it
-  is the original game's. Enhancements > World > **Far view from interiors** (`enhance.interior_far_view`, off,
-  `VCS_INTERIOR_FAR_VIEW`) passes 2000 at those two calls (the near plane stays 0.3); the fog end moves with it, as
+  is the original game's. The far view from interiors (always on since 2026-11-20, the user's wish; was the
+  setting `enhance.interior_far_view`; `VCS_INTERIOR_FAR_VIEW=0` gives the 1000 back for a run) passes 2000 at those two calls (the near plane stays 0.3); the fog end moves with it, as
   it does when aiming. `world_check.py`'s `interior` step reads the far plane in the barracks.
 - **Checked as the game's own art** (2026-11-19, the user's reports): the bright double roof edge floating above a
   tower across the water from (-739, -1158) (looking east at 18:41), and the lit and unlit window blocks of the
@@ -3601,6 +3601,20 @@ hidden run (rig `peek` / `poke`, snapshots diffed).
     is the secondary fire (right mouse button); Space (Handbrake) is R1's other key there. While aiming, R1 is left
     out of the pad unless a handbrake key or the gamepad's R1 is held, and the right stick is centred (the mouse has
     the camera, `carcam::mouse(..., aiming)` holds it).
+- **Headshots** (2026-11-20, `src/game/vcs_headshots.cpp`, read with `tools/eedis.py`, checked in the game with
+  `tools/headshot_check.py`): **CPed::InflictDamage is FUN_001D7940** - a0 the ped hit, a1 who did it, a2 the weapon
+  type (damage kinds past the weapons too: 0x2E, 0x2F), f12 the damage, a3 the body piece, t0 the direction. Its
+  switch on the piece (jump table **0x4A9C70**, pieces 0 - 6) sends piece 6 (the head) to **0x1D7F48** (the hit plays
+  on frame 2, `$fp` set as the game's own headshot flag); 2 - 5 are the arms and legs. A bullet comes from the impact
+  function **FUN_002C6460**, which calls InflictDamage at 0x2C6D14 and 0x2C6E9C with the weapon info's damage (+0x18;
+  x4 up to 255 with the player's damage bonus, sp+0xA0 from FUN_00239420). Weapon info: `*(*0x712770 + 4) + type *
+  0x70`, +4 the fire type (1 instant hit): types 0 - 43 are rows (0 x12, 2 x7, 1 x13, then 2 3 1 1 2 1 4 4 0 0 7 0),
+  other data after them. Measured: the original pistol takes 32 of a man's 100 at the head as at the chest (100 ->
+  68). Enhancements > Combat > **Headshots always kill** (`enhance.headshots_kill`, on - the user's wish;
+  `VCS_HEADSHOTS_KILL`) raises f12 to (health + armour) x 4 + 100 when the player's ped shot another ped's head
+  with an instant-hit gun; the proof checks (mission characters, bullet-proof peds) and the death are the game's.
+  Other shooters' headshots stay the original's, so an enemy cannot kill a mission's escort outright.
+  `VCS_HEADSHOT_HOOKS=0` hooks nothing; the rig's `headshot` command counts the player's hits by piece.
 
 ### 12d. Population: density, caps, spawn chance (2026-11-07, Enhancements > World)
 

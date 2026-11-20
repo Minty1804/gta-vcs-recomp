@@ -140,7 +140,8 @@ namespace vcs::world
         // plane cuts the world (0x4CD12C, IsSphereVisible) and ends the fog, so through a window the follow camera
         // showed the bridge and not the towers behind it, which the aiming camera showed - at 100% draw distance too,
         // more of them with a longer one. On: the follow camera keeps 2000 indoors as well (the near plane stays 0.3).
-        std::atomic<int> g_interiorFarView{0};
+        // Always on since 2026-11-20 (the user's wish: no setting any more); VCS_INTERIOR_FAR_VIEW=0 is the way back.
+        std::atomic<int> g_interiorFarView{1};
         PS2Runtime::RecompiledFunction g_origSetFar = nullptr, g_origProjection = nullptr;
 
         uint32_t rd32(const uint8_t *ram, uint32_t a)
@@ -621,19 +622,10 @@ namespace vcs::world
         f.onChange = [](int v) { vcs::hleworld::setSolidFarFoliage(v != 0); };
         settings::add(f);
 
-        settings::Spec iv; // [Minty1804 fork]
-        iv.key = "enhance.interior_far_view";
-        iv.page = "Enhancements";
-        iv.section = "World";
-        iv.label = "Far view from interiors";
-        iv.help = "Indoors, the city stays visible through the windows when you are not aiming. In the original game "
-                  "the normal camera sees only half as far inside a building, so distant towers show only while "
-                  "aiming. Off is the original game.";
-        iv.type = settings::Type::Toggle;
-        iv.defaultValue = 0;
-        iv.env = "VCS_INTERIOR_FAR_VIEW";
-        iv.onChange = [](int v) { g_interiorFarView.store(v, std::memory_order_relaxed); };
-        settings::add(iv);
+        // [Minty1804 fork] Far view from interiors: always on (the user's wish, 2026-11-20); VCS_INTERIOR_FAR_VIEW=0
+        // gives the original game's 1000 m indoors back for a run.
+        if (const char *e = std::getenv("VCS_INTERIOR_FAR_VIEW"); e && e[0] == '0')
+            g_interiorFarView.store(0, std::memory_order_relaxed);
 
         settings::Spec sh;
         sh.key = "enhance.ped_shadows";

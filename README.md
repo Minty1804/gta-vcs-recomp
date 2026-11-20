@@ -43,7 +43,8 @@ option or can be switched off, and everything else is the same as upstream.
 | **Exposure** | The game's brightness as it is | Graphics → Image quality: brighten or darken the game's picture; shadows open up while white stays white, the HUD keeps its colours (100% by default, the original; after willzmkv's Exposure) |
 | **Free aim up close** | Firing at a man right next to you swung the gun instead of shooting; shotgun pellets left from the gun, not through the circle, and missed close targets | Every gun fires up close, and shotgun pellets spread around the circle |
 | **Aiming circle** | The game's large circle | Original, Small, or Spread: a small dot for guns (they hit its centre), the pellet spread for shotguns (Enhancements → Combat, Original by default) |
-| **Far view from interiors** | Inside a building the normal camera sees half as far: distant towers through a window show only while aiming | The city stays in view through the windows (Enhancements → World, off by default) |
+| **Far view from interiors** | Inside a building the normal camera sees half as far: distant towers through a window show only while aiming | The city stays in view through the windows (always on) |
+| **Headshots** | Most guns need several shots to the head: a pistol takes a quarter of a man's health wherever it hits | Your bullet to the head kills, from any gun; every other hit does the damage it always did (Enhancements → Combat: **Headshots always kill**, on by default) |
 | **Character shadows** | Always on under Vic and everyone on foot | Can be turned off (option, on by default) |
 | **Distant lights** | Street lights vanish past their short corona distance: the city is dark far away at night | Project2DFX's far lights glow over the city at night (option, off by default) |
 

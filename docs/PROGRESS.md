@@ -1281,7 +1281,9 @@ Python scripts still usable on their own. docs/LAUNCHER.md has the whole of it; 
 | `VCS_TEXPACK_MAX=<px>` | Texture pack images larger than this many pixels a side are shrunk to their first mip level that fits (memory; no effect on hitches, PERFORMANCE.md 33) |
 | `VCS_CAR_DISTANCE=100..200` | Enhancements > World > Car distance for this run (percent of GenerationDistMultiplier while the car spawner and RemoveDistantCars run; game-internals.md 12d) |
 | `VCS_PED_SHADOWS=0\|1` | Enhancements > World > Character shadows for this run (0: no `shad_ped` shadow is stored; game-internals.md 12d) |
-| `VCS_INTERIOR_FAR_VIEW=0\|1` | Enhancements > World > Far view from interiors for this run (the follow camera keeps the 2000 m far plane indoors; game-internals.md 6o) |
+| `VCS_INTERIOR_FAR_VIEW=0` | the original game's 1000 m far plane indoors for this run (the far view from interiors is always on since 2026-11-20; game-internals.md 6o) |
+| `VCS_HEADSHOTS_KILL=0\|1` | Enhancements > Combat > Headshots always kill for this run (game-internals.md 12c) |
+| `VCS_HEADSHOT_HOOKS=0` | CPed::InflictDamage left alone: headshots as in the original game (the setting then does nothing) |
 | `VCS_SOLID_FAR_PALMS=0\|1` | Enhancements > World > Solid far palms for this run (the far vegetation's distance fade off, native draw only; game-internals.md 7b) |
 | `VCS_DISTANT_LIGHTS=0\|1` | Enhancements > World > Distant lights for this run (Project2DFX's far street lights at night; game-internals.md 7c) |
 | `VCS_LODLIGHTS_FILE=<path>` | The light table to read (default `project2dfx/lodl.c` next to vcs.exe, fetched by the build) |

@@ -5,8 +5,8 @@ game-internals.md 6o and 12d).
     python tools/world_check.py [OUT] [--port N] [--seconds S]
 
 One hidden session from a card copy (rig.default_save), at noon in the sun at a busy city spot. Checks:
-  interior   in the barracks the card loads in, the follow camera's far plane is the original's 1000, 2000 with Far
-             view from interiors on, 1000 again with it off
+  interior   in the barracks the card loads in, the follow camera's far plane is 2000 (the far view from interiors,
+             always on; the original game's 1000 with VCS_INTERIOR_FAR_VIEW=0)
   original   at 100% the spawners' factors, caps and spawn-chance table and the LOD scale hold the executable's values,
              bit for bit
   inview     the in-view test (TheCamera's matrix) sees the player in front of the camera
@@ -115,18 +115,10 @@ def main():
     try:
         g.wait_ingame()
         # [Minty1804 fork] the card loads inside the barracks (area 2): the follow camera's far plane (0x4CD12C) is
-        # 1000 there as in the original, 2000 with Far view from interiors, 1000 again without
-        def far():
-            g.wait_frames(10)
-            return g.peekf(0x4CD12C, 1)[0]
-        g.cmd("setting enhance.interior_far_view 0")
-        indoor = [g.area(), far()]
-        g.cmd("setting enhance.interior_far_view 1")
-        indoor.append(far())
-        g.cmd("setting enhance.interior_far_view 0")
-        indoor.append(far())
-        ok("interior", indoor[0] != 0 and indoor[1:] == [1000.0, 2000.0, 1000.0],
-           "area %d, far off / on / off: %s" % (indoor[0], indoor[1:]))
+        # 1000 there in the original; the far view from interiors (always on since 2026-11-20) keeps 2000
+        g.wait_frames(10)
+        indoor = [g.area(), g.peekf(0x4CD12C, 1)[0]]
+        ok("interior", indoor[0] != 0 and indoor[1] == 2000.0, "area %d, far plane %s" % tuple(indoor))
         g.prime()
         g.invincible()
         g.set_time(12)
