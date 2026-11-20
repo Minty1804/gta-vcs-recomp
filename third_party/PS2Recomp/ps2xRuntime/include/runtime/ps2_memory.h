@@ -377,7 +377,7 @@ public:
     uint8_t *getGSVRAM() { return m_gsVRAM; }
     const uint8_t *getGSVRAM() const { return m_gsVRAM; }
     bool hasSeenGifCopy() const { return m_seenGifCopy; }
-    // Main RAM (32MB)
+    // Main RAM (PS2_RAM_SIZE: 128 MB on the host, the game sees 32 - [gta-recomp])
     uint8_t *m_rdram;
 
     // Scratchpad memory (16KB)

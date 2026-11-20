@@ -2031,6 +2031,9 @@ measurement and the tools behind it.
   `VCS_HD_DUPES=1`, `VCS_HD_OSC=1`, `VCS_HD_LATE=1`, `VCS_HD_DRAWCHECK=1`, `VCS_HD_PKTDEBUG=1`, `VCS_HD_DRAWMODE`;
   control-channel commands `hdworld`, `hdpairs`, `hdcompare`, `skipextra`, `keeplod`, `memstate`; tools
   `hd_world_verify.py`, `hd_overlap_scan.py`, `hdworld_missions.py`.
+- Our trace switches `VCS_TRACE_SECTORS`, `VCS_SECTOR_PROBE`, `VCS_TRACE_CELL` and `VCS_TRACE_FILES` (vcs_overrides.cpp)
+  replace some of the same functions and call the game's own directly: in such a run the detailed city's hooks there may
+  be left out. Analyse the original's lists with them at Original; the detailed city has its own (`VCS_HD_PROBE`).
 
 ## 7. Textures: `.XTX`
 
