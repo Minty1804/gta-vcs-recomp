@@ -1948,6 +1948,17 @@ current list's low-detail sectors they lie inside are hidden, as the game hides 
   compare`: every scene the same (pause map 0.00, the static flyover road 0.02; the moving scenes within their usual
   spread, the same draws and frame times) except `loading`, whose illustration the game picks at random each boot.
 
+## 2026-11-20 - Tap to exit a vehicle: an option, on by default (the user's report)
+
+- The user: "while driving, F should get out of the vehicle but it only brakes". Measured: the game's own logic - a
+  press while rolling slowly only brakes, getting out needs a new press once the car stands, and with the gas held
+  there is none (game-internals.md 12a). The same at 30 fps and with the gamepad, so not a port bug.
+- A PC player expects one press to be enough (the PC GTAs). The keys now do it for the game: Triangle held while the
+  car moves (the game's braking), a fresh press every other frame once it stands, gas and brake let go meanwhile.
+  On by default because the user asked for that behaviour; Keyboard > **Tap to exit a vehicle** off gives the PS2's.
+  A new press of gas or brake cancels it, so a mistaken tap doesn't strand the car. The gamepad keeps the PS2's
+  way (its players know the hold).
+
 ## 2026-11-20 - Sharp trails: an option, off by default (the user's request)
 
 - The user asked for something like aap's sharptrails mod for GTA III / VC on PC: the colour filter / trails at full

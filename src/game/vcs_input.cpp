@@ -424,6 +424,7 @@ namespace vcs::input
             float deadzoneLeft = 0.12f, deadzoneRight = 0.12f, cameraScale = 1.0f, trigger = 0.3f;
             float vibration = 1.0f;
             float walk = 0.45f;
+            bool exitTap = true; // keys.exit_tap
         };
 
         std::mutex g_mapMutex;
@@ -466,6 +467,7 @@ namespace vcs::input
             m.trigger = settings::value("pad.trigger") / 100.0f;
             m.vibration = settings::value("pad.vibration") / 100.0f;
             m.walk = settings::value("keys.walk_speed") / 100.0f;
+            m.exitTap = settings::value("keys.exit_tap") != 0;
             std::lock_guard<std::mutex> lock(g_mapMutex);
             g_map = m;
         }
@@ -626,6 +628,21 @@ namespace vcs::input
         ReloadAnim g_reloadAnim; // game thread: asked for at the pad read, played right after it
         bool g_reloadAnimOn = true; // VCS_RELOAD_ANIM=0: the reload without its animation (as before 2026-11-17)
 
+        // [Minty1804 fork] Tap to exit a vehicle (keys.exit_tap, 2026-11-20, the user: "F while driving only brakes").
+        // The game's exit (FUN_002473C0, from 0x247CB8, measured 2026-11-20): in a car that has moved, Triangle's
+        // press (FUN_00286100, new && !old) jumps out when it is fast, gets out when it stands, and in between only
+        // marks the vehicle to brake (+0x264 bit 0x2000, while Triangle is held) - holding the button on does not get
+        // him out once it stands, a new press does. So a tap at low speed only braked, and with Accelerate held the car
+        // never stood (no exit at all). The exit key's press holds Triangle while the vehicle moves and presses it
+        // anew every other frame once it stands, with Cross / Square (gas, brake / reverse) let go, until Vic is out;
+        // a new press of gas or brake gives the car back. Keys only: the gamepad keeps the PS2's way.
+        struct ExitTap
+        {
+            bool active = false, keyWas = false, driveWas = false;
+            uint32_t until = 0; // game clock: gives up (a vehicle the game will not let him out of)
+        };
+        ExitTap g_exitTap; // game thread (pad reads)
+
         // scePadRead (0x449488), hooked: after the read, when a reload asked for its animation, the read returns into
         // BlendAnimation (pc = it, ra = afterBlend: a host function at a guest address no code uses), as a guest call -
         // its own checkpoints unwind and resume as any other. afterBlend sets the finish callback on the association it
@@ -758,6 +775,7 @@ namespace vcs::input
             // [Minty1804 fork] in a vehicle: R1's keys other than the handbrake's (the PC scheme's secondary fire, the
             // right mouse button) aim from the driver's seat (free aim), and the handbrake's keys, which keep R1 then
             bool keyDriverAim = false, keyHandbrake = false;
+            bool keyExit = false, keyDrive = false; // a vehicle's exit key, its gas or brake key (Tap to exit a vehicle)
             float padRx = 0.0f, padRy = 0.0f;
             bool padUsed = false, keysUsed = false; // the player's device this read (lastDevice)
             bool reloadHeld = false;                // the Reload key or its gamepad button
@@ -904,6 +922,11 @@ namespace vcs::input
                     if (c.mask == kR1 && vehicleOnly(c))
                         (std::strstr(c.id, "handbrake") ? keyHandbrake : keyDriverAim) = true;
                     keyCircle = keyCircle || c.mask == kCircle;
+                    if (c.when & (kInVehicle | kInAir))
+                    {
+                        keyExit = keyExit || c.mask == kTriangle;
+                        keyDrive = keyDrive || c.mask == kCross || c.mask == kSquare;
+                    }
                 }
                 else if (c.target == Target::Stick)
                     (c.sign < 0 ? neg : pos)[c.axis] = 1;
@@ -911,6 +934,38 @@ namespace vcs::input
                     reloadHeld = true;
                 else
                     walk = true;
+            }
+            // [Minty1804 fork] Tap to exit a vehicle (g_exitTap above): from the exit key's press until Vic is out
+            {
+                ExitTap &t = g_exitTap;
+                const uint32_t clock = g_rdram ? rd32(kGameClock) : 0;
+                const bool press = keyExit && !t.keyWas, drivePress = keyDrive && !t.driveWas;
+                t.keyWas = keyExit;
+                t.driveWas = keyDrive;
+                if (!m.exitTap || blocked || !game.driving || game.menu || game.paused)
+                    t.active = false;
+                else if (press)
+                {
+                    t.active = true;
+                    t.until = clock + 8000u;
+                    std::fprintf(stderr, "[input] exit vehicle: the exit key held for the game until Vic is out\n");
+                }
+                else if (t.active && (drivePress || static_cast<int32_t>(t.until - clock) < 0))
+                {
+                    t.active = false;
+                    std::fprintf(stderr, "[input] exit vehicle: %s\n", drivePress ? "cancelled by gas / brake" : "gave up after 8 s");
+                }
+                if (t.active)
+                {
+                    // moving: Triangle held (the game brakes); standing (move speed under 0.05 units a step, ~9 km/h):
+                    // a fresh press every other game frame - the game gets out on a press, not on the button held
+                    const uint32_t ped = rd32(kPlayerPed), veh = ped ? rd32(ped + kPedVehicle) : 0;
+                    float v2 = 0.0f;
+                    for (uint32_t k = 0; veh && k < 3; ++k)
+                        v2 += rdf(veh + 0x140u + 4u * k) * rdf(veh + 0x140u + 4u * k);
+                    const bool press = v2 >= 0.05f * 0.05f || (rd32(kFrameCounter) & 1u) == 0;
+                    buttons = static_cast<uint16_t>((buttons & ~(kCross | kSquare | kTriangle)) | (press ? kTriangle : 0));
+                }
             }
             // Escape is the pause menu, as in the PC games (not a binding: it cancels one in the menu).
             // While the pause menu is up (or Escape is still held from then) it is the menu's back key instead
@@ -1624,6 +1679,23 @@ namespace vcs::input
                 s.max = 80;
                 s.format = "%d%%";
                 s.defaultValue = 45;
+                s.onChange = onChange;
+                settings::add(s);
+            }
+            if (std::strcmp(c.id, "pc_car_exit") == 0)
+            {
+                // [Minty1804 fork] Tap to exit a vehicle (g_exitTap; on: the user's wish, 2026-11-20)
+                s = {};
+                s.key = "keys.exit_tap";
+                s.page = kKeys;
+                s.section = c.section;
+                s.label = "Tap to exit a vehicle";
+                s.help = "On: one press of the exit key gets Vic out - the vehicle brakes to a stop first, gas and "
+                         "brake let go meanwhile (press one again to keep driving). Off: as on the PS2, where a press "
+                         "while rolling slowly only brakes and the key must be pressed again once the vehicle stands "
+                         "(with the gas held he never gets out).";
+                s.type = Type::Toggle;
+                s.defaultValue = 1;
                 s.onChange = onChange;
                 settings::add(s);
             }

@@ -145,6 +145,29 @@ def run(c):
     c.ok("in a vehicle: F is Triangle, Vic gets out", p["buttons"] == TRIANGLE and g.u32(g.player()[0] + 0x8C4) != 0x37,
          "f -> %04x" % p["buttons"])
 
+    # [Minty1804 fork] Tap to exit a vehicle (keys.exit_tap, on by default): a tap of F while the car rolls slowly got him
+    # nowhere (the game only brakes then), and with the gas held never out (game-internals.md 12a)
+    for y, label, gas in ((675.0, "rolling, gas let go", False), (1175.0, "gas held", True)):
+        g.teleport(575.0, y, -100.0, 0.0)
+        time.sleep(3.0)
+        g.spawn_car(ahead=0.0)
+        time.sleep(3.0)
+        g.cmd("key w down")
+        time.sleep(0.8)
+        if not gas:
+            g.cmd("key w up")
+        g.cmd("key f down")
+        time.sleep(0.15)
+        g.cmd("key f up")
+        t0, state = time.time(), 0x37
+        while time.time() - t0 < 6.0 and state == 0x37:
+            time.sleep(0.2)
+            state = g.u32(g.player()[0] + 0x8C4)
+        g.cmd("key w up")
+        c.ok("in a vehicle: a tap of F gets Vic out (%s)" % label, state != 0x37,
+             "state 0x%x after %.1f s" % (state, time.time() - t0))
+        time.sleep(2.0)
+
     # the gamepad by action: on foot (the PS2's buttons at the defaults), then an action rebound in its situation only
     g.cmd("gamepad on")
     try:

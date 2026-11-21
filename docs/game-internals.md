@@ -965,6 +965,12 @@ Found from frame dumps (`PS2X_HW_DUMP`, draw lists with depth) during the widesc
   Two detectors are now always on, so a player's log shows the moment: `[hud] N frame(s) sent without the HUD`
   (vcs_hud.cpp, the kick without CHud::Draw after one with it) and `[gs-hw] N shown 3D frame(s) without their HUD
   layer` (gs_hw.cpp), each at most one line per 10 s.
+  The user's next log (their play, the new build): no `[gs-hw] ... without their HUD layer` line, and the `[hud]`
+  lines only at the pause menu's opening - so the glitch is not a frame without its HUD. They then tied it to
+  changing Trails in the game's menu. The pause menu's Trails (Display page; a click toggles it, Enter / left / right
+  do not) changed no draw of the frame here: the same post passes (bloom, trails / colour, the motion blur from its
+  history) and the motion blur's byte 0x48653C still 1 after the menu closed; a RAM diff shows only the item's own
+  choice. Walking 12 s with it off, and with Sharp trails switched every 2 s, showed no HUD fault in the frames kept.
 - The colour filter / trails effect is drawn as **strips that sample the frame** itself (textures
   inside render targets, `texIsRt`), plus an alpha-only quad (FBMSK 0xFFFFFF) over x 80..560 at
   z = 0.
@@ -3111,6 +3117,21 @@ timing at 60 fps; independent timing at 60 / 144 fps got through, by luck (below
   was put 40 frames after the last press the presses were not taken and the old station is written back. With
   Weapons (the default since 2026-11-19) the wheel calls the game's weapon selector instead (12c, "Free aim from the
   driver's seat").
+- **Getting out of a vehicle** (2026-11-20, the user: "F while driving only brakes"; `VCS_TRACE_CALLERS` on the pad
+  readers, the rig's `padstate`). CPlayerInfo's update FUN_002473C0 reads Triangle at 0x247CB8: with the player ped's
+  +0x1D0 bit 0x400 and FUN_00219D50 (in a vehicle, by ped state) it takes the **press** - FUN_00286100: pad +0x28 set
+  and +0x58 (last frame) clear, none of the disable fields +0x96 / +0x98 / +0xA3 set - else the button **held**
+  (FUN_002860B0, from 0x247D00). In a car that has moved the press path is the one used, and a press: jumps out
+  (ped state 0x2D, rolling 0x2E) when fast (a tap at 72 km/h), gets out (0x3F, via FUN_003BB670(ped, 0x10) from
+  0x247F34) when it stands, and in between only marks the vehicle to brake (vehicle +0x264 bit 0x2000, set while
+  Triangle is held). Holding the button on does not get him out once the car stands; only a new press does. With
+  Cross (gas) held the car never stands, so no press ever got him out. The same at 30 and 60 fps, and with the
+  gamepad: the game's own behaviour (`fexit` runs: 13 km/h, a 0.15 s tap - braked to a stop, stayed in).
+  **Tap to exit a vehicle** (Keyboard, on by default; `vcs_input.cpp` `g_exitTap`): the exit key's press holds
+  Triangle while the vehicle's move speed (+0x140, units a step) is 0.05 or more, then presses it anew every other
+  game frame, with Cross / Square let go, until the ped state leaves 0x37; a new press of the gas or brake key
+  cancels it, 8 s of game time give up. Keys only: the gamepad keeps the PS2's way. `tools/pc_scheme_check.py`
+  checks a tap at low speed and one with the gas held.
 
 ### 12b. The camera and the mouse (2026-10-29)
 

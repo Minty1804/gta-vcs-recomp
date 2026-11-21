@@ -103,6 +103,11 @@ The actions split from older ones on 2026-11-19 (the vehicle's and aircraft's Ex
 Sub-missions from the shared rows; the aircraft's from the vehicle's) take the older ones' keys from vcs.ini until they
 are set (settings::Spec::alias), so a player's own keys carry over.
 
+**Tap to exit a vehicle** (Keyboard, under Vehicle; on by default, the user's wish of 2026-11-20): one press of the exit
+key gets Vic out - the vehicle brakes to a stop first, with gas and brake let go meanwhile (press one again to keep
+driving). Off: the PS2's way, where a press while rolling slowly only brakes, the button must then be pressed again
+once the car stands, and with the gas held he never gets out (game-internals.md 12a). The gamepad keeps the PS2's way.
+
 **All situations** (everywhere but the menus): camera I J K L (right stick); D-pad up / down / left / right (unbound
 keys).
 
