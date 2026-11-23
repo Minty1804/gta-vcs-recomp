@@ -152,7 +152,8 @@ class Game:
                                 cwd=ROOT, env=e, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                                 stderr=subprocess.DEVNULL, start_new_session=not tc.IS_WINDOWS)
         gamectl.wait(port=port, timeout=90)
-        return cls(proc, os.path.join(ROOT, "build", "run", name + ".log"), port)
+        # run.py writes the log into the build folder (tc.BUILD: build/, or VCS_BUILD_DIR / .vcs-build-dir elsewhere)
+        return cls(proc, os.path.join(tc.BUILD, "run", name + ".log"), port)
 
     def alive(self):
         return self.proc is None or self.proc.poll() is None
