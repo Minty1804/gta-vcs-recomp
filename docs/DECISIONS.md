@@ -2013,3 +2013,24 @@ behind, L2 / R2 targets vs weapons, R1 secondary fire vs handbrake) have keys of
   car's is N, `pc_car_submission=78`): the menu was right, the in-car prompt was not (it showed on-foot R3, Look behind).
 - The glyph table grew from 99 to 168 token entries, one texel apart (u = index; it was 2 x index) so every token's u
   stays inside the font's 256 texels as before.
+
+## 2026-11-23 - the F2 menu laid out by what a setting does; the smooth sky always on; the docs cleaned (the user's request)
+
+The user: order the F2 menu better (structure, sections, explanations), and drop options nobody would realistically
+turn off, leaving them always on.
+- Pages: Display, Graphics, **World** (new: draw distances, traffic and people, far details, streaming memory),
+  **Game** (combat, map and saving, button prompts, start-up, the window in the background), Audio, Keyboard, Gamepad,
+  Advanced (diagnostics: performance overlay, texture dump; reset). The *Enhancements* page, which held most of the
+  fork's options under loose headings, is gone; *Keyboard > Menus* (the quick-save key) is *Shortcuts*. The order is one
+  list (`settings::setLayout`, main.cpp) instead of the order of registration, so moving a section is one line. Keys
+  are unchanged: vcs.ini files and `VCS_*` overrides keep working. SETTINGS_MENU_WIDESCREEN.md, "The menu's layout".
+- Hardwired: only **Smooth sky gradients** (the user's pick from the candidates: far fences, palms, fixes already always
+  on were left as they are; every other option stays). The dither only breaks up bands the PS2's 8-bit colour made,
+  nothing else changes, so a switch in the menu bought nothing; `VCS_SMOOTH_GRADIENTS=0` stays for comparing (rule 1).
+- Docs: a "safe" cleanup, the user's choice. What the fork owns (README's fork section, FORK_IMPORTS.md, docs/mods,
+  CONTROLS.md) was rewritten: the README's fork section by area, FORK_IMPORTS by status (done / open / later), the two
+  mod docs translated from Polish and shortened. In docs upstream also changes, only false statements were fixed (old
+  menu paths, settings that no longer exist) and nothing was moved or renumbered, so `git rebase upstream/main` keeps
+  conflicting only where we really changed something. Dated entries (this file, PROGRESS history) keep the paths they
+  had at the time.
+

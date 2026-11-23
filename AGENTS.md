@@ -20,6 +20,8 @@ detailed knowledge lives in `docs/`:
 | [docs/LINUX.md](docs/LINUX.md) | The Linux build: packages, flags, the Vulkan backend, what differs from Windows, the work list |
 | [docs/MACOS.md](docs/MACOS.md) | The macOS build (Apple Silicon): Apple's tools only, the Metal backend, sse2neon, what differs, the work list |
 | [docs/LAUNCHER.md](docs/LAUNCHER.md) | The launcher and releases: what a release holds, the player's flow, the tools behind each button, the `@vcs` events, what was checked |
+| [docs/FORK_IMPORTS.md](docs/FORK_IMPORTS.md) | This fork: what other forks have, what was taken from them (done / open / later), with their authors |
+| [docs/mods/](docs/mods) | This fork: the GPS route and the quick save in detail (the game's structures they use, what was checked) |
 
 **When you learn something about the game, write it into docs/game-internals.md in the same change.**
 Record addresses and how you found them. When something is weird, use judgment, fix or work around it,
@@ -37,7 +39,9 @@ choices).
   ELF, no generated C++ (`generated/`), no disassembly listings, no extracted assets. Analysis dumps go
   to `build/analysis/` (ignored). Function maps (names + addresses) and docs describing behaviour are
   fine.
-- Authentic by default; every enhancement is an option (settings registry, `src/settings`).
+- Authentic by default; every enhancement is an option (settings registry, `src/settings`). A plain fix nobody would
+  turn off (the smooth sky, far fences, ...) is always on, with an environment switch back for comparing (PROGRESS.md's
+  switch table). The F2 menu's pages and sections are ordered by `settings::setLayout` in `src/main.cpp`.
 
 ## Layout
 

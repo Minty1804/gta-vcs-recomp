@@ -1207,8 +1207,8 @@ UV mapping per primitive fitted from the vertices, u = du/dx * x + offset in tex
   horizon colour (e.g. 87 50 35) to the sky's (56 38 7e) over 224 PS2 rows, then a thin horizon strip (blend 0101).
   The GS rounds the interpolated colour to 8 bits per pixel: one level every 3 - 5 PS2 rows, so at the window's
   resolution the dusk sky shows bands (one level each, measured on PNG screenshots; the same with the game's Trails
-  off). Graphics > Image quality > **Smooth sky gradients** (`graphics.smooth_gradients`, on - the user's report;
-  `VCS_SMOOTH_GRADIENTS`, `gsHwSetGradientDither`) rounds an untextured, not alpha-tested Gouraud draw's colour
+  off). **Smooth sky gradients** (the user's report; always on since 2026-11-23, no setting - `VCS_SMOOTH_GRADIENTS=0`
+  brings the bands back for a run; `gsHwSetGradientDither`) rounds an untextured, not alpha-tested Gouraud draw's colour
   through a 4x4 ordered dither by target pixel (floor(x + d), d 1/32 .. 31/32): whole levels - vertex colours, flat
   colours - are unchanged, a colour between two levels becomes a pattern of both. Off is bit-identical to before
   (the shader's + 0.5). The pattern shows at Match window; a picture rendered larger than the window averages it
@@ -1850,7 +1850,7 @@ btn_triangle_psp, btn_square_psp, btn_up_psp, btn_down_psp, btn_left_psp, btn_ri
 - **The drop shadow** (`FUN_003f3d88` renders twice, the shadow first with t3 = 1) draws button glyphs in white too, the
   same as the text's own pass (`FUN_00261be8` gives them colour 255,255,255 with the text's alpha).
 
-### 6o. Draw distance: the LOD scale and the two far planes (2026-11-07, Enhancements > World)
+### 6o. Draw distance: the LOD scale and the two far planes (2026-11-07, World)
 
 Found reading the generated code's disassembly for the far plane's setters and readers and the camera update's LOD
 maths, then checked in the game (`tools/world_check.py`, the free camera).
@@ -1925,7 +1925,7 @@ maths, then checked in the game (`tools/world_check.py`, the free camera).
   `VCS_SECTOR_PROBE=<file>` (analysis) reads a command from the file every 200 ms: `list` logs the sector entries
   drawn in the next ~3,000 calls (`[sector-probe]` index, model, matrix translation), a number skips every entry
   with that model index, anything else draws all.
-- `vcs_world_detail.cpp` writes `0x4887F8` (Enhancements > Draw distance) as set, nothing held back. It reports the
+- `vcs_world_detail.cpp` writes `0x4887F8` (World > Draw distance) as set, nothing held back. It reports the
   packet use at the frame kick = (cursor `+0x18` - (half start - 0x10)) + (half end - data `+0x1C`), as
   `FUN_00476770` computes it (`worlddetail`: packets / peak).
 - **Cars drawn further than the game keeps them**: PossiblyRemoveVehicle (12d) removes a car on screen beyond 160 m x
@@ -2067,7 +2067,7 @@ After willzmkv's (dejot) Exposure in their fork (02a6d4c, b5edbaf; docs/FORK_IMP
   - Cost: gs_ms 3.0 → 3.1 and 2.8 → 3.0 (noise level).
 - Switch: `VCS_EXPOSURE=<percent>` sets the setting for one run.
 
-### 6t. The detailed city further: cells, the geometry table, extra cells' lists (2026-11-19, Enhancements > World > Detailed city distance)
+### 6t. The detailed city further: cells, the geometry table, extra cells' lists (2026-11-19, World > Draw distance > Detailed city distance)
 
 Found by willzmkv (dejot) in their fork (their game-internals 9j, 2026-11-11 to 11-17; `src/game/vcs_world_hd.cpp` and
 `vcs_memory.cpp` come from there, FORK_IMPORTS.md row 21). Summarised here with what we checked; their 9j has every
@@ -2231,7 +2231,7 @@ PaletteKeyHash, TextureName) and another VCS port that loads PCSX2 packs (its gs
   (the same on the emulated path). Not RenderAtomicWithAlpha (FUN_0036DBF8: 1,200 calls in a run, nearly all alpha
   224-255, from 0x36EBBC / 0x36DCB4), not the m_alpha ramp (model info +0x39, +16 a frame in SetupEntityVisibility
   FUN_0035EFD8), and not the fading list (0x6F40D0 / 0x6F4118, rendered by FUN_0036EFA8 -> FUN_0035D610(ent, 1)).
-  Enhancements > World > **Solid far palms** (`enhance.solid_far_palms`, off by default, `VCS_SOLID_FAR_PALMS`;
+  World > Details > **Solid far palms** (`enhance.solid_far_palms`, off by default, `VCS_SOLID_FAR_PALMS`;
   vcs_hle_world.cpp `solidFoliage`): before a world packet runs (native or on the VU1), a grey scale whose .w is below
   1.0 gets .w = 1.0 - the palms drawn solid at every distance they are drawn at (the first version raised them to
   0.502 only: more palms showed, all of them half transparent). Checked: at the airport the palms come out solid and
@@ -2239,7 +2239,7 @@ PaletteKeyHash, TextureName) and another VCS port that loads PCSX2 packs (its gs
   and off give the same picture (no other world model uses a grey fading scale there). Only with the native draw (the
   default; not under PS2X_HLE=0). `worlddetail` counts the packets raised (foliage=).
 
-### 7c. The world's camera in VU1 memory, and Project2DFX's distant lights (2026-11-17, Enhancements > World)
+### 7c. The world's camera in VU1 memory, and Project2DFX's distant lights (2026-11-17, World)
 
 Found logging VU1 memory at each world packet's MSCAL 0x30 (`VCS_LODLIGHTS_LOG=2`) next to TheCamera, then scanning
 RDRAM for the difference.
@@ -2491,7 +2491,7 @@ of every writer and caller.
   scream (speech sounds). A Voices volume that scaled those voices in the native driver was tried on 2026-10-28 and
   removed (DECISIONS.md).
 
-### 9d. Memory: the main heap, the streaming heap and the port's memory above 32 MB (2026-11-20, Game > Memory)
+### 9d. Memory: the main heap, the streaming heap and the port's memory above 32 MB (2026-11-20, World > Memory)
 
 Found by willzmkv (dejot) in their fork (their game-internals 9e, 2026-11-03, T10: VC car mods 4-5x the size of VCS's
 cars made `LOAD_ALL_MODELS_NOW` spin), read with headless Ghidra and a RAM dump in game; brought over with their code
@@ -3572,7 +3572,7 @@ hidden run (rig `peek` / `poke`, snapshots diffed).
     (9.6/s), driver 91-97 ms (10.5/s; the 90 ms is rounded up to a shorter frame). The NPC drive-by hook
     (vcs_driveby.cpp) does not touch the player's paths. The passenger path was not measured (L2 + Circle in an
     autodriven car fired nothing).
-  - **Fixed as an option** (Enhancements > Combat: **Drive-by fire rate**; `src/game/vcs_driveby.cpp`): a hook on
+  - **Fixed as an option** (Game > Combat: **Drive-by fire rate**; `src/game/vcs_driveby.cpp`): a hook on
     CWeapon::Fire for the two NPC calls (return addresses **0x2168B4** in FUN_00216768, **0x2169D4** in FUN_002168E8)
     lets a call through only when the shooter's next shot is due and otherwise returns 0, so the burst gate and the
     animation run every frame as before. "As on the PS2" (default): one shot per 1/30 s at any frame rate (every frame
@@ -3626,7 +3626,7 @@ hidden run (rig `peek` / `poke`, snapshots diffed).
   - **The circle**: the HUD (`FUN_00319058`) draws it with RenderOneXLUSprite (`FUN_003A0D08`, returning to
     `0x319424`) at the screen's centre in free aim: f15 / f16 half width / height 14 (f15 10.5 on the game's own
     widescreen), f14 the depth, texture `*0x6FDD94`; the caller's sp + 0x38 / 0x3C hold CalcScreenCoors' (`FUN_0039FC48`)
-    w / h - the sprite scale at that depth. Enhancements > Combat > **Aiming circle** (`enhance.aim_circle`,
+    w / h - the sprite scale at that depth. Game > Combat > **Aiming circle** (`enhance.aim_circle`,
     `VCS_AIM_CIRCLE`; Original by default): Small = half size; Spread = a 7-pixel dot for guns, a shotgun's circle as
     wide as its fan at the aim's distance (tan(half angle) x depth x w, 7-64 pixels).
   - **Aim start: raising the gun** (2026-11-18, the player: aiming should start faster). Timed with `VCS_AIM_LOG=1`
@@ -3647,7 +3647,7 @@ hidden run (rig `peek` / `poke`, snapshots diffed).
     - **The arm takes over from the torso**: once flag 4 is set the torso stops where it is. Set before the torso
       has turned (a jump at once with fast steps), the arm - its yaw only 5 / -120 deg - cannot reach and points aside
       of the circle for as long as he aims.
-    - Enhancements > Combat > **Aim speed** (`enhance.aim_speed`, `VCS_AIM_SPEED`; Original by default): the player's
+    - Game > Combat > **Aim speed** (`enhance.aim_speed`, `VCS_AIM_SPEED`; Original by default): the player's
       limb steps twice as fast per second as at 30 fps (never slower than the original at the frame rate played), and
       the animation's time moved to the jump sooner (vcs_aim.cpp `getAssoc`, the lookup done on the host): Fast at half
       the wait, Faster as soon as the torso has turned (flag 1, or its yaw still for a frame; half the wait at the
@@ -3705,13 +3705,13 @@ hidden run (rig `peek` / `poke`, snapshots diffed).
   x4 up to 255 with the player's damage bonus, sp+0xA0 from FUN_00239420). Weapon info: `*(*0x712770 + 4) + type *
   0x70`, +4 the fire type (1 instant hit): types 0 - 43 are rows (0 x12, 2 x7, 1 x13, then 2 3 1 1 2 1 4 4 0 0 7 0),
   other data after them. Measured: the original pistol takes 32 of a man's 100 at the head as at the chest (100 ->
-  68). Enhancements > Combat > **Headshots always kill** (`enhance.headshots_kill`, on - the user's wish;
+  68). Game > Combat > **Headshots always kill** (`enhance.headshots_kill`, on - the user's wish;
   `VCS_HEADSHOTS_KILL`) raises f12 to (health + armour) x 4 + 100 when the player's ped shot another ped's head
   with an instant-hit gun; the proof checks (mission characters, bullet-proof peds) and the death are the game's.
   Other shooters' headshots stay the original's, so an enemy cannot kill a mission's escort outright.
   `VCS_HEADSHOT_HOOKS=0` hooks nothing; the rig's `headshot` command counts the player's hits by piece.
 
-### 12d. Population: density, caps, spawn chance (2026-11-07, Enhancements > World)
+### 12d. Population: density, caps, spawn chance (2026-11-07, World)
 
 Found from the density opcodes' handlers (0125 SET_CAR_DENSITY_MULTIPLIER -> `0x3D20F8`, 0264
 SET_PED_DENSITY_MULTIPLIER -> `0x417848`; the VCS numbers, not GTA III's), the spawners' decompile
@@ -3763,7 +3763,7 @@ probes in the game (rig, `worlddetail`).
     right in front of the camera vanishes when a script makes a car on its spot. The game's own behaviour, at every
     setting; the rig's `autodrive` does it too (found 2026-11-07: the two cars that vanished 4-6 m from the camera in
     the first seconds of test drives; reproduced by making a car on a released one's spot, the log naming 0x25A788).
-- **Enhancements > World** (`vcs_world_detail.cpp`): Traffic / Pedestrian density scale 0.7 / 0.4 (so a script's 0
+- **World** (`vcs_world_detail.cpp`): Traffic / Pedestrian density scale 0.7 / 0.4 (so a script's 0
   stays 0 and its 10 becomes 10 x the setting), raise the caps (cars at most 28, peds 45), and give each spawner the
   class table with every chance ((v + 1) / 16) times the setting, class 0 unchanged - written before each spawner
   runs, since both read the one table. Each spawner's cap is set right before it runs from the pools as they are:
@@ -3772,7 +3772,7 @@ probes in the game (rig, `worlddetail`).
   distance cars are drawn at (6o). Measured (world_check): peds at the Little Haiti spot about 25 -> 40 at 300%; random cars while driving
   about 9-10 -> 10-13 - the spawn spots stay the limit. With peds at 300% the random cars standing there fell to 0-5
   in one probe (cause not found; the heap was not it).
-- **How far away peds appear** (2026-11-18, Enhancements > World > Pedestrian distance, `enhance.ped_distance`
+- **How far away peds appear** (2026-11-18, World > Draw distance > Pedestrian distance, `enhance.ped_distance`
   100-200 %, `VCS_PED_DISTANCE`):
   - FUN_002B44C8 is the population's distance factor: f0 = 1 on foot; in a vehicle 1 + |its velocity xy (+0x140 /
     +0x144)| - 0.1, clamped to 1..1.5 (FindPlayerVehicle FUN_0024A2D0: CWorld::Players 0x4E4910 + 0x190 x byte
@@ -3787,7 +3787,7 @@ probes in the game (rig, `worlddetail`).
     ring, the removal and the minimum distances move out together; 100 % calls the original. Measured at 200 %:
     the peds' mean distance 38.5 -> 49.2 m, the farthest 124 m (`worlddetail` prints peddist / pedmean / pedfar).
     The same number of peds spreads over a larger ring: raise the draw distance with it.
-- **Car distance** (2026-11-17, Enhancements > World > **Car distance**, `enhance.car_distance` 100-200 %,
+- **Car distance** (2026-11-17, World > Draw distance > **Car distance**, `enhance.car_distance` 100-200 %,
   `VCS_CAR_DISTANCE`): GenerationDistMultiplier (TheCamera + 0x7D0) is read in the car spawner FUN_00430290 four times
   (0x4306C0, 0x430738, 0x4307B8, 0x43081C: the spot 110 m x it ahead) and in PossiblyRemoveVehicle (160 m x it).
   CGame::Process (FUN_003BA8D8) runs the ped step (0x3BAB44), then CCamera::Process (0x3BAC38, which rewrites the
@@ -3810,7 +3810,7 @@ probes in the game (rig, `worlddetail`).
   Their fork also kept the police's spawn ring at the game's distance while wanted (57d661f): there the population
   distance scaled the out-of-view ring (60 / 90 / 70 m), here Car distance only scales GenerationDistMultiplier (the
   in-view spot 110 m x it ahead and the removal), so the police come from where they did on the PS2 already.
-- **Ped shadows** (2026-11-17, Enhancements > World > **Character shadows**, `enhance.ped_shadows`, on by default,
+- **Ped shadows** (2026-11-17, World > Details > **Character shadows**, `enhance.ped_shadows`, on by default,
   `VCS_PED_SHADOWS=0`): the shadow textures are read at boot by FUN_003896F8 (RwTextureRead 0x346C80) into
   0x489168 (`shad_car`), **0x48916C (`shad_ped`)**, 0x489170 (`shad_heli`), 0x489174 (`shad_bike`), 0x489178
   (`shad_rcbaron`), 0x48917C (`shad_exp`)... `shad_ped` is passed to FUN_0038A000 (StoreShadowToBeRendered, a0 type,
@@ -3844,7 +3844,7 @@ Brought in from olaftnt's fork (src/game/vcs_gps.cpp; their notes, in Polish: do
 ### 12f. Quick save (2026-11-18, olaftnt's upstream PR #184)
 
 Brought in from olaftnt's fork (src/game/vcs_quicksave.cpp; the header comment has the design, their notes in Polish
-are docs/mods/QUICKSAVE.md). The key (Keyboard > Menus, F12) runs the main script's safehouse save subroutine (IP
+are docs/mods/QUICKSAVE.md). The key (Keyboard > Shortcuts, F12) runs the main script's safehouse save subroutine (IP
 0xC646) as a script of its own; the player's place goes into the save's spawn globals G678..680 and heading G177, the
 rest (vehicle, stars, a parked car's place) into G1106 and G177's fraction; INITSAV and a host restore put it back on a
 load.

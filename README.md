@@ -12,79 +12,94 @@ for the Linux build in detail.
 
 ## What this fork adds
 
-This is a fork of [gothamor/gta-vcs-recomp](https://github.com/gothamor/gta-vcs-recomp). It is the original port plus
-the changes below, on the branch
-[`mod-reload-walk-camera`](https://github.com/Minty1804/gta-vcs-recomp/tree/mod-reload-walk-camera). Each change is an
-option or can be switched off, and everything else is the same as upstream.
+This is a fork of [gothamor/gta-vcs-recomp](https://github.com/gothamor/gta-vcs-recomp): the original port plus the
+changes below, on the branch
+[`mod-reload-walk-camera`](https://github.com/Minty1804/gta-vcs-recomp/tree/mod-reload-walk-camera). Everything else
+is the same as upstream. A change that alters how the game looks or plays is a setting in the menu (F2), with the
+original as one of its choices; a few plain fixes are always on. Who made what: [Credits](#credits).
+
+The settings menu (F2) is laid out by what a setting does: **Display**, **Graphics**, **World**, **Game**, **Audio**,
+**Keyboard**, **Gamepad**, **Advanced**. The paths below are written as *Page > Section > Setting*.
+
+### Graphics
 
 | | Upstream | This fork |
 |---|---|---|
-| **Texture packs** | Not supported | HD texture packs made for PCSX2 work as they are: PNG or DDS (BC1 / BC3 / BC7); DDS images go to the graphics card compressed where nothing is lost (a third of the memory; after willzmkv's work) |
-| **Keyboard controls** | A key per PS2 button (Shift for Cross, Q for L1...) | The PC games' scheme by default: an action per key, by situation (W walks on foot and accelerates in a car, Shift sprints / honks), Vice City's default keys; Keyboard → **Control scheme** (PC / PS2 buttons) (SkipperSkipTR's work) |
-| **Getting out of a car** | A press of exit while rolling slowly only brakes; you press again once the car stands, and with the gas held you never get out | One press of F gets Vic out: the car brakes to a stop by itself first. Keyboard → **Tap to exit a vehicle** (off: as on the PS2) |
-| **Controls menu** | Keys and gamepad set by PS2 button ("Cross", "L1"...) | As in San Andreas: actions (look behind, change weapon, horn...) for the keyboard and the gamepad, no PS2-button layout left, split into On foot / Fighting / Vehicle / Aircraft; helicopters and planes have actions of their own (climb, turn, bank). The per-button layout stays on the PS2 layout page |
-| **Shooting while driving** | The PS2's drive-by: SMGs only, fired to the side you look | With Free aim on, hold the right mouse button to aim a pistol or SMG from the driver's seat with the mouse; the wheel switches the guns (or the radio: Keyboard → **Mouse wheel in a vehicle**) (ChrisM-Pek's work) |
-| **Cutscenes in widescreen** | The extra width: people the scene keeps off screen stand waiting at the edges; the sky dark grey while a scene fades in | The PS2's framing by default (Display → **Cutscene framing**: PS2 / Wide); the sky fades in with the scene (willzmkv's work) |
-| **Reload key** | None: the gun reloads only when the clip runs out | **R** reloads the gun in hand, with the game's own reload animation |
-| **Reload in a vehicle** | The clip refills only while you are not firing | The reload key fills the clip at once, even during a drive-by |
-| **Walk on a diagonal** | *Walk* + two direction keys (Alt + W + D) left Vic standing still | He walks diagonally, as he does in one direction |
-| **On-foot camera** | Swings back behind Vic against your mouse as soon as he moves | Stays where the mouse put it for a while (2 s by default) |
-| **Palms at a distance** | With a texture pack or anisotropic filtering, far palms (and other leaves) look see-through | They stay as solid as up close |
-| **Far palms fading out** | The game fades far palms out with distance: with a longer draw distance whole rows look like ghosts | Solid at every distance they are drawn at (option, off by default) |
-| **First shot of the Mac 10 / Micro SMG** | About half a second after you press fire, even with the gun raised | At once, always |
-| **Pedestrian distance** | People appear 35-60 m away | Up to twice as far (option, 100% by default) |
-| **Car distance** | Traffic appears about 110 m ahead, parked cars 160 m away | Up to twice as far, parked cars too (option, 100% by default; the parked cars after willzmkv's work) |
-| **Cars' detail at a distance** | Cars drop to their low-detail model at 70 m and vanish at 100 m, whatever the draw distance | Those distances grow with the draw distance (140 m / 200 m at 200%) |
-| **Far fences** | A chain-link fence far away turns into a band of sky, hiding the buildings behind it | They show what is behind them (always on) |
-| **Aim speed** | Vic raises his gun about 0.2 s after the aim button | Fast raises it in about two thirds of the time, Faster in about half; his arms and body turn faster too (Enhancements → Combat, Original by default) |
-| **Aim after a jump or sprint** | The aim could come up to a second late after a jump, or after sprinting with the button held | It comes the frame the sprint or the landing ends (the animations play whole) |
-| **GPS route** | No route: only the blip to follow | A line along the roads to the mission's target and a red one to the target you set on the pause map, on the radar and the map (Enhancements → Radar, off by default; olaftnt's work) |
-| **Quick save** | Saving only at a safehouse | F12 opens the game's Save menu anywhere outside a mission; loading puts you back there, in your car or next to it, with your wanted level (Enhancements → Saving, off by default; olaftnt's work, with three load fixes of ours) |
-| **Fog distance / start** | The game's fog as it is | Graphics → Fog: bring the time of day's own fog closer for a hazier city, or up to 175% to see the city further with the edge of the world still hidden (175% / 100% by default; 100% / 100% is the original; willzmkv's work, the part above 100% ours) |
-| **Exposure** | The game's brightness as it is | Graphics → Image quality: brighten or darken the game's picture; shadows open up while white stays white, the HUD keeps its colours (100% by default, the original; after willzmkv's Exposure) |
-| **Free aim up close** | Firing at a man right next to you swung the gun instead of shooting; shotgun pellets left from the gun, not through the circle, and missed close targets | Every gun fires up close, and shotgun pellets spread around the circle |
-| **Aiming circle** | The game's large circle | Original, Small, or Spread: a small dot for guns (they hit its centre), the pellet spread for shotguns (Enhancements → Combat, Original by default) |
-| **Far view from interiors** | Inside a building the normal camera sees half as far: distant towers through a window show only while aiming | The city stays in view through the windows (always on) |
-| **Headshots** | Most guns need several shots to the head: a pistol takes a quarter of a man's health wherever it hits | Your bullet to the head kills, from any gun; every other hit does the damage it always did (Enhancements → Combat: **Headshots always kill**, on by default) |
-| **Sky at dusk** | The sky's gradient shows colour bands | The bands are broken up by a fine dither (Graphics → Image quality: **Smooth sky gradients**, on by default) |
-| **Character shadows** | Always on under Vic and everyone on foot | Can be turned off (option, on by default) |
-| **Distant lights** | Street lights vanish past their short corona distance: the city is dark far away at night | Project2DFX's far lights glow over the city at night (option, off by default) |
+| **Texture packs** | Not supported | HD packs made for PCSX2 work as they are (below). *Graphics > Texture packs*, on by default |
+| **Fog** | The game's fog as it is | *Graphics > Fog*: **Fog distance** 10-175% (175% by default: the city further, the world's edge still hidden; 100% is the original) and **Fog start** 0-300% (100%) |
+| **Exposure** | The game's brightness as it is | *Graphics > Image quality > Exposure*, 50-200% (100%, the original): shadows open up, white stays white, the HUD keeps its colours |
+| **Sky at dusk** | The sky's gradient shows colour bands | Broken up by a fine dither (always on) |
+| **Trails** | The blurred trails / colour pass at the PS2's resolution | *Graphics > Effects > Sharp trails*: drawn at full resolution, without the blur (off by default) |
 
-**Texture packs.** Put the pack's `SLUS-21590` folder into a `textures` folder next to the game, so its images end up
-in `build\textures\SLUS-21590\replacements\` (sub-folders are fine). That is the same layout as PCSX2's own `textures`
-folder. The game finds the textures by the names PCSX2 gives them, so packs need no conversion. It loads the images in
-the background: a texture looks original for a moment, then switches to the HD one. The cost is a little memory, not
-frame rate.
-- Settings (F2) > Graphics > Texture packs: **Texture packs** (on by default; does nothing with no pack) and **Dump
-  textures** (off by default). Dumping writes every texture the game draws to `textures\SLUS-21590\dumps\`, under its
-  pack name, for making your own pack.
-- Tested with a 6,279-file BC7 pack: 99% of the textures the game drew in the city were replaced, with no change in
-  frame rate.
-- Not supported yet: PCSX2's region (`-r<w>x<h>-`) and separate mip-level (`-mip<n>`) file names. Such files are
-  skipped and counted in the log.
+**Texture packs.** Put the pack's `SLUS-21590` folder into a `textures` folder next to the game, so the images end up
+in `build\textures\SLUS-21590\replacements\` (sub-folders are fine): PCSX2's own layout and names, so packs need no
+conversion. PNG and DDS (BC1 / BC3 / BC7) work; DDS goes to the graphics card compressed where nothing is lost (a
+third of the memory). Images load in the background: a texture looks original for a moment, then switches. Tested with
+a 6,279-file BC7 pack: 99% of the city's textures replaced, no change in frame rate. *Advanced > Diagnostics > Dump
+textures* writes every texture the game draws to `textures\SLUS-21590\dumps\`, for making a pack. Not supported yet:
+PCSX2's region (`-r<w>x<h>-`) and mip-level (`-mip<n>`) file names (skipped and counted in the log).
 
-**Combat and world.**
-- **Instant first shot**: Settings (F2) > Enhancements > Combat, off by default. The Micro SMG and the Mac 10 fire as
-  soon as you press fire. In the original game Vic first plays the start of the firing animation, so the first bullet
-  came about half a second late (467 ms measured for the Mac 10; now 84 ms, as fast as the other guns).
-- **Pedestrian distance**: Settings (F2) > Enhancements > World, 100-200% (100% is the original game). Raise the draw
-  distance with it so the people far away are drawn.
-- **Palms**: no setting. Far fronds used to blend with the sky because the smaller copies of their texture (used at a
-  distance) averaged the leaves with the gaps between them. Now each smaller copy keeps the full texture's share of
-  solid leaf.
-- **Distant lights**: Settings (F2) > Enhancements > World, off by default. At night (19:00-7:00) the street lamps,
-  traffic lights and other lights far away glow, as with the Project2DFX mod for PCSX2: the same ~4,400 lights, hours,
-  blinking and sizes. Buildings in front hide them, and they work in 16:9. The build downloads the mod's light table
-  (`project2dfx/lodl.c`, MIT) next to the game; without it the option does nothing. Cost: well under 0.1 ms a frame.
+### World and draw distance
 
-**Controls.**
-- **Reload weapon**: Settings (F2) > Keyboard, **R** by default. On the gamepad, Settings > Gamepad (no button by
-  default). It does nothing when the clip is already full.
-- **Walk on a diagonal**: works by itself, with no setting.
-- **On-foot camera hold**: Settings (F2) > Keyboard > Mouse: **Off**, **1-5 s** (2 s by default) or **Always**. The
-  hold applies only after a mouse turn; the gamepad's stick and the game's own camera moves are as before.
+| | Upstream | This fork |
+|---|---|---|
+| **Detailed city distance** | Past the nearest cells the city is its low-detail model | *World > Draw distance*: the detailed buildings of neighbouring cells instead, in memory beyond the PS2's 32 MB (Original by default) |
+| **Pedestrian distance** | People appear 35-60 m away | *World > Draw distance*, up to 200% (100% by default); raise the draw distance with it |
+| **Car distance** | Traffic about 110 m ahead, parked cars 160 m | *World > Draw distance*, up to twice as far, parked cars too (100% by default) |
+| **Cars' detail at a distance** | Low-detail model at 70 m, gone at 100 m, whatever the draw distance | Grows with the draw distance (140 m / 200 m at 200%; always on) |
+| **Far palms** | With a texture pack or anisotropic filtering, far fronds look see-through | As solid as up close (always on) |
+| **Far palms fading out** | Far palms fade with distance: at long draw distances rows look like ghosts | *World > Details > Solid far palms* (off by default) |
+| **Far fences** | A chain-link fence far away turns into a band of sky | Shows what is behind it (always on) |
+| **Far view from interiors** | Inside, the camera sees half as far: towers through a window show only while aiming | The city stays in view (always on) |
+| **Distant lights** | Street lights vanish past their short corona distance | *World > Details*: Project2DFX's far lights glow over the city at night, ~4,400 of them, hidden behind buildings (off by default; the build downloads the light table, MIT) |
+| **Character shadows** | Always on | *World > Details* (on by default) |
+| **Streaming memory** | The PS2's streaming buffer | *World > Memory*: 12 / 20 / 30 MB instead of the PS2's 5.4 MB: more different cars in traffic, fewer models read again (PS2 by default) |
 
-**Getting it.** Build this branch as in *Install by hand* below. In step 2, clone it with:
+### Controls
+
+| | Upstream | This fork |
+|---|---|---|
+| **Keyboard scheme** | A key per PS2 button (Shift for Cross, Q for L1...) | The PC games' scheme: an action per key by situation (W walks on foot and accelerates in a car, Shift sprints / honks), Vice City's default keys, every key rebindable |
+| **Controls menu** | Keys and buttons set by PS2 button | By action, as in San Andreas, for keyboard and gamepad: *On foot*, *Fighting*, *Vehicle*, *Aircraft* (helicopters and planes have their own: climb, turn, bank), *All situations*, *Mouse*, *Menus and pause*, *Shortcuts* |
+| **Button prompts** | Always the PS2's buttons | *Game > Button prompts*: the glyphs of the device you use, and the key of the action that works there (shops: W / A / S / D, Space buys) (Original by default) |
+| **Reload key** | None: the gun reloads when the clip runs out | **R** reloads with the game's animation, in a vehicle too (at once, even during a drive-by). Gamepad: no button by default |
+| **Getting out of a car** | Exit while rolling only brakes; with the gas held you never get out | One press of F: the car brakes to a stop first. *Keyboard > Vehicle > Tap to exit a vehicle* (off: as on the PS2) |
+| **Walk on a diagonal** | *Walk* + two direction keys left Vic standing | He walks diagonally (always on) |
+| **On-foot camera** | Swings back behind Vic against your mouse as soon as he moves | *Keyboard > Mouse*: stays where the mouse put it for Off / 1-5 s / Always (2 s by default; only after a mouse turn) |
+
+### Combat
+
+| | Upstream | This fork |
+|---|---|---|
+| **Shooting while driving** | The PS2's drive-by: SMGs only, to the side you look | With free aim, hold the right mouse button to aim a pistol or SMG from the driver's seat; the wheel switches guns (or the radio: *Keyboard > Mouse > Mouse wheel in a vehicle*) |
+| **Headshots** | Most guns need several shots to the head | *Game > Combat > Headshots always kill* (on by default); other hits as before |
+| **Aim speed** | Vic raises the gun about 0.2 s after the button | *Game > Combat*: Fast (2/3 of the time) or Faster (half) (Original by default) |
+| **Aiming circle** | The game's large circle | *Game > Combat*: Original, Small (a dot the guns hit), Spread (the shotgun's real spread) (Original by default) |
+| **Free aim up close** | A man right next to you swung the gun instead of being shot; pellets left from the gun, not the circle | Every gun fires up close; pellets spread around the circle (always on) |
+| **First shot of the Mac 10 / Micro SMG** | About half a second after you press fire | At once (always on) |
+| **Aim after a jump or sprint** | Up to a second late | The frame the landing or sprint ends (always on) |
+
+### Cutscenes, map and saving
+
+| | Upstream | This fork |
+|---|---|---|
+| **Cutscenes in widescreen** | People the scene keeps off screen stand waiting at the edges; the sky dark grey while a scene fades in | *Display > Cutscenes > Cutscene framing*: the PS2's framing by default (PS2 / Wide); the sky fades in with the scene (always on) |
+| **GPS route** | Only the blip to follow | *Game > Map and saving*: a line along the roads to the mission's target, and a red one to your own target on the pause map, on the radar and the map; avoids water, picks the right level where roads cross over (Off / In a vehicle / Always; off by default) - [docs/mods/GPS_ROUTE.md](docs/mods/GPS_ROUTE.md) |
+| **Quick save** | Saving only at a safehouse | *Game > Map and saving*: **F12** (*Keyboard > Shortcuts*) opens the game's Save menu anywhere outside a mission; loading puts you back there, in your car or next to it, with your wanted level; optionally the menu comes up after each mission passed (off by default) - [docs/mods/QUICKSAVE.md](docs/mods/QUICKSAVE.md) |
+
+### Performance and fixes (always on)
+
+- Less work per frame in the D3D11 renderer: state sent to the driver only when it changes, half the draw calls
+  (neighbouring draws joined, exact where a draw takes two passes), additive pixels that add nothing skipped (the
+  helicopter's and hovercraft's dust and glow).
+- Runtime speed-ups (VIF1 unpacking, the GS stage's queue and lock, palette hashing, upload bookkeeping) and a GS crash
+  fix from the LCS port.
+- The HUD: 2D drawn after the HUD no longer drops it (the flicker in the rain), HUD glyphs keep their corners.
+- Texture packs: no stutter when an HD image comes back into view (each keeps its GPU texture).
+
+### Getting it
+
+Build this branch as in *Install by hand* below. In step 2, clone it with:
 ```bash
 git clone -b mod-reload-walk-camera https://github.com/Minty1804/gta-vcs-recomp.git vcs-recomp
 ```
@@ -94,9 +109,10 @@ instead:
 git fetch upstream && git rebase upstream/main
 ```
 Then `python tools/build.py`. `upstream` is `https://github.com/gothamor/gta-vcs-recomp.git`; add it once with
-`git remote add upstream <URL>`. The changes are kept small and separate (mostly their own files under `src/game/`)
-so that they move to new upstream versions easily. The details are in [docs/game-internals.md](docs/game-internals.md)
-(sections 7b and 12a-12c) and [docs/DECISIONS.md](docs/DECISIONS.md).
+`git remote add upstream <URL>`. The changes are kept separate (mostly their own files under `src/game/`) so that they
+move to new upstream versions easily. Details: [docs/game-internals.md](docs/game-internals.md),
+[docs/DECISIONS.md](docs/DECISIONS.md), and what other forks have that could be brought in:
+[docs/FORK_IMPORTS.md](docs/FORK_IMPORTS.md).
 
 ## Install on Windows: the launcher (easiest)
 
@@ -304,25 +320,7 @@ Vulkan on Linux -, sound and streaming run on the PC, and the movies are decoded
   read by the game's own save code.
 - Every setting kept in `vcs.ini` next to the game.
 
-**Extras** (off by default, in F2 > Enhancements)
-- **GPS route** (*Radar > GPS route*: Off / In a vehicle / Always; `VCS_GPS=0/1/2`): a line along the roads to the
-  mission's target on the radar and on the pause menu's map, as in the later games and the remasters, in the
-  target blip's colour. A second, red line leads to your own target (the red square you place on the pause map).
-  It avoids water, picks the right level where roads run over each other, and recomputes as you drive
-  ([docs/mods/GPS_ROUTE.md](docs/mods/GPS_ROUTE.md)).
-- **Quick save** (*Saving > Quick save*: Off / Enabled / Enabled + prompt after mission; the key: Keyboard > Menus,
-  F12; `VCS_QUICKSAVE=0/1/2`): the key opens the
-  game's own Save menu anywhere outside a mission, on foot or in a vehicle - choose a slot or Cancel. The save keeps
-  where you are (inside a safehouse or an Empire building too), your vehicle (the same model) or the one you left
-  parked nearby, your wanted level and the time of day; Load Game brings you back there. With the prompt, the Save
-  menu also comes up by itself after a mission is passed. A normal save in the usual slots and format
-  ([docs/mods/QUICKSAVE.md](docs/mods/QUICKSAVE.md)).
-- **Fog distance / start** (*Graphics > Fog*; `VCS_FOG_DISTANCE`, `VCS_FOG_START`): where the game's distance fog
-  swallows the city (10-175% of the original; above 100% the fog thins out in the middle distance but still hides the
-  edge of the world) and where it begins (0-300% of the original start). It is the game's own
-  fog, so it follows every surface's depth and keeps the time of day's colour.
-- **Exposure** (*Graphics > Image quality > Exposure*, 50-200%; `VCS_EXPOSURE`): the game's picture brighter or
-  darker, in linear light with the highlights rolling off so nothing clips, applied before the HUD is drawn.
+The fork's own additions are listed in [What this fork adds](#what-this-fork-adds).
 
 ## Updating
 

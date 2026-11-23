@@ -1,64 +1,41 @@
-# What other forks have that we could bring in (2026-11-18)
+# What other forks have, and what came from them
 
 Survey of every fork of gothamor/gta-vcs-recomp with work of its own (40 forks, every branch compared with upstream
-`main`). Our branch is upstream `main` + our commits, so an upstream PR that is 0 behind merges, a fork far behind is
-re-done on our code. "Size" is the work here: S hours, M a day or so, L several days, XL a project of its own.
+`main`, 2026-11-18), and of batinium's Liberty City Stories port on the same runtime (2026-11-23). Our branch is
+upstream `main` + our commits, so an upstream PR that is 0 behind merges; a fork far behind is re-done on our code.
+Every item taken keeps its author on the commit and a line in the README's Credits. Items keep their numbers (commits
+and docs refer to them). "Size": S hours, M a day or so, L several days, XL a project of its own.
 
-The items are in the order we go through them, one at a time. Status: open / done / skipped (with why).
+## Done
 
-## A. Small: merges of open upstream PRs and short re-implementations
+| # | Area | What | From | How it was done, where it is written down |
+|---|---|---|---|---|
+| 1 | Map and saving | GPS route on the radar and the pause map (mission target and the map's own target) | olaftnt, upstream PR #183 | 2026-11-18 (game-internals 12e) |
+| 2 | Map and saving | Quick save key: the game's Save menu outside missions (vehicle height, wanted level kept) | olaftnt, PR #184 | 2026-11-18, three load fixes of ours (game-internals 12f) |
+| 3 | Graphics | Fog distance / fog start as settings (the game's RSL fog-range setter FUN_002F6008 scaled) | willzmkv 0d63f27 | 2026-11-19: their file as it is (game-internals 6r), tools/fog_check.py; ours on top: above 100 % a fog curve |
+| 4 | Graphics | Exposure on the shown picture | willzmkv 02a6d4c, b5edbaf | 2026-11-19, re-done before the HUD with a highlight roll-off (game-internals 6s) |
+| 5 | Renderer | GS: additive pixels that add nothing skipped (the hovercraft's glow) | PerikiyoXD, PR #178 | 2026-11-19: merged by hand, two guards of ours (packs, HUD layer); little gain here (game-internals 6j) |
+| 6 | Renderer | D3D11: state reaches the driver only when it changes (we set the whole pipeline every draw) | willzmkv 4fc7828 | 2026-11-19: re-done with viewport / scissor / blend constant cached too; city view 1.2 -> 0.7 ms on the main thread (PERFORMANCE.md 34) |
+| 7 | Renderer | Native draws joined: draws of one mesh with the same state as one (half the draw calls) | willzmkv 0bc5067 | 2026-11-19: re-done. Groups that take two passes (cut-out split, AFAIL) or read a render target are drawn as their parts, strip parity kept, the mesh cache bounded by bytes. Draws 2,055 -> 1,060 in the city; pictures identical on vs off (PERFORMANCE.md 35) |
+| 10 | Texture packs | Pack DDS uploaded compressed (BC1-BC7, ~1/4 of the memory, no decode) - except textures that need our alpha-coverage mips (the palms: the pack's stored mips lose them, measured) | willzmkv 37c9194, 5f1b1c2 | 2026-11-19: block-compressed images with no clear texel go up as stored (88 % of a real pack's images in a city run; cache 238 vs 713 KB an image), cut-outs decoded as before. texpack_check (fixtures + --real, every classification verified) passes on D3D11 and on Vulkan (Windows); Metal written to the same contract, not built or run here |
+| 14 | Memory | Streaming memory past the PS2's 32 MB (5.4 MB heap -> up to 30 MB) | willzmkv 58a854f | 2026-11-20 on branch hd-world: the 128 MB of EE RAM came with row 21; their streaming heap and cap hook brought over (src/game/vcs_memory.cpp, game-internals.md 9d), World > Memory > **Streaming memory**, PS2 by default (theirs: 30 MB). No car-mod loader here yet: it gives more car models in traffic and room for row 13 / 15 |
+| 19 | Controls | Keyboard: PC control scheme as in VC / SA on PC, keys shared per situation | SkipperSkipTR PR #78 | 2026-11-19: merged, our Reload key in both schemes (on foot only in the PC one: R is the radio in a car). Reopened the same day (the user: still set by gamepad button, nothing split by situation, no aircraft): the gamepad by action too, an Aircraft section (measured in a Maverick and the Biplane), the shared rows split per situation, the PS2 layout on a page of its own (DECISIONS.md 2026-11-19); tools/pc_scheme_check.py (29 checks). Then the PS2 layout removed, its Crouch row renamed Manual aim (L3: VCS has no crouch) and Action renamed Pick up weapon (DECISIONS.md 2026-11-19, second entry) |
+| 20 | Combat | Mouse free aim while driving; the wheel cycles the car's weapons | ChrisM-Pek (European fork) 741d6a6, a90845f | 2026-11-19: their aim and wheel code merged on ours (USA addresses), the aim key fitted to both schemes (PC: the right mouse button, Space stays the handbrake), Mouse wheel in a vehicle: Weapons (default) / Radio; their 25 fps cap is PAL-only and left out. `tools/driver_aim_check.py` |
+| 21 | World | Detailed city further (the detailed sectors of neighbour cells instead of the low-detail city) | willzmkv "HD world" (~40 commits) | 2026-11-20 (branch hd-world, merged): their vcs_world_hd.cpp / vcs_memory.cpp (packet heap part) and the 128 MB host EE RAM brought over (game-internals.md 6t, DECISIONS.md 2026-11-19 "Detailed city further"); our radius-3 hang (bad frees into the packet heap) fixed; the bar passed at radius 3: 3 h soak, memcheck, cruise, overlap scan, mission buildings |
+| 24 | World | Parked cars at the population distance; police spawn ring kept while wanted | willzmkv 0c41004, 57d661f | 2026-11-19: the generators' 160 / 170 m follow Car distance (patched immediates, game-internals 12d); the police ring needs nothing here (Car distance never moved it). Checked (tools/world_check.py cargen, at a city spot): 9 generators in range at 100 %, 19 at 200 %, 9 again back at 100 %; the whole check passes. Not seen here: an extra parked car. A generator entering the range spawns only when a flag on the player ped allows (game-internals 12d): 0 throughout the player's save tested (on foot, driving, any hour), so no generator rolled at all, at 100 % either. What sets it is not known yet; the fix is hoped to show where it is 1. |
+| 26 | Cutscenes | Cutscenes: the sky no longer dark during the fade-in; the PS2's framing as an option | willzmkv ab1a765, 477cfd0 | 2026-11-19: both taken (the sky fix in vcs_hud.cpp, the framing in vcs_display.cpp, PS2 by default), the side planes left at the 4:3 width in PS2 framing. Checked: tools/cutscene_check.py passes (the sky at the 16th frame of the fade; VCS_HUD_SKY=0 fails at 168), regress scopemask, hud_check and pc_scheme_check pass, mission 50's .CUT framed as the 4:3 picture. Fixed 2026-11-23: the sky fix took the anchor of any HUD vertex on a sky strip's vertex, which threw a money digit to its 4:3 place for a frame (the user's HUD glitch); now only full-width HUD primitives (game-internals 6f, `hud_check.py --money`). |
+| 27 | Cutscenes | Sniper scope mask bars keep their corners in widescreen | willzmkv ab6d89c | 2026-11-19 with item 26 (its fix only matters with 26's sky fix); regress scopemask passes |
+| 37 | Graphics | Sharp trails: the trails / colour pass at full resolution, without its blur (not a fork: the user's request, 2026-11-20) | aap, sharptrails for GTA III / VC on PC (MIT) | 2026-11-20: Graphics > Image quality, off by default (game-internals 6g) |
+| 38 | Runtime | Runtime speed: VIF1 UNPACK typed / SSE paths, the GS stage's ring in batches, the GS state lock across 32 records, ClutHash per chunk, block-list pool, flat maps; and a GIF bounds crash fix | batinium 1ec8297 (v0.3.0) | 2026-11-23 (PERFORMANCE.md 37) |
 
-| # | What | From | Size | How | Status |
-|---|---|---|---|---|---|
-| 1 | GPS route on the radar and the pause map (mission target and the map's own target) | olaftnt, upstream PR #183 | S | merge; conflict only in main.cpp | done 2026-11-18 (game-internals 12e) |
-| 2 | Quick save key: the game's Save menu outside missions (vehicle height, wanted level kept) | olaftnt, PR #184 | S | merge; main.cpp; its F12 is free here (our F12 dump is behind an env var) | done 2026-11-18, three load fixes of ours (game-internals 12f) |
-| 3 | Fog distance / fog start as settings (the game's RSL fog-range setter FUN_002F6008 scaled) | willzmkv 0d63f27 | S | re-do (vcs_fog.cpp) | done 2026-11-19: their file as it is (game-internals 6r), tools/fog_check.py; ours on top: above 100 % a fog curve |
-| 4 | Exposure on the shown picture | willzmkv 02a6d4c, b5edbaf | S | re-do in the presenter | done 2026-11-19, re-done before the HUD with a highlight roll-off (game-internals 6s) |
-| 5 | GS: additive pixels that add nothing skipped (the hovercraft's glow) | PerikiyoXD, PR #178 | S | merge; conflict in gs_hw.cpp | done 2026-11-19: merged by hand, two guards of ours (packs, HUD layer); little gain here (game-internals 6j) |
-| 6 | D3D11: state reaches the driver only when it changes (we set the whole pipeline every draw) | willzmkv 4fc7828 | S-M | re-do in rhi_d3d11.cpp | done 2026-11-19: re-done with viewport / scissor / blend constant cached too; city view 1.2 -> 0.7 ms on the main thread (PERFORMANCE.md 34) |
-| 7 | Native draws joined: draws of one mesh with the same state as one (half the draw calls) | willzmkv 0bc5067 | M | re-do in gs_hw.cpp SubmitNative | done 2026-11-19: re-done. Groups that take two passes (cut-out split, AFAIL) or read a render target are drawn as their parts, strip parity kept, the mesh cache bounded by bytes. Draws 2,055 -> 1,060 in the city; pictures identical on vs off (PERFORMANCE.md 35) |
+## Open or skipped
 
-## B. Texture packs and mods (each builds on the one before)
-
-| # | What | From | Size | How | Status |
-|---|---|---|---|---|---|
-| 10 | Pack DDS uploaded compressed (BC1-BC7, ~1/4 of the memory, no decode) - except textures that need our alpha-coverage mips (the palms: the pack's stored mips lose them, measured) | willzmkv 37c9194, 5f1b1c2 | M-L | re-do: RHI BC formats in D3D11 / Vulkan / Metal, a hybrid in vcs_texture_pack.cpp | done 2026-11-19: block-compressed images with no clear texel go up as stored (88 % of a real pack's images in a city run; cache 238 vs 713 KB an image), cut-outs decoded as before. texpack_check (fixtures + --real, every classification verified) passes on D3D11 and on Vulkan (Windows); Metal written to the same contract, not built or run here |
-| 14 | Streaming memory past the PS2's 32 MB (5.4 MB heap -> up to 30 MB) | willzmkv 58a854f | L | re-do; touches guest memory size | done 2026-11-20 on branch hd-world: the 128 MB of EE RAM came with row 21; their streaming heap and cap hook brought over (src/game/vcs_memory.cpp, game-internals.md 9d), Game > Memory > **Streaming memory**, PS2 by default (theirs: 30 MB). No car-mod loader here yet: it gives more car models in traffic and room for row 13 / 15 |
-
-## C. Controls
-
-| # | What | From | Size | How | Status |
-|---|---|---|---|---|---|
-| 19 | Keyboard: PC control scheme as in VC / SA on PC, keys shared per situation | SkipperSkipTR PR #78 | M | merge; conflicts with our vcs_input.cpp | done 2026-11-19: merged, our Reload key in both schemes (on foot only in the PC one: R is the radio in a car). Reopened the same day (the user: still set by gamepad button, nothing split by situation, no aircraft): the gamepad by action too, an Aircraft section (measured in a Maverick and the Biplane), the shared rows split per situation, the PS2 layout on a page of its own (DECISIONS.md 2026-11-19); tools/pc_scheme_check.py (29 checks). Then the PS2 layout removed, its Crouch row renamed Manual aim (L3: VCS has no crouch) and Action renamed Pick up weapon (DECISIONS.md 2026-11-19, second entry) |
-| 20 | Mouse free aim while driving; the wheel cycles the car's weapons | ChrisM-Pek (European fork) 741d6a6, a90845f | M | re-do (their base is the PAL disc) | done 2026-11-19: their aim and wheel code merged on ours (USA addresses), the aim key fitted to both schemes (PC: the right mouse button, Space stays the handbrake), Mouse wheel in a vehicle: Weapons (default) / Radio; their 25 fps cap is PAL-only and left out. `tools/driver_aim_check.py` |
-
-## D. The world further
-
-| # | What | From | Size | How | Status |
-|---|---|---|---|---|---|
-| 21 | Detailed city further (the detailed sectors of neighbour cells instead of the low-detail city) | willzmkv "HD world" (~40 commits) | XL | re-do; theirs went through crashes before a 3 h soak passed | done 2026-11-20 (branch hd-world, merged): their vcs_world_hd.cpp / vcs_memory.cpp (packet heap part) and the 128 MB host EE RAM brought over (game-internals.md 6t, DECISIONS.md 2026-11-19 "Detailed city further"); our radius-3 hang (bad frees into the packet heap) fixed; the bar passed at radius 3: 3 h soak, memcheck, cruise, overlap scan, mission buildings |
-| 22 | Far street-lamp / traffic-light coronas to the detailed distance | willzmkv 635e6bc ... 36ee818 | M | re-do next to our distant lights (7c) | evaluated 2026-11-19, waits for 21: their far coronas are drawn from the HD world's sectors and object pool (635e6bc, 36ee818); without 21 our distant lights (7c) already cover the low-detail city |
-| 23 | Distant traffic and crowds (proxies on the real models), crowd bands | willzmkv T2, 8c7e1be, b08463c, cecdd55... | XL | re-do; experimental there | evaluated 2026-11-19, waits for 21: the proxies stand on the detailed city's reach; experimental in their fork too |
-| 24 | Parked cars at the population distance; police spawn ring kept while wanted | willzmkv 0c41004, 57d661f | S-M | re-do in vcs_world_detail.cpp | done 2026-11-19: the generators' 160 / 170 m follow Car distance (patched immediates, game-internals 12d); the police ring needs nothing here (Car distance never moved it). Checked (tools/world_check.py cargen, at a city spot): 9 generators in range at 100 %, 19 at 200 %, 9 again back at 100 %; the whole check passes. Not seen here: an extra parked car. A generator entering the range spawns only when a flag on the player ped allows (game-internals 12d): 0 throughout the player's save tested (on foot, driving, any hour), so no generator rolled at all, at 100 % either. What sets it is not known yet; the fix is hoped to show where it is 1. |
-
-## E. Presentation
-
-| # | What | From | Size | How | Status |
-|---|---|---|---|---|---|
-| 26 | Cutscenes: the sky no longer dark during the fade-in; the PS2's framing as an option | willzmkv ab1a765, 477cfd0 | S-M | check ours, re-do | done 2026-11-19: both taken (the sky fix in vcs_hud.cpp, the framing in vcs_display.cpp, PS2 by default), the side planes left at the 4:3 width in PS2 framing. Checked: tools/cutscene_check.py passes (the sky at the 16th frame of the fade; VCS_HUD_SKY=0 fails at 168), regress scopemask, hud_check and pc_scheme_check pass, mission 50's .CUT framed as the 4:3 picture. Fixed 2026-11-23: the sky fix took the anchor of any HUD vertex on a sky strip's vertex, which threw a money digit to its 4:3 place for a frame (the user's HUD glitch); now only full-width HUD primitives (game-internals 6f, `hud_check.py --money`). |
-| 27 | Sniper scope mask bars keep their corners in widescreen | willzmkv ab6d89c | S | check ours, re-do | done 2026-11-19 with item 26 (its fix only matters with 26's sky fix); regress scopemask passes |
-| 37 | Sharp trails: the trails / colour pass at full resolution, without its blur (not a fork: the user's request, 2026-11-20) | aap, sharptrails for GTA III / VC on PC (MIT) | S | re-do in gs_hw.cpp's native trails pass | done 2026-11-20: Graphics > Image quality, off by default (game-internals 6g) |
-
-## F. batinium's gta-stories-recompiled (LCS, not a fork of ours)
-
-[batinium/gta-stories-recompiled](https://github.com/batinium/gta-stories-recompiled) is Liberty City Stories on the
-same PS2Recomp runtime (GPL-3.0). Surveyed 2026-11-23; the runtime's performance work taken (the user's point 3).
-
-| # | What | From | Size | How | Status |
-|---|---|---|---|---|---|
-| 38 | Runtime speed: VIF1 UNPACK typed / SSE paths, the GS stage's ring in batches, the GS state lock across 32 records, ClutHash per chunk, block-list pool, flat maps; and a GIF bounds crash fix | batinium 1ec8297 (v0.3.0) | M | port into our runtime, each with its switch back (PS2RECOMP_PATCHES.md) | done 2026-11-23 (PERFORMANCE.md 37) |
-| 39 | VIF1 chain walked on its own thread (`PS2X_CHAIN_ASYNC`) | batinium 1ec8297 | L | - | skipped: their own walk is synchronous whenever RSL observers are on (ours always are), and it needs game-specific waits where the model heap frees / moves memory (their lcs_dma_sync.cpp) |
-| 40 | Chain images: texture pixel REFs interned by the chain walker, passed to the GS by reference | batinium 1ec8297 | L | - | open: needs the write watch and our RSL recordings' bounds (GitHub issue 115) re-checked; see PERFORMANCE.md 37 for whether VCS spends the time it saves |
+| # | What | From | Size | Status |
+|---|---|---|---|---|
+| 22 | Far street-lamp / traffic-light coronas to the detailed distance | willzmkv 635e6bc ... 36ee818 | M | open: 21 is done (2026-11-20), so it can be taken now; not started. Evaluated 2026-11-19: their far coronas are drawn from the HD world's sectors and object pool (635e6bc, 36ee818); without 21 our distant lights (7c) already cover the low-detail city |
+| 23 | Distant traffic and crowds (proxies on the real models), crowd bands | willzmkv T2, 8c7e1be, b08463c, cecdd55... | XL | open: 21 is done (2026-11-20), so it can be taken now; not started. Evaluated 2026-11-19: the proxies stand on the detailed city's reach; experimental in their fork too |
+| 39 | VIF1 chain walked on its own thread (`PS2X_CHAIN_ASYNC`) | batinium 1ec8297 | L | skipped: their own walk is synchronous whenever RSL observers are on (ours always are), and it needs game-specific waits where the model heap frees / moves memory (their lcs_dma_sync.cpp) |
+| 40 | Chain images: texture pixel REFs interned by the chain walker, passed to the GS by reference | batinium 1ec8297 | L | open: needs the write watch and our RSL recordings' bounds (GitHub issue 115) re-checked; see PERFORMANCE.md 37 for whether VCS spends the time it saves |
 
 ## Later (set aside 2026-11-19, the user's choice: maybe later)
 
@@ -67,7 +44,7 @@ Taken out of the working order; each keeps its number and can come back to it.
 | # | What | From | Size |
 |---|---|---|---|
 | 8 | The game from a CHD image | KenRylo-One, PR #201 | S |
-| 9 | Button prompts with a translated GXT (controls by key, not English words) | SkipperSkipTR, PR #181 | S |
+| 9 | Button prompts with a translated GXT (controls by key, not English words) - our own Button prompts (2026-11-22) cover the glyphs, not translations | SkipperSkipTR, PR #181 | S |
 | 11 | Several packs at once with priorities, switched live in F2 (mod folders, Mod Loader's modloader.ini) | willzmkv a8a8587, cc86fcc, 9091a8e | M |
 | 12 | Dump as DDS (for pack makers) | willzmkv 5f1b1c2 | S |
 | 13 | Game files from mods: GTA3PS2.IMG entries, GXT, MAIN.SCM, larger than the disc's | willzmkv 96edbbe, eed27a2, 69d3d21 | L |
@@ -81,7 +58,7 @@ Taken out of the working order; each keeps its number and can come back to it.
 | 30 | Vegetation wind sway | spartaque12 (VCS-mods) | M |
 | 31 | Shadow maps / ambient occlusion (RenderHook-style) | spartaque12 (VCS-mods) | XL |
 | 32 | DLL (.asi) mod API | spartaque12 (VCS-mods) | L |
-| 33 | Head shots (PedSkills) | spartaque12 (VCS-mods) | M |
+| 33 | Head shots (PedSkills) - ours (*Headshots always kill*, 2026-11-21) is simpler: a kill, no skills | spartaque12 (VCS-mods) | M |
 | 34 | A native main menu / game menu (VC Definitive Edition's layout) | rofhima13 PR #26, willzmkv T12 | L |
 | 35 | Launcher: graphics presets from the PC's hardware, shader warm-up, controls on a picture of the pad | willzmkv 283bb56, 9c01e8f | L |
 | 36 | Direct3D 12 backend | willzmkv ae6c99e, 28ef950, d9f73ed | XL |

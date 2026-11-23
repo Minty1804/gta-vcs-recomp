@@ -553,8 +553,8 @@ dropped on uploads (lazy render-target patching).
       samples with almost none, first 15 s then the next 15): 30 fps 10.0 / 7.9 / 28%, 11.0 / 3.7 / 0%; 144 fps before
       11.6 / 14.0 / 52%, 11.2 / 13.1 / 48%; 144 fps now 9.8 / 6.7 / 21%, 10.6 / 4.7 / 3%. The short pulse when rain
       starts and the camera-facing sheets are the PS2's own.
-- [x] **Reduce Post Processing Effects** (2026-11-14, the user's request; DECISIONS.md): one toggle in Enhancements >
-      Effects (off by default, applied at once) that puts the motion blur, particles and effects back as before these
+- [x] **Reduce Post Processing Effects** (2026-11-14, the user's request; DECISIONS.md): one toggle, now Graphics >
+      Effects > Lighter effects above 30 fps (off by default, applied at once) that puts the motion blur, particles and effects back as before these
       fixes. Checked at 144 fps in a rainy drive, switched off / on / off through the rig: exhaust 274 / 69-75 / 271-274
       ms, rain on cars 1069-1076 / 3810-4190 / 1069-1087 a second, the blur FIX 12 from the history / 16 from the last
       frame; the particles' own rates are put back when it is switched on. The menu's label column widens per page for
@@ -950,7 +950,7 @@ dropped on uploads (lazy render-target patching).
   back - all as pad input, the gamepad unchanged. `tools/menu_check.py`: 27 checks, 0 failed; `saves.py` (Escape now
   opens the menu) passes.
 - **Button prompts by device** (2026-11-07, the user's request; the new F2 page **Enhancements**, DECISIONS.md,
-  game-internals.md 6n, `src/game/vcs_prompts.cpp`, `vcs_glyph_art.cpp`): Enhancements > Button prompts - Original (PS2,
+  game-internals.md 6n, `src/game/vcs_prompts.cpp`, `vcs_glyph_art.cpp`): Game > Button prompts - Original (PS2,
   the default), Automatic, PlayStation, Xbox, Keyboard & mouse. The help text's controls (`~k~ ~ACTION~`, words such as
   "R3 button" and the cross / circle / triangle / square glyphs) and the pause menu's help-bar buttons become glyphs of
   the set: the keys / mouse buttons the player bound (on foot, or the Driving keys in a vehicle; Enter / Escape in the
@@ -967,7 +967,7 @@ dropped on uploads (lazy render-target patching).
   (it failed on the old build); its 6 other failures (aircraft, gamepad in a car, the pause keys) fail the same on the
   old build - not looked into yet (Phase 5, the open item on pc_scheme_check).
 - **Traffic / pedestrian density and draw distance** (2026-11-07, the user's request; DECISIONS.md, game-internals.md
-  6o / 12d, `src/game/vcs_world_detail.cpp`): Enhancements > World - **Traffic density**, **Pedestrian density**,
+  6o / 12d, `src/game/vcs_world_detail.cpp`): World - **Traffic density**, **Pedestrian density**,
   **Draw distance**, 100% (the original) to 300%. Density scales the spawners' own constants (the scripts' multipliers
   stay theirs: a mission's 0 still empties the streets), raises the caps (cars 16 -> 28, peds 25 / 30 -> 45) only
   while 16 slots stay free in each pool (the game deletes the closest car / ped, visible or not, below 8), and
@@ -986,7 +986,7 @@ dropped on uploads (lazy render-target patching).
   13 cars lost at ~175 m in one 10 min drive. Shakedown and Last Stand's credits pass at 300% on all three.
 - **Drive-by fire rate** (2026-11-08, the user's report and request; DECISIONS.md, game-internals.md 12c,
   `src/game/vcs_driveby.cpp`): NPCs in vehicles fired their SMGs once a frame - 30 shots/s on the PS2 (the SMG's own
-  rate is 11), 144/s at 144 fps. Enhancements > Combat - **Drive-by fire rate**: *As on the PS2* (default) / *The
+  rate is 11), 144/s at 144 fps. Game > Combat - **Drive-by fire rate**: *As on the PS2* (default) / *The
   gun's own rate*, through a hook on CWeapon::Fire for the NPC drive-by's two calls. Measured (a passenger with an
   SMG in a parked car, threat on the player, 20 game seconds a run, per-frame trace of his clip), shots a second
   within a burst / averaged with pauses and reloads: PS2 30.0 / 13.2 at 30 fps (identical to the original: nothing held
@@ -1012,18 +1012,18 @@ dropped on uploads (lazy render-target patching).
   Free aim held through a sprint comes the frame the sprint ends; pressed in a jump, 59 frames -> 33 at 30 fps (the
   frame the landing ends; the animations play whole) (game-internals.md 12c "Aim after a jump or a sprint").
 - **Fences 0x60, Aim speed (2026-11-18)**: the far-fence split at alpha 0x60 instead of 0x40 (the specks the player
-  still saw). Enhancements > Combat > **Aim speed** (Original / Fast / Faster): the arm aims at +198 / +132 / +99-132
+  still saw). Game > Combat > **Aim speed** (Original / Fast / Faster): the arm aims at +198 / +132 / +99-132
   ms after the button at 30 fps (game-internals.md 12c "Aim start").
 - **Fences, close range, the aiming circle (2026-11-18, the player's report)**: Graphics > **See-through far fences**
   (off by default; game-internals.md 6q) - Fort Baxter's far fence shows the hangar behind it instead of sky. Free
   aim at close range: the melee check SetAttack ran (the shot became a gun swing) is answered "no one", and the
   shotguns' pellets go down the camera's line with their fan kept; shotgun, SPAS and pistol fire and kill at 2-7 m
-  (14 of 15). Enhancements > Combat > **Aiming circle** (Original / Small / Spread). Palms and bushes further: not
+  (14 of 15). Game > Combat > **Aiming circle** (Original / Small / Spread). Palms and bushes further: not
   done - limited by the streamed world cells, not by LOD distances (DECISIONS.md 2026-11-18).
-- **Detailed city further, streaming memory, sharp trails (2026-11-19 - 20, branch hd-world, merged)**: Enhancements
-  > World > **Detailed city distance** (willzmkv's HD world; Original by default): our radius-3 hang - bad frees into the
+- **Detailed city further, streaming memory, sharp trails (2026-11-19 - 20, branch hd-world, merged)**: World >
+  Draw distance > **Detailed city distance** (willzmkv's HD world; Original by default): our radius-3 hang - bad frees into the
   packet heap - fixed with a check of every free against the heap's block chain; the bar passed at radius 3 (3 h soak
-  all ok, memchecks, cruise 5 hitches against 2, overlap scan, mission buildings; game-internals.md 6t). Game > Memory
+  all ok, memchecks, cruise 5 hitches against 2, overlap scan, mission buildings; game-internals.md 6t). World > Memory
   > **Streaming memory** (PS2 by default; 9d). Graphics > Image quality > **Sharp trails** (off by default; 6g).
 
 ## Milestone 9 - Linux (started 2026-10-30)
@@ -1159,16 +1159,16 @@ Python scripts still usable on their own. docs/LAUNCHER.md has the whole of it; 
 | `PS2X_HW_SCALE=n`, `PS2X_HW_DEBUG=1` | hardware renderer scale / stats |
 | `PS2X_HW_CUTOUT_SPLIT=0\|1`, `PS2X_HW_CUTOUT_LOG=1` | the far-fence split (always on) off / on for one run; count the split draws |
 | `PS2X_HW_SKIP_KEYS=<hex>,...` | diagnostics: skip the draws of those texture keys (what is behind them) |
-| `VCS_AIM_CIRCLE=0\|1\|2` | Enhancements > Combat > Aiming circle (Original / Small / Spread) for one run |
-| `VCS_QUICKSAVE=0\|1\|2`, `VCS_QUICKSAVE_HOOKS=0` | Enhancements > Saving > Quick save for one run (Off / the key / the key + the menu after a mission); no hook at all (game-internals.md 12f; `quicksave` command, `tools/quicksave_check.py`) |
+| `VCS_AIM_CIRCLE=0\|1\|2` | Game > Combat > Aiming circle (Original / Small / Spread) for one run |
+| `VCS_QUICKSAVE=0\|1\|2`, `VCS_QUICKSAVE_HOOKS=0` | Game > Map and saving > Quick save for one run (Off / the key / the key + the menu after a mission); no hook at all (game-internals.md 12f; `quicksave` command, `tools/quicksave_check.py`) |
 | `VCS_FOG_DISTANCE=10..175`, `VCS_FOG_START=0..300`, `VCS_FOG_HOOK=0`, `VCS_TRACE_FOG=1` | Graphics > Fog for one run (percent of the game's fog end / start; above 100 the fog curve, `gsHwSetFogCurve`); the game's fog-range setter left alone; log the ranges the game asks for every 5 s (willzmkv's; game-internals.md 6r; `fogstate` command, `tools/fog_check.py`) |
-| `VCS_SMOOTH_GRADIENTS=0\|1` | Graphics > Image quality > Smooth sky gradients for one run: untextured Gouraud draws (the sky) rounded through an ordered dither (game-internals.md 6g; `gsHwSetGradientDither`) |
+| `VCS_SMOOTH_GRADIENTS=0` | The PS2's banded sky for one run, without the smooth gradients (always on, no setting since 2026-11-23: untextured Gouraud draws - the sky - rounded through an ordered dither) (game-internals.md 6g; `gsHwSetGradientDither`) |
 | `VCS_TRACE_CALLERS=0xADDR,...` | up to 8 game functions hooked to count their callers ($ra) and first argument; the rig's `callers [reset]` prints them (src/debug/call_trace.cpp) |
 | `VCS_SHARP_TRAILS=0\|1` | Graphics > Image quality > Sharp trails for one run: the trails / colour pass at the frame's resolution without its smearing blend (after aap's sharptrails; game-internals.md 6g; `gsHwSetSharpTrails`) |
 | `VCS_EXPOSURE=50..200` | Graphics > Image quality > Exposure for one run (percent; 100 the original): the game's picture before the HUD, in linear light, white kept (game-internals.md 6s; `gsHwSetExposure`) |
 | `PS2X_HW_CULL_NOOP=0\|verify`, `PS2X_HW_CULL_MARGIN=<texels>` | The additive cull off (all drawn as before) / what it removed drawn too, a pixel that would have added colour painted magenta; the margin around the lit texels (2; negative: verify's positive control). `[gs-hw] cull:` in the log when a target's alpha turns out used (PerikiyoXD, PR #178; game-internals.md 6j) |
-| `VCS_GPS=0\|1\|2`, `VCS_GPS_HOOKS=0` | Enhancements > Radar > GPS route (Off / In a vehicle / Always) for one run; no GPS hook at all (game-internals.md 12e; `gps` command) |
-| `VCS_AIM_SPEED=1\|2\|3` | Enhancements > Combat > Aim speed (Original / Fast / Faster) for one run |
+| `VCS_GPS=0\|1\|2`, `VCS_GPS_HOOKS=0` | Game > Map and saving > GPS route (Off / In a vehicle / Always) for one run; no GPS hook at all (game-internals.md 12e; `gps` command) |
+| `VCS_AIM_SPEED=1\|2\|3` | Game > Combat > Aim speed (Original / Fast / Faster) for one run |
 | `VCS_AIM_LOG=1` | free aim per frame: camera, IK flags / torso, the raise animation's time (`[aim-log]`) |
 | `PS2X_HW_CUTOUT_REF=<n>` | the far-fence split's alpha (0x60 = 96) for one run |
 | `VCS_CPU=AVX2\|AVX\|SSE4` | build tools: the CPU the build is for (default: this PC's, `toolchain.cpu_level`); an older one's build runs here (tests) |
@@ -1212,7 +1212,7 @@ Python scripts still usable on their own. docs/LAUNCHER.md has the whole of it; 
 | `VCS_PHYSICS_TIMESTEP=0` | the push of a body under a wheel, the rolling resistance, a bike's brake wobble, rotor blades against walls and the water cannon's reach stay per frame (game-internals.md 4; the reference) |
 | `VCS_MUSIC_TIMESTEP=0` | radio stations off the air advance a frame's worth per frame, as on the PS2 (game-internals.md 9; the reference) |
 | `VCS_PARTICLE_TIMING=0` | particles fade, grow and spawn once a frame (before 2026-11-14: smoke 1/4.8 as long at 144 fps, fires thin) |
-| `VCS_REDUCE_POSTFX=1` | Enhancements > Effects > Reduce Post Processing Effects for one run: the motion blur, particles and effects once a frame as before 2026-11-13 / 14 (live in the menu) |
+| `VCS_REDUCE_POSTFX=1` | Graphics > Effects > Lighter effects above 30 fps for one run: the motion blur, particles and effects once a frame as before 2026-11-13 / 14 (live in the menu) |
 | `VCS_EFFECTS_TIMING=0` | lightning, sun glare, clouds, camera shake, the video overlay, the photo flash, the HUD bar flash, peds fading, streaks, rubbish, steam after rain, rain streaks starting, explosions (bursts, length, flicker) and the banknote spray step once a frame (before 2026-11-14) |
 | `VCS_EFFECTS_LOG=1` | every 30 s of real time: frames and PS2 frames a second, lightning bursts (count, length), cloud turn / spin a second, and each effect's steps / rolls that took effect a second (with `VCS_EFFECTS_TIMING=0`: the per-frame counts) |
 | `VCS_PARTICLE_LOG=1` | every 10 s of game clock: AddParticle calls / passed per second by return address (`*` = throttled), and particles died per second and their mean lifetime by type |
@@ -1302,32 +1302,32 @@ Python scripts still usable on their own. docs/LAUNCHER.md has the whole of it; 
 | `PS2X_HW_DUMP_ALLVERTS=1` | the F12 draw log prints every vertex of every draw |
 | `VCS_MENU_NATIVE=0` | menus drawn into the PS2 frame buffer instead of the native layer |
 | `VCS_MENU_MOUSE=0` | the game's pause menu without the mouse (Enter / Escape as Cross / Triangle stay; game/vcs_frontend.h) |
-| `VCS_PROMPTS=0..4` | Enhancements > Button prompts for this run: 0 Original, 1 Automatic, 2 PlayStation, 3 Xbox, 4 Keyboard & mouse (the menu shows it read-only) |
+| `VCS_PROMPTS=0..4` | Game > Button prompts for this run: 0 Original, 1 Automatic, 2 PlayStation, 3 Xbox, 4 Keyboard & mouse (the menu shows it read-only) |
 | `VCS_PROMPTS_HOOKS=0` | none of the button prompts' hooks (the setting then does nothing; game/vcs_prompts.h) |
 | `VCS_PROMPTS_DUMP=<file.png>` | each glyph atlas made, written over grey (to look at the glyphs) |
-| `VCS_TRAFFIC=100..300`, `VCS_PEDS=100..300`, `VCS_DRAW_DISTANCE=100..300` | Enhancements > World for this run (percent; the menu shows them read-only) |
+| `VCS_TRAFFIC=100..300`, `VCS_PEDS=100..300`, `VCS_DRAW_DISTANCE=100..300` | World for this run (percent; the menu shows them read-only) |
 | `VCS_WORLD_DETAIL_HOOKS=0` | density and draw distance write nothing (the settings then do nothing; game/vcs_world_detail.h) |
 | `VCS_WORLD_KEEP=0` | density without the pool reserve and cars in view not kept (the first version, to compare); the log still names each car that vanishes in view (`[world] car vanished in view`) |
 | `VCS_FAR_CLIP=<metres>` | a test: the far plane and so the fog end at this distance instead of 2000, outdoors (2000 < m <= 20000; game-internals.md 6o) |
-| `VCS_DRIVEBY_RATE=0\|1` | Enhancements > Combat > Drive-by fire rate for this run: 0 as on the PS2, 1 the gun's own rate (the menu shows it read-only) |
+| `VCS_DRIVEBY_RATE=0\|1` | Game > Combat > Drive-by fire rate for this run: 0 as on the PS2, 1 the gun's own rate (the menu shows it read-only) |
 | `VCS_DRIVEBY_HOOKS=0` | the NPC drive-by's fire rate left alone: a shot every frame, as the original game (the setting then does nothing; game/vcs_driveby.h) |
-| `VCS_PED_DISTANCE=100..200` | Enhancements > World > Pedestrian distance for this run (percent of the game's spawn / removal distances; game-internals.md 12d) |
+| `VCS_PED_DISTANCE=100..200` | World > Draw distance > Pedestrian distance for this run (percent of the game's spawn / removal distances; game-internals.md 12d) |
 | `PS2X_HW_PACK_GPU_MB=<MB>` | GPU memory kept for texture pack images after the game's texture goes (1536; 0: every texture made again uploads its image again; PERFORMANCE.md 33) |
 | `PS2X_HW_BLOCK_TEXTURES=0` | Texture packs' block-compressed DDS decoded to RGBA as before 2026-11-19 instead of going to the GPU as stored (the reference; game-internals.md 7b) |
 | `VCS_TEXPACK_VERIFY=1` | Every pack DDS also decoded and its texels checked against the alpha bounds that chose RGBA or as stored (`[texpack] verify` lines; texpack_check --real) |
 | `VCS_TEXPACK_MAX=<px>` | Texture pack images larger than this many pixels a side are shrunk to their first mip level that fits (memory; no effect on hitches, PERFORMANCE.md 33) |
-| `VCS_CAR_DISTANCE=100..200` | Enhancements > World > Car distance for this run (percent of GenerationDistMultiplier while the car spawner and RemoveDistantCars run; game-internals.md 12d) |
-| `VCS_PED_SHADOWS=0\|1` | Enhancements > World > Character shadows for this run (0: no `shad_ped` shadow is stored; game-internals.md 12d) |
+| `VCS_CAR_DISTANCE=100..200` | World > Draw distance > Car distance for this run (percent of GenerationDistMultiplier while the car spawner and RemoveDistantCars run; game-internals.md 12d) |
+| `VCS_PED_SHADOWS=0\|1` | World > Details > Character shadows for this run (0: no `shad_ped` shadow is stored; game-internals.md 12d) |
 | `VCS_INTERIOR_FAR_VIEW=0` | the original game's 1000 m far plane indoors for this run (the far view from interiors is always on since 2026-11-20; game-internals.md 6o) |
-| `VCS_HEADSHOTS_KILL=0\|1` | Enhancements > Combat > Headshots always kill for this run (game-internals.md 12c) |
+| `VCS_HEADSHOTS_KILL=0\|1` | Game > Combat > Headshots always kill for this run (game-internals.md 12c) |
 | `VCS_HEADSHOT_HOOKS=0` | CPed::InflictDamage left alone: headshots as in the original game (the setting then does nothing) |
-| `VCS_SOLID_FAR_PALMS=0\|1` | Enhancements > World > Solid far palms for this run (the far vegetation's distance fade off, native draw only; game-internals.md 7b) |
-| `VCS_DISTANT_LIGHTS=0\|1` | Enhancements > World > Distant lights for this run (Project2DFX's far street lights at night; game-internals.md 7c) |
+| `VCS_SOLID_FAR_PALMS=0\|1` | World > Details > Solid far palms for this run (the far vegetation's distance fade off, native draw only; game-internals.md 7b) |
+| `VCS_DISTANT_LIGHTS=0\|1` | World > Details > Distant lights for this run (Project2DFX's far street lights at night; game-internals.md 7c) |
 | `VCS_LODLIGHTS_FILE=<path>` | The light table to read (default `project2dfx/lodl.c` next to vcs.exe, fetched by the build) |
 | `VCS_LODLIGHTS_FARCLIP=m`, `VCS_LODLIGHTS_RADIUS=x`, `VCS_LODLIGHTS_INTENSITY=x` | The lights' range (1000 m), size factor (1.5) and strength (1) |
 | `VCS_LODLIGHTS_LOG=1\|2` | Every 5 s: lights in range / drawn a frame, the cost, the camera and its matrices; 2: the cameras of each world chain |
-| `VCS_STREAMING_MB=0\|12\|20\|30` | Game > Memory > Streaming memory for this run (0: the PS2's 5.4 MB in the main heap; above: the streaming heap at 0x2000000 with that size, CStreaming's cap of 51 lifted; game-internals.md 9d) |
-| `VCS_HD_RADIUS=0..3` | Enhancements > World > Detailed city distance for this run (0 Original, 1 ~450 m, 2 ~580 m, 3 ~720 m; read at boot for the packet heap, live otherwise; game-internals.md 6t) |
+| `VCS_STREAMING_MB=0\|12\|20\|30` | World > Memory > Streaming memory for this run (0: the PS2's 5.4 MB in the main heap; above: the streaming heap at 0x2000000 with that size, CStreaming's cap of 51 lifted; game-internals.md 9d) |
+| `VCS_HD_RADIUS=0..3` | World > Draw distance > Detailed city distance for this run (0 Original, 1 ~450 m, 2 ~580 m, 3 ~720 m; read at boot for the packet heap, live otherwise; game-internals.md 6t) |
 | `VCS_HD_PROBE=x,y,r`, `VCS_HD_TWINS=1`, `VCS_HD_DUPES=1`, `VCS_HD_OSC=1`, `VCS_HD_LATE=1` | Detailed city analysis: what each list build does with every record near a point; low-detail twins kept; detailed sectors drawn twice; sectors flipping state; detail first drawn close (willzmkv's, game-internals.md 6t) |
 | `VCS_HD_DRAWCHECK=1`, `VCS_HD_PKTDEBUG=1`, `VCS_HD_DRAWMODE=n`, `VCS_HD_NODRAW=1`, `VCS_HD_FADE=<s>` | Detailed city packet checks (each drawn sector's packets walked; CALL targets checked against the free ring), draw-mode bisection, the extra sectors not drawn, the fade's length (1 s; 0: none) |
 | `memstate`, `hdworld`, `hdpairs`, `hdcompare`, `skipextra`, `keeplod` (gamectl / rig commands) | The heaps above 32 MB: streaming / main / sector packet heap (base, size, in use), the cap's skipped calls; the detailed city's state, its pairs, a comparison with the game's list, sector ids left out / low-detail kept (game-internals.md 6t) |

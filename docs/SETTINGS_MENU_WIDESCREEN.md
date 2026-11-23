@@ -287,7 +287,8 @@ Audio, Game, Keyboard, Gamepad, Advanced.
   *World*, **Traffic density**, **Pedestrian density** and **Draw distance** (100% = the original, up to 300%;
   `VCS_TRAFFIC` / `VCS_PEDS` / `VCS_DRAW_DISTANCE`; game-internals.md 6o / 12d, `src/game/vcs_world_detail.cpp`).
   Under *Combat* (2026-11-08): **Drive-by fire rate** - As on the PS2 (default) / The gun's own rate
-  (`VCS_DRIVEBY_RATE=0/1`; game-internals.md 12c, `src/game/vcs_driveby.cpp`).
+  (`VCS_DRIVEBY_RATE=0/1`; game-internals.md 12c, `src/game/vcs_driveby.cpp`). These moved to the World and Game
+  pages on 2026-11-23 (The menu's layout, below).
 
 Registry additions (`settings::Spec`): `Type::Action` (a button: `button` text, `confirm` for a second click; no
 value, nothing in vcs.ini, skipped by applyAll and the page reset); Key `optional` (0 = unbound; right-click clears),
@@ -306,6 +307,28 @@ rebound key and not on the old one, walk, a wheel binding, the presets, Reset al
 menu, the game's vibration reaching the host) and screenshots of every page (`menu <page>`, `menu scroll`); regress
 step "controls". Not checkable hidden (no window): the mouse camera's feel, the background pause / mute, vertical
 sync, the menu driven by a real mouse.
+
+## The menu's layout (2026-11-23, this fork)
+
+The user found the menu hard to read: an *Enhancements* page held two thirds of everything, and pages and sections
+came in the order the code happened to register them. Now the pages are grouped by what a setting does, and their order
+is a list of its own, `settings::setLayout` in `src/main.cpp` (pages and sections not in the list follow in
+registration order; the setting keys did not change, so vcs.ini files stay valid):
+
+| Page | Sections |
+|---|---|
+| Display | Screen, Cutscenes, Frame rate, Presets |
+| Graphics | Image quality, Effects, Fog, Texture packs, Renderer |
+| World | Draw distance, Traffic and people, Details, Memory |
+| Game | Combat, Map and saving, Button prompts, Start-up, Window |
+| Audio | Volume, Output |
+| Keyboard | On foot, Fighting, Vehicle, Aircraft, All situations, Mouse, Menus and pause, Shortcuts |
+| Gamepad | On foot, Fighting, Vehicle, Aircraft, All situations, Sticks and triggers, Vibration |
+| Advanced | Diagnostics (performance overlay, dump textures), Reset |
+
+The *Enhancements* page is gone. *Smooth sky gradients* is no longer a setting: always on (`VCS_SMOOTH_GRADIENTS=0`
+shows the PS2's bands for one run). The control channel's `settings` command lists every setting with its page,
+section, default and value (one tab-separated line each), for checking the layout without screenshots.
 
 ## Part 1 - the settings menu
 

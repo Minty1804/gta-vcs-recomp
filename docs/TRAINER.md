@@ -130,7 +130,7 @@ The switches are not saved: every start is the original game (DECISIONS.md 2026-
 - While the free camera flies the game gets no input at all: no pause menu (Enter) until it ends. A vehicle the player
   drives rolls on and slows down by itself. It works in cutscenes (the cutscene plays out behind it, the game's camera
   carries on when it ends). Starting a mission from the trainer turns it off, so the mission's start is seen and ends by itself when the game leaves play (Load Game, the title screen).
-- The free camera's keys are fixed (not on the Keyboard page); only its on / off key is (Keyboard > Menus).
+- The free camera's keys are fixed (not on the Keyboard page); only its on / off key is (Keyboard > Shortcuts).
 
 ## The check
 

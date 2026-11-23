@@ -294,7 +294,7 @@ game-internals.md 6m; before 2026-11-05 Start was Enter and the menu took the pa
 
 ## Button prompts
 
-F2 > Enhancements > **Button prompts** (default Original): the controls the game's help text and pause menu show.
+F2 > Game > **Button prompts** (default Original): the controls the game's help text and pause menu show.
 Automatic follows the device used last - the keys and mouse buttons bound on the Keyboard page, or the gamepad's own
 buttons (PlayStation or Xbox glyphs, from the pad's maker) as mapped on the Gamepad page. PlayStation, Xbox and
 Keyboard & mouse fix a set; Original is the PS2's text. game-internals.md 6n, DECISIONS.md 2026-11-07.
@@ -330,7 +330,7 @@ while a menu is open.
 
 ## Screenshots
 
-**F8** (Keyboard > Menus > Screenshot, rebindable) saves the game's picture as a PNG in a `screenshots` folder next to
+**F8** (Keyboard > Shortcuts > Screenshot, rebindable) saves the game's picture as a PNG in a `screenshots` folder next to
 vcs.exe, named `vcs_<date>_<time>.png` (`_2`, `_3`... for several in one second); a notice names the file once it is
 written. The shot is the window pixel for pixel - its resolution (the monitor's in full screen), its letterboxing, the
 UI where it was - and holds what is on screen: the settings or trainer menu, the F3 overlay, the frame-rate counter and
