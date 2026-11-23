@@ -16,7 +16,7 @@
 // - The font's glyph table is a copy in guest memory the game does not use (0x61000, the EE kernel's area: DECISIONS.md,
 //   free aim's scratch) holding the four originals and an entry per token; each frame kick writes their widths for the
 //   glyph set in use, so the game lays the text out (centring, wrapping) for glyphs of that width. A token's entry has
-//   its own texture coordinates (u = 2 x index, v = 255: a row no glyph of the font starts in), so a glyph quad in the
+//   its own texture coordinates (u = index, v = 255: a row no glyph of the font starts in), so a glyph quad in the
 //   font's batch is known by them.
 // - The glyphs drawn are found in the font's 2D batches (4 vertices a glyph) and the help bars' image items; their
 //   vertex positions go to the renderer at the frame kick (as the HUD's anchors do, game/vcs_hud.cpp), which draws
@@ -83,13 +83,24 @@ namespace vcs::prompts
         {
             Foot,
             Vehicle,
-            Menu,
+            Menu, // the pause menu (its help bars; the text's plain ~X~ while it is up): the fixed Enter / Escape
+            // [gta-recomp] (2026-11-23, the user's report: Ammu-Nation said Shift to buy, Space buys) the contexts the
+            // PC scheme's keys have that the text's actions belong to (actionContext):
+            Held,  // the game holds the controls: the shops (AM*), "Press ~X~ to continue": the menu keys
+            Scope, // a first-person weapon view: the sniper's zoom and steady aim (SN*)
+            Fight, // unarmed, locked on (PU*): the fighting keys, which win over the on-foot ones
+            Alt,   // a PS2 button whose action depends on the text and on where the player is (TGSUB R3: sub-missions /
+                   // activities, not look behind; PDCTL L2 / R2: targets, not weapons; VEWE2 R1: secondary fire, not
+                   // the handbrake; CVEIW Select) - resolved each frame by input::situation (AltVehicle / AltAir)
             kCtxCount,
-            // [Minty1804 fork] not a context of the text's own (its tokens are Foot / Vehicle / Menu): the Vehicle ones
-            // while the player flies a helicopter or plane (input::inAircraft), resolved to the Aircraft actions
+            // [Minty1804 fork] not contexts of the text's own: the Vehicle ones while the player flies a helicopter or
+            // plane (input::situation), resolved to the Aircraft actions; the Alt ones in a vehicle / aircraft
             Air = kCtxCount,
+            AltVehicle,
+            AltAir,
             kSpecCtxCount
         };
+        constexpr const char *kCtxNames[kCtxCount] = {"foot", "vehicle", "menu", "held", "scope", "fight", "alt"};
         constexpr const char *kCtlNames[kCtlCount] = {
             "X", "O", "T", "S", "L1", "R1", "L2", "R2", "L3", "R3", "SELECT", "START",
             "DU", "DD", "DL", "DR", "DPAD", "DPADUD", "DPADLR",
@@ -159,6 +170,44 @@ namespace vcs::prompts
         // Fighting has no context of its own here: UCBT's text (PUHA / PUBL / PUGR) shows the on-foot keys.
         const char *pcAction(int ctx, int ctl)
         {
+            // [gta-recomp] the contexts added 2026-11-23: their own actions, else those of the situation they are in
+            if (ctx == Held)
+                switch (ctl)
+                {
+                case Cross: return "pc_menu_select";
+                case Triangle: return "pc_menu_back";
+                case Start: return "pc_pause";
+                case DUp: return "pc_dpad_up";
+                case DDown: return "pc_dpad_down";
+                case DLeft: return "pc_dpad_left";
+                case DRight: return "pc_dpad_right";
+                case LSUp: return "pc_menu_stick_up";
+                case LSDown: return "pc_menu_stick_down";
+                case LSLeft: return "pc_menu_stick_left";
+                case LSRight: return "pc_menu_stick_right";
+                default: return nullptr; // no key presses it there
+                }
+            if (ctx == Scope || ctx == Fight || ctx == Alt)
+            {
+                const char *id = nullptr;
+                if (ctx == Scope)
+                    id = ctl == Square ? "pc_zoom_in" : ctl == Cross ? "pc_zoom_out" : ctl == L1 ? "pc_steady_aim" : nullptr;
+                else if (ctx == Fight)
+                    id = ctl == Cross ? "pc_heavy_attack" : ctl == Square ? "pc_block" : ctl == Triangle ? "pc_grab" : nullptr;
+                else
+                    id = ctl == R3 ? "pc_submission" : ctl == L2 ? "pc_prev_target" : ctl == R2 ? "pc_next_target"
+                       : ctl == R1 ? "pc_vehicle_fire_alt" : nullptr;
+                return id ? id : pcAction(Foot, ctl);
+            }
+            if (ctx == AltVehicle || ctx == AltAir)
+            {
+                const bool air = ctx == AltAir;
+                if (ctl == R3)
+                    return air ? "pc_air_submission" : "pc_car_submission";
+                if (ctl == R1)
+                    return air ? "pc_air_fire_alt" : "pc_vehicle_fire_alt";
+                return pcAction(air ? Air : Vehicle, ctl);
+            }
             if (ctx == Air)
                 switch (ctl)
                 {
@@ -298,7 +347,7 @@ namespace vcs::prompts
             case LSRight: return keysSpec({k(ctl)});
             case LSUD: return keysSpec({k(LSUp), k(LSDown)});
             case LS:
-                if (ctx == Vehicle || ctx == Air) // the left stick steers / banks
+                if (ctx == Vehicle || ctx == Air || ctx == AltVehicle || ctx == AltAir) // the left stick steers / banks
                     return keysSpec({k(LSLeft), k(LSRight)});
                 return keysSpec({k(LSUp), k(LSLeft), k(LSDown), k(LSRight)});
             default: return keysSpec({k(LSLeft), k(LSRight)}); // LSLR
@@ -348,8 +397,8 @@ namespace vcs::prompts
             if (ctl < DPad) // the physical button the player bound (Gamepad page)
             {
                 // [Minty1804 fork] the gamepad by action: the button of the action that presses this PS2 button here;
-                // in the menus the PS2's own (vcs_input.cpp)
-                const char *id = ctx == Menu ? nullptr : pcAction(ctx, ctl);
+                // in the menus the PS2's own (vcs_input.cpp; also while the game holds the controls: padMenuButtons)
+                const char *id = ctx == Menu || ctx == Held ? nullptr : pcAction(ctx, ctl);
                 const std::string key = id && registered(std::string("pad.") + id) ? std::string("pad.") + id : std::string();
                 const char *bound = key.empty() ? nullptr : padSourceName(setting(key));
                 button = bound ? bound : kPadDefault[ctl];
@@ -488,6 +537,16 @@ namespace vcs::prompts
 
         uint16_t tokenChar(int ctx, int ctl) { return static_cast<uint16_t>(kTokenBase + ctx * 0x40 + ctl); }
 
+        // [gta-recomp] the tokens with a glyph table entry: every control on foot, in a vehicle, in the menus and while
+        // held (Ammu-Nation's text names the left stick and the D-pad); the buttons only in the other contexts, whose
+        // text names nothing else: 168 entries. An entry's u is its index ([gta-recomp] twice it before 2026-11-23: the
+        // quad's u is exact - (u + 0.5) x 128 -, so one texel apart is plenty), every token's u inside the font's 256
+        // texels as before; the font's u is 16 bits of 1/128 texel, so u + the glyph's width stays below 512 (resolve
+        // caps the width).
+        bool tokenUsed(int ctx, int ctl) { return ctx <= Held || ctl < DUp; }
+        // a token the text asks for that has no entry: the on-foot one
+        uint16_t tokenFor(int ctx, int ctl) { return tokenChar(tokenUsed(ctx, ctl) ? ctx : Foot, ctl); }
+
         uint32_t gameFont()
         {
             const uint32_t styles = rd32(kFontStyles);
@@ -528,15 +587,18 @@ namespace vcs::prompts
             }
             int index = 0;
             for (int ctx = 0; ctx < kCtxCount; ++ctx)
-                for (int ctl = 0; ctl < kCtlCount; ++ctl, ++index)
+                for (int ctl = 0; ctl < kCtlCount; ++ctl)
                 {
+                    if (!tokenUsed(ctx, ctl))
+                        continue;
                     Entry e;
                     e.ch = tokenChar(ctx, ctl);
-                    e.u = static_cast<uint16_t>(2 * index);
+                    e.u = static_cast<uint16_t>(index);
                     e.v = kTokenV;
                     e.ctx = ctx;
                     e.ctl = ctl;
                     g_entries.push_back(e);
+                    ++index;
                 }
             for (size_t i = 0; i < g_entries.size(); ++i)
             {
@@ -651,6 +713,17 @@ namespace vcs::prompts
         // the action's context: driving (VE*), flying (FL*, HE*), the taxi's hop, the camera view, the fire truck's hose
         int actionContext(const std::string &action)
         {
+            // [gta-recomp] (2026-11-23) the actions whose PC keys are not those of the PS2 button on foot / in a vehicle
+            // (the C0 texts, game-internals.md 12a): the shops' (AM*: the game holds the controls, the menu keys work),
+            // the sniper scope's, unarmed fighting's, and the buttons with two actions (Alt)
+            if (action.rfind("AM", 0) == 0)
+                return Held;
+            if (action == "SNZI" || action == "SNZO" || action == "SNSLO")
+                return Scope;
+            if (action == "PUNA" || action == "PUHA" || action == "PUBL" || action == "PUGR")
+                return Fight;
+            if (action == "TGSUB" || action == "PDCTL" || action == "VEWE2" || action == "CVEIW")
+                return Alt;
             if (action.rfind("VE", 0) == 0 || action.rfind("FL", 0) == 0 || action.rfind("HE", 0) == 0 || action == "TAXJU" ||
                 action == "CVEIW" || action == "FIREH")
                 return Vehicle;
@@ -696,7 +769,7 @@ namespace vcs::prompts
                         const size_t end = r.find('}', k);
                         const int ctl = ctlByName(r.substr(k + 1, end - k - 1));
                         out.push_back(u'~');
-                        out.push_back(static_cast<char16_t>(tokenChar(ctx, ctl < 0 ? Cross : ctl)));
+                        out.push_back(static_cast<char16_t>(tokenFor(ctx, ctl < 0 ? Cross : ctl)));
                         out.push_back(u'~');
                         k = end + 1;
                     }
@@ -833,8 +906,8 @@ namespace vcs::prompts
                 int index = -1;
                 if (std::fabs(v - kTokenV) < 0.75f)
                 {
-                    const int i = static_cast<int>(std::lround(u / 2.0f)) + g_fontCount;
-                    if (i >= g_fontCount && i < static_cast<int>(g_entries.size()) && std::fabs(u - g_entries[i].u) < 0.75f)
+                    const int i = static_cast<int>(std::lround(u)) + g_fontCount;
+                    if (i >= g_fontCount && i < static_cast<int>(g_entries.size()) && std::fabs(u - g_entries[i].u) < 0.25f)
                         index = i;
                 }
                 else
@@ -988,14 +1061,43 @@ namespace vcs::prompts
 
         // ---- the set's widths and cells (game thread, frame kick) -------------------------------------------------------
         std::shared_ptr<Atlas> g_appliedAtlas;
-        bool g_appliedMenu = false, g_appliedAir = false;
+        bool g_appliedMenu = false;
+        input::Situation g_appliedSituation = input::Situation::OnFoot;
 
-        void resolve(int set, bool menuOpen, bool air)
+        // [gta-recomp] the context a glyph shows the keys of, where the player is now: the text's plain ~X~ / ~O~ / ~T~ /
+        // ~S~ by the situation (the pause menu's fixed keys, the menu keys while the game holds the controls - "Press ~X~
+        // to continue" -, a vehicle's, a scope's; on foot before 2026-11-23 whatever the situation); the tokens by their
+        // action's context, the vehicle and Alt ones turned to the aircraft's / vehicle's
+        int resolvedContext(const Entry &e, bool menuOpen, input::Situation s)
+        {
+            using S = input::Situation;
+            const bool air = s == S::Aircraft, driving = air || s == S::Vehicle;
+            if (e.original)
+            {
+                if (menuOpen)
+                    return Menu;
+                switch (s)
+                {
+                case S::Held: return Held;
+                case S::Vehicle: return Vehicle;
+                case S::Aircraft: return Air;
+                case S::Scope: return Scope;
+                default: return Foot;
+                }
+            }
+            if (e.ctx == Vehicle && air)
+                return Air;
+            if (e.ctx == Alt && driving)
+                return air ? AltAir : AltVehicle;
+            return e.ctx;
+        }
+
+        void resolve(int set, bool menuOpen, input::Situation situation)
         {
             for (size_t i = 0; i < g_entries.size(); ++i)
             {
                 const Entry &e = g_entries[i];
-                const int ctx = e.original ? (menuOpen ? Menu : Foot) : e.ctx == Vehicle && air ? Air : e.ctx;
+                const int ctx = resolvedContext(e, menuOpen, situation);
                 const auto it = g_atlas->cells.find(specFor(set, ctx, e.ctl));
                 if (it == g_atlas->cells.end())
                 {
@@ -1003,7 +1105,9 @@ namespace vcs::prompts
                     continue;
                 }
                 g_resolved[i] = {true, it->second};
-                const int width = std::clamp(static_cast<int>(std::lround(it->second.aspect * kUnitsPerAspect)), 8, 400);
+                // (u + width: within the font's 16-bit u, tokenUsed)
+                const int width = std::clamp(static_cast<int>(std::lround(it->second.aspect * kUnitsPerAspect)), 8,
+                                             std::min(400, 510 - static_cast<int>(e.u)));
                 wr16(kTable + static_cast<uint32_t>(i) * 14u + 2u, static_cast<uint16_t>(width));
             }
         }
@@ -1165,11 +1269,11 @@ namespace vcs::prompts
             return;
         const int set = effectiveSet();
         const bool menuOpen = frontend::open();
-        const bool air = input::inAircraft();
-        if (set != g_appliedSet || g_atlas != g_appliedAtlas || menuOpen != g_appliedMenu || air != g_appliedAir)
+        const input::Situation situation = input::situation();
+        if (set != g_appliedSet || g_atlas != g_appliedAtlas || menuOpen != g_appliedMenu || situation != g_appliedSituation)
         {
-            resolve(set, menuOpen, air);
-            g_appliedAir = air;
+            resolve(set, menuOpen, situation);
+            g_appliedSituation = situation;
             if (set != g_appliedSet)
                 std::fprintf(stderr, "[prompts] %s\n", set == PlayStation ? "PlayStation buttons" : set == Xbox ? "Xbox buttons" : "keyboard and mouse");
             g_appliedSet = set;
@@ -1215,17 +1319,84 @@ namespace vcs::prompts
                     s += c < 128 ? static_cast<char>(c) : '?';
                 return reply("ok " + s);
             }
-            if (args.rfind("expand ", 0) == 0)
+            // [gta-recomp] prompts find <ASCII> -> ok KEY ...: the first 20 text keys whose text holds it (a help text
+            // naming an action, for tools/prompts_check.py)
+            if (args.rfind("find ", 0) == 0)
             {
-                const std::string action = args.substr(7);
+                const std::string want = args.substr(5);
+                const uint32_t table = rd32(kTextTable);
+                if (!inRam(table, 8))
+                    return reply("error no text table");
+                const uint32_t entries = rd32(table), count = rd32(table + 4);
+                if (!inRam(entries) || count == 0 || count > 20000 || !inRam(entries, count * 12u))
+                    return reply("error no text table");
+                std::string s = "ok";
+                int found = 0;
+                for (uint32_t i = 0; i < count && found < 20; ++i)
+                {
+                    std::string text;
+                    for (uint32_t p = rd32(entries + i * 12u); inRam(p, 2) && text.size() < 512; p += 2)
+                    {
+                        const uint16_t ch = rd16(p);
+                        if (!ch)
+                            break;
+                        text += ch < 128 ? static_cast<char>(ch) : '?';
+                    }
+                    if (text.find(want) == std::string::npos)
+                        continue;
+                    char key[9] = {};
+                    std::memcpy(key, g_rdram + entries + i * 12u + 4u, 8);
+                    s += std::string(" ") + key;
+                    ++found;
+                }
+                return reply(s);
+            }
+            // [gta-recomp] prompts actions -> ok ACTION@context ... : every control text of the configuration in use
+            if (args == "actions")
+            {
+                const uint32_t table = rd32(kTextTable);
+                if (!inRam(table, 8))
+                    return reply("error no text table");
+                const uint32_t entries = rd32(table), count = rd32(table + 4);
+                if (!inRam(entries) || count == 0 || count > 20000 || !inRam(entries, count * 12u))
+                    return reply("error no text table");
+                const std::string prefix = "C" + std::to_string(rd16(kPad0Mode));
+                std::string s = "ok";
+                for (uint32_t i = 0; i < count; ++i)
+                {
+                    char key[9] = {};
+                    std::memcpy(key, g_rdram + entries + i * 12u + 4u, 8);
+                    if (std::strncmp(key, prefix.c_str(), prefix.size()) == 0 && key[prefix.size()] >= 'A' && key[prefix.size()] <= 'Z')
+                    {
+                        const std::string action = key + prefix.size();
+                        s += " " + action + "@" + kCtxNames[actionContext(action)];
+                    }
+                }
+                return reply(s);
+            }
+            // prompts expand <ACTION> -> its tokens as {CTL@context}; prompts keys <ACTION> -> {CTL@context=spec}: the
+            // glyph each shows now (the set in use, where the player is)
+            const bool keys = args.rfind("keys ", 0) == 0;
+            if (args.rfind("expand ", 0) == 0 || keys)
+            {
+                const std::string action = args.substr(keys ? 5 : 7);
                 const uint16_t mode = rd16(kPad0Mode);
                 const std::u16string text = translate(gameText("C" + std::to_string(mode) + action), actionContext(action));
+                const input::Situation situation = input::situation();
                 std::string s;
                 for (char16_t c : text)
                     if (c >= kTokenBase && c < kTokenBase + kCtxCount * 0x40)
                     {
                         const int v = c - kTokenBase;
-                        s += std::string("{") + kCtlNames[v & 0x3F] + "@" + (v >> 6 == Foot ? "foot" : v >> 6 == Vehicle ? "vehicle" : "menu") + "}";
+                        s += std::string("{") + kCtlNames[v & 0x3F] + "@" + kCtxNames[v >> 6];
+                        if (keys)
+                        {
+                            Entry e;
+                            e.ctx = v >> 6;
+                            e.ctl = v & 0x3F;
+                            s += "=" + specFor(effectiveSet(), resolvedContext(e, frontend::open(), situation), e.ctl);
+                        }
+                        s += "}";
                     }
                     else
                         s += c < 128 ? static_cast<char>(c) : '?';

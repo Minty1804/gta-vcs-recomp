@@ -39,6 +39,20 @@ namespace vcs::input
     // the game's memory; the game thread.
     bool inAircraft();
 
+    // [gta-recomp] Where the player is, as the PC scheme's keys see it (the situation readPad picks their actions by):
+    // the button prompts show the keys that work there (game/vcs_prompts.cpp). Held: the game's menu keys apply -
+    // paused, no player yet, or the player's controls held by the game (shops, cutscenes). Reads the game's memory; the
+    // game thread.
+    enum class Situation
+    {
+        OnFoot,
+        Scope,    // a first-person weapon view (sniper, rocket launcher, camera...)
+        Vehicle,  // a car, bike or boat
+        Aircraft, // a helicopter or a plane
+        Held,
+    };
+    Situation situation();
+
     // The free camera's controls (game/vcs_freecam.h; fixed keys, docs/CONTROLS.md), taken once per camera update on
     // the game thread. While the free camera flies the game's pad reads give it nothing, and the mouse is left for this.
     struct FreeCamInput

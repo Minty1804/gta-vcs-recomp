@@ -939,6 +939,12 @@ dropped on uploads (lazy render-target patching).
   it. Original runs the game's own code. `tools/prompts_check.py`: 5 checks (expand, sets, automatic, menu, original),
   0 failed; screenshots at 4:3 and 16:9 with the HUD at the screen edges. Not done: the Controls page's controller
   picture, a Nintendo set (a Nintendo pad shows Xbox glyphs for now).
+  2026-11-23 (the user's report: Ammu-Nation's "Shift to buy" where Space buys): each glyph shows the keys of the action
+  that works there - the shops' the menu keys, the scope's, fighting's, sub-missions by situation, targets
+  (DECISIONS.md 2026-11-23, CONTROLS.md); W / A / S / D are the left stick in menus and shops. prompts_check: 6 checks
+  (contexts added, with the sub-missions' help drawn in a car), 0 failed; pc_scheme_check's held-controls check passes
+  (it failed on the old build); its 6 other failures (aircraft, gamepad in a car, the pause keys) fail the same on the
+  old build - not looked into yet.
 - **Traffic / pedestrian density and draw distance** (2026-11-07, the user's request; DECISIONS.md, game-internals.md
   6o / 12d, `src/game/vcs_world_detail.cpp`): Enhancements > World - **Traffic density**, **Pedestrian density**,
   **Draw distance**, 100% (the original) to 300%. Density scales the spawners' own constants (the scripts' multipliers

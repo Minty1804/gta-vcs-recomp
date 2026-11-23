@@ -200,6 +200,13 @@ namespace vcs::input
             {"pc_dpad_down", "Menu: down (D-pad)", "Menus and pause", Target::Button, kDown, 0, 0, KEY_DOWN, 0, kPadNone, kInMenu},
             {"pc_dpad_left", "Menu: left (D-pad)", "Menus and pause", Target::Button, kLeft, 0, 0, KEY_LEFT, 0, kPadNone, kInMenu},
             {"pc_dpad_right", "Menu: right (D-pad)", "Menus and pause", Target::Button, kRight, 0, 0, KEY_RIGHT, 0, kPadNone, kInMenu},
+            // [gta-recomp] the left stick in the menus and while the game holds the controls (2026-11-23, the user's
+            // report): Ammu-Nation's and the shops' text says "left analog stick, or directional buttons" (C0AMMOV), and
+            // W / A / S / D did nothing there - the on-foot keys move only while playing
+            {"pc_menu_stick_up", "Menu: up (left stick)", "Menus and pause", Target::Stick, 0, 1, -1, KEY_W, 0, kPadNone, kInMenu},
+            {"pc_menu_stick_down", "Menu: down (left stick)", "Menus and pause", Target::Stick, 0, 1, 1, KEY_S, 0, kPadNone, kInMenu},
+            {"pc_menu_stick_left", "Menu: left (left stick)", "Menus and pause", Target::Stick, 0, 0, -1, KEY_A, 0, kPadNone, kInMenu},
+            {"pc_menu_stick_right", "Menu: right (left stick)", "Menus and pause", Target::Stick, 0, 0, 1, KEY_D, 0, kPadNone, kInMenu},
         };
         constexpr size_t kControlCount = sizeof(kControls) / sizeof(kControls[0]);
 
@@ -1498,6 +1505,19 @@ namespace vcs::input
     }
 
     bool inAircraft() { return g_rdram && gameState().aircraft; }
+
+    Situation situation()
+    {
+        if (!g_rdram)
+            return Situation::Held;
+        const GameState game = gameState();
+        // as readPad's pcSituation
+        if (game.menu)
+            return Situation::Held;
+        if (game.driving)
+            return game.aircraft ? Situation::Aircraft : Situation::Vehicle;
+        return scopeMode(game.mode) ? Situation::Scope : Situation::OnFoot;
+    }
 
     void registerSettings()
     {

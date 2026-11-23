@@ -113,7 +113,9 @@ keys).
 
 **Menus and pause**: Pause menu Escape (fixed) and P (Start); Menu select / skip Enter, Space (Cross); Menu back
 Backspace, F (Triangle); the arrow keys are the D-pad in the menus (while playing they move, as in Vice City; the
-D-pad while playing has rows of its own under "All situations", unbound). The menu keys apply while the game is paused, before
+D-pad while playing has rows of its own under "All situations", unbound); W / A / S / D the left stick in the menus
+(2026-11-23: the shops' text says "left analog stick, or directional buttons", and Ammu-Nation's weapons only changed
+with the arrows - the on-foot W / A / S / D move only while playing). The menu keys apply while the game is paused, before
 the player exists (title screen, intro movies) and while the game holds the player's controls (cutscenes, shops); then
 the play keys do nothing. A key held from a menu into play (Enter choosing Resume) does nothing on the other side until
 let go.
@@ -296,6 +298,25 @@ F2 > Enhancements > **Button prompts** (default Original): the controls the game
 Automatic follows the device used last - the keys and mouse buttons bound on the Keyboard page, or the gamepad's own
 buttons (PlayStation or Xbox glyphs, from the pad's maker) as mapped on the Gamepad page. PlayStation, Xbox and
 Keyboard & mouse fix a set; Original is the PS2's text. game-internals.md 6n, DECISIONS.md 2026-11-07.
+
+A glyph shows the keys of the action that works where the player is (2026-11-23; before, every text that was not a
+vehicle's showed the on-foot keys - Ammu-Nation's "Shift to buy", where Shift does nothing and Enter / Space buy):
+
+| The text's action | Keys shown |
+|---|---|
+| The shops (AMBUY, AMEXI, AMMOV, AMLEF / AMRIG) | the menu keys: select, back, W / A / S / D, the arrows - the game holds the controls there |
+| A plain `~X~` ("Press X to continue") | by the situation: the pause menu's Enter / Escape, the menu keys while the game holds the controls, a vehicle's, a scope's, on foot |
+| The sniper scope (SNZI, SNZO, SNSLO) | Sniper zoom in / out, Steady aim |
+| Unarmed fighting (PUNA, PUHA, PUBL, PUGR) | the Fighting section's keys |
+| Sub-missions / activities (TGSUB) | Activity on foot, the vehicle's or the aircraft's Sub-missions in one (each its own key) |
+| Targets while locked on (PDCTL) | Next / Previous target (not the weapons) |
+| The Hunter's cannon (VEWE2) | Secondary fire (not the handbrake) |
+| Change camera view (CVEIW) | the situation's Change camera view |
+| Vehicle texts (VE*, FL*, HE*, TAXJU, FIREH) | the vehicle's, the aircraft's in one |
+| The rest | on foot |
+
+`prompts actions` (control channel) lists the 61 actions with their context, `prompts keys <ACTION>` the glyphs they
+show now; tools/prompts_check.py checks them.
 
 ## Menus
 

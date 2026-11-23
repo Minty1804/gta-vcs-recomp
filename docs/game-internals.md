@@ -1828,12 +1828,21 @@ btn_triangle_psp, btn_square_psp, btn_up_psp, btn_down_psp, btn_left_psp, btn_ri
 
 **What the button prompts do with it** (`src/game/vcs_prompts.cpp`, 2026-11-07; checked by `tools/prompts_check.py`):
 - `FUN_003afd78` replaced: the same GXT text, each phrase turned into a token per control - `~` U+E000 + context x
-  0x40 + control `~` (context: on foot, in a vehicle - actions VE*, FL*, HE*, TAXJU, CVEIW, FIREH -, the menu). The font
+  0x40 + control `~` (context: on foot, in a vehicle - actions VE*, FL*, HE*, TAXJU, FIREH -, the menu; from
+  2026-11-23 also held - the shops' AM*: Ammu-Nation runs with CPad +0x96 DisablePlayerControls set, so the PC scheme's
+  menu keys are what work there, not the on-foot ones -, scope - SNZI, SNZO, SNSLO -, fight - PUNA, PUHA, PUBL, PUGR -
+  and alt - TGSUB, PDCTL, VEWE2, CVEIW: one PS2 button, two actions; resolved each frame by where the player is). The
+  configuration's 61 actions, read from the game (`prompts actions`): AMBUY AMEXI AMLEF AMMOV AMRIG ANS CVEIW DOARM
+  DOSIN DOSLR DOSUD FIREH FLDN FLUP FREE1 FREE2 GOLFU HEPI HERO PDBAK PDCTL PDCWE PDFW PDLO1 PDLO2 PDLOO PDLT PDSPR PUBL
+  PUCF PUGR PUHA PUNA PUTE SNSLO SNZI SNZO SWIMD SWIMF SWIMO TAXJU TGSUB VEACC VEBRK VECRS VEEE VEHB VEHN VELB VELL VELR
+  VEMAG VESTR VETD VETU VEWE2 VEWEA VEWEI VEWEL VEWEP VEWEU (DO*: the dance, GOLFU: golf - not checked in game which
+  situation they run in). The text's plain ~X~ / ~O~ / ~T~ / ~S~ follow the situation too. The font
   takes any 16-bit character for a token (`FUN_00262370`) and looks it up in the glyph table as a 16-bit compare
   (`FUN_003e5e58`); `FUN_00261af8` tests only the low byte for X / O / T / S (a 1.33 texel scale - harmless here).
 - The glyph table moved: font +0xC pointed at a copy in the EE kernel's area (0x61000; free aim uses 0x60000) with the
-  four originals and 99 token entries (height 23, u = 2 x index, v = 255 - no glyph of the 256x256 atlas starts in that
-  row), font +2 its count. Widths are written per glyph set at the frame kick; the game lays out with them.
+  four originals and 168 token entries (every control for foot / vehicle / menu / held, the 12 buttons for scope /
+  fight / alt; height 23, u = index - 2 x index before 2026-11-23, when 99 entries fitted -, v = 255 - no glyph of the
+  256x256 atlas starts in that row), font +2 its count. Widths are written per glyph set at the frame kick; the game lays out with them.
 - **A glyph in the font's batch** (`FUN_003dfce8` appends 4 vertices and 6 indices a glyph to 0x709650 / 0x70C650,
   `FUN_003dfdd8` draws them with `FUN_002fbe68(3, ...)` at the end of each render call, return 0x3DFE24): the vertex u /
   v are `(int)(f x 32768 + 0.5)` (`FUN_003e0888`: 1.0 = 32768), u starting half a texel in (`(u + 0.5) / 256`), v not

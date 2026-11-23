@@ -7,7 +7,11 @@ One hidden session from a card copy (rig.default_save). Help boxes with controls
 Triangle; the Rhino: L2 / R2, the right stick, Circle; the handbrake: Cross and Square in a car) are put up with
 PRINT_HELP_FOREVER, and screenshots taken in each set. Checks:
   expand     the `~k~` text of a few actions turned into control tokens (the `prompts expand` command): R3, the left
-             stick or the D-pad, L2 + R2 and the D-pad's up in a vehicle, R1 in the vehicle's context
+             stick or the D-pad, L2 + R2 and the D-pad's up in a vehicle, R1 in the vehicle's context; the shops' (held:
+             the menu keys), the scope's, fighting's, and the buttons with two actions (alt: TGSUB, PDCTL)
+  contexts   the keys each glyph shows (`prompts keys`) are those of the action that works there: Ammu-Nation's buy /
+             exit the menu keys (not Sprint), the sub-missions the activity's key on foot and the vehicle's in a car,
+             the scope's zoom, the heavy attack, the targets (not the weapons)
   sets       each set (PlayStation, Xbox, Keyboard & mouse) is the one shown, and the help box's glyphs are drawn from
              the glyph atlas (glyphs found in the font's batches, glyph draws in the renderer)
   automatic  Automatic: a gamepad button makes it the gamepad's glyphs, a key press the keyboard's - with the help box
@@ -69,14 +73,63 @@ def main():
 
         # expand
         expected = {
-            "TGSUB": "{R3@foot}",
-            "AMMOV": "{LS@foot} or {DPAD@foot}",
+            "TGSUB": "{R3@alt}",
+            "AMMOV": "{LS@held} or {DPAD@held}",
+            "AMBUY": "{X@held}",
+            "SNZI": "{S@scope}",
+            "PUHA": "{X@fight}",
+            "PDCTL": "{L2@alt} and {R2@alt}",
+            "PDBAK": "{R3@foot}",
             "VELB": "{L2@vehicle} + {R2@vehicle}",
             "FLUP": "{DU@vehicle}",
             "VEHB": "{R1@vehicle}",
         }
         got = {a: g.cmd("prompts expand " + a) for a in expected}
         ok("expand", all(got[a] == e for a, e in expected.items()), got)
+
+        # contexts: the keys each glyph shows are the ones that work where the player is (keyboard set)
+        g.cmd("setting enhance.prompts 4")
+        frames(10)
+
+        def key(action, second=False):
+            return g.cmd("setting keys.%s%s" % (action, "2" if second else "")).split()[-1]  # (rig: without "ok")
+
+        def glyph(action):
+            """prompts keys ACTION -> the first token's spec (keys:..)"""
+            r = g.cmd("prompts keys " + action)
+            return r.split("=", 1)[1].split("}", 1)[0] if "=" in r else r
+
+        car_sub = key("pc_car_submission")
+        g.cmd("setting keys.pc_car_submission 78")  # N: not the on-foot activity's key, so the two can be told apart
+        try:
+            foot = {a: glyph(a) for a in ("AMBUY", "AMEXI", "TGSUB", "PDBAK", "SNZI", "PUHA", "PDCTL", "PDSPR")}
+            want = {"AMBUY": "keys:" + key("pc_menu_select"), "AMEXI": "keys:" + key("pc_menu_back"),
+                    "TGSUB": "keys:" + key("pc_submission"), "PDBAK": "keys:" + key("pc_look_behind"),
+                    "SNZI": "keys:" + key("pc_zoom_in"), "PUHA": "keys:" + key("pc_heavy_attack"),
+                    "PDCTL": "keys:" + key("pc_prev_target"), "PDSPR": "keys:" + key("pc_sprint")}
+            g.spawn_car(ahead=0.0)
+            frames(120)
+            car = {a: glyph(a) for a in ("TGSUB", "VEWE2", "VEHB", "AMBUY")}
+            want_car = {"TGSUB": "keys:78", "VEWE2": "keys:" + key("pc_vehicle_fire_alt"),
+                        "VEHB": "keys:" + key("pc_handbrake"), "AMBUY": "keys:" + key("pc_menu_select")}
+        finally:
+            g.cmd("setting keys.pc_car_submission " + car_sub)
+        # a help text naming the sub-missions (an Alt token: the glyph table's last entries) drawn as glyphs
+        sub = g.cmd("prompts find ~TGSUB~").split()
+        st0 = state(g)
+        if sub:
+            help_text(sub[0])
+            frames(30)
+            shot("help_keyboard_submission")
+        st1 = state(g)
+        g.scm(S.op(CLEAR_HELP) + S.end())
+        bad = [] if sub and int(st1.get("glyphs", 0)) >= 1 and int(st1.get("drawn", 0)) > int(st0.get("drawn", 0)) else             ["the sub-missions' help %s: glyphs %s, drawn %s -> %s" % (sub[:1], st1.get("glyphs"), st0.get("drawn"),
+                                                                     st1.get("drawn"))]
+        bad += ["%s %s (want %s)" % (a, foot[a], w) for a, w in want.items() if foot[a] != w]
+        bad += ["in a car: %s %s (want %s)" % (a, car[a], w) for a, w in want_car.items() if car[a] != w]
+        ok("contexts", not bad, "; ".join(bad) or {"foot": foot, "car": car})
+        g.cmd("setting enhance.prompts 3")
+        frames(10)
 
         # sets: Xbox (from the start), PlayStation, Keyboard & mouse
         sets_ok, detail = True, {}

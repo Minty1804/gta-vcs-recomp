@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """The controls by action and situation (the Keyboard and Gamepad pages, docs/CONTROLS.md, src/game/vcs_input.cpp):
-every default key, by situation, checked in the pad report it makes.
+every default key, by situation, checked in the pad report it makes (the game holding the controls - a shop - too).
 
     python tools/pc_scheme_check.py [OUT] [--port 47674]
 
@@ -22,7 +22,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import rig  # noqa: E402
 from controls_check import (Check, SELECT, L3, R3, START, L2, R2, L1, R1, TRIANGLE, CIRCLE, CROSS,  # noqa: E402
-                            SQUARE)
+                            SQUARE, UP, DOWN, LEFT, RIGHT)
 
 KEY_H, KEY_C = 72, 67
 
@@ -45,6 +45,15 @@ AIR = [
     ("d", ("lx", 255)), ("left", ("lx", 0)), ("right", ("lx", 255)), ("mouseleft", CIRCLE), ("ctrl", CIRCLE),
     ("mouseright", R1), ("space", R1), ("r", L1), ("v", SELECT),
 ]  # F (exit) last
+# the game holding the controls (a shop, a cutscene: SET_PLAYER_CONTROL off): the menu keys - W / A / S / D the left stick
+# (Ammu-Nation's "left analog stick, or directional buttons"; they did nothing there before 2026-11-23), the arrows the
+# D-pad, Enter / Space select, Backspace / F back
+HELD = [
+    ("w", ("ly", 0)), ("s", ("ly", 255)), ("a", ("lx", 0)), ("d", ("lx", 255)),
+    ("up", UP), ("down", DOWN), ("left", LEFT), ("right", RIGHT),
+    ("return", CROSS), ("space", CROSS), ("backspace", TRIANGLE), ("f", TRIANGLE),
+]
+HELD_NOTHING = ["shift", "e", "q"]  # sprint, the weapons: playing keys only
 AIR_NOTHING = ["h", "c", "tab", "shift"]  # horn, manual aim, pick up: not in an aircraft
 MAVERICK = 213
 # the gamepad (the injected one): its buttons and the PS2 button each gives at the defaults
@@ -114,6 +123,22 @@ def run(c):
              "space %04x shift %04x f %04x" % (space["buttons"], shift["buttons"], f["buttons"]))
     else:
         c.ok("fighting: skipped (a weapon in hand, slot %d)" % slot, True)
+
+    # the game holding the controls (a shop): the menu keys
+    g.scm(rig.Scm.op(rig.Scm.SET_PLAYER_CONTROL, rig.Scm.PLAYER, rig.Scm.i(0)) + rig.Scm.end())
+    time.sleep(1.0)
+    try:
+        bad = []
+        for key, want in HELD:
+            p = c.held(key)
+            if not expect(p, want):
+                bad.append("%s -> %04x lx %d ly %d" % (key, p["buttons"], p["lx"], p["ly"]))
+        c.ok("controls held (shops): menu keys, W / A / S / D the left stick", not bad, "; ".join(bad))
+        bad = ["%s -> %04x" % (k, p["buttons"]) for k in HELD_NOTHING for p in [c.held(k)] if not expect(p, 0)]
+        c.ok("controls held: the playing keys do nothing", not bad, "; ".join(bad))
+    finally:
+        g.scm(rig.Scm.op(rig.Scm.SET_PLAYER_CONTROL, rig.Scm.PLAYER, rig.Scm.i(1)) + rig.Scm.end())
+        time.sleep(1.0)
 
     # keys shared by situation: an on-foot key rebound to the horn's second key (H) is manual aim on foot, honks in a car
     c.setting("keys.pc_manual_aim", KEY_H)

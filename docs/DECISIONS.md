@@ -1994,3 +1994,22 @@ current list's low-detail sectors they lie inside are hidden, as the game hides 
 - Not taken: the asynchronous chain walk (off in their port too whenever RSL observers are on, as ours always are; it
   needs game-specific waits on the model heap) and chain images (built for LCS's ~5 MB of texture REFs a frame; would
   need the write watch and our RSL recordings' memory bound re-checked). FORK_IMPORTS.md items 39 / 40.
+
+## 2026-11-23 - button prompts by the action's own keys, W / A / S / D in the shops (the user's report)
+
+The user: Ammu-Nation said "Shift to buy" but Space buys, its weapons changed with the arrows and not W / A / S / D, and
+the Sub-missions key shown did not match. Cause: a prompt took its keys from the PS2 button on foot (or in a vehicle for
+VE* texts), while the PC scheme's keys work by situation and action. Ammu-Nation runs with the player's controls held,
+where only the menu keys work; the scope, unarmed fighting and the buttons with two actions (R3 sub-missions vs look
+behind, L2 / R2 targets vs weapons, R1 secondary fire vs handbrake) have keys of their own.
+- Decided: a glyph shows the keys of the action that works there (docs/CONTROLS.md, Button prompts): contexts held /
+  scope / fight / alt beside foot / vehicle / menu, the alt ones and the text's plain ~X~ resolved each frame by the
+  player's situation (`input::situation`). Rather than guessing from the action's name prefix, each of the 61 actions was
+  read from the game (`prompts actions`) and given its context.
+- W / A / S / D are the left stick in the menus and while the game holds the controls (new rows under Menus and pause),
+  not second keys of the menu's D-pad: the shops' text says "left analog stick, or directional buttons", so each glyph
+  shows the keys of its own control, and the arrows stay the D-pad.
+- The Sub-missions row the user saw as X was the Aircraft section's (their vcs.ini: `keys.pc_air_submission=88`; the
+  car's is N, `pc_car_submission=78`): the menu was right, the in-car prompt was not (it showed on-foot R3, Look behind).
+- The glyph table grew from 99 to 168 token entries, one texel apart (u = index; it was 2 x index) so every token's u
+  stays inside the font's 256 texels as before.
