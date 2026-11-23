@@ -219,7 +219,8 @@ namespace vcs
         // positions are no anchors in that frame: HUD primitives on them (the fade) are drawn into the frame, as
         // VCS_HUD_NATIVE=0 draws them all. A scope's mask bars and the screen effects keep theirs (willzmkv's ab6d89c:
         // else, with the camera looking up through the sniper scope, the bars lost the corners and fell back to their
-        // 4:3 places). VCS_HUD_SKY=0: as before (tools/cutscene_check.py's control).
+        // 4:3 places). VCS_HUD_SKY=0: as before (tools/cutscene_check.py's control). Only a full-width HUD primitive gives
+        // its positions up (resolveAnchors; VCS_HUD_SKY=all: every one, which threw single glyphs out of the money).
         std::vector<uint32_t> g_otherKeys; // game thread; sorted at the kick
 
         void noteOther(const uint8_t *rdram, uint32_t verts, uint32_t n)
@@ -414,7 +415,19 @@ namespace vcs
                                        : centre < 280.0f && b.x0 < 160.0f            ? GSHwAnchorLeft
                                        : centre > 360.0f && b.x1 > 480.0f            ? GSHwAnchorRight
                                                                                      : GSHwAnchorCentre;
-                const bool keepsCorners = p.part == Part::MaskBar || p.part == Part::Screen;
+                // [Minty1804 fork] only a full-width HUD primitive (the fade) gives up the positions it shares with the sky's
+                // fill: that is the confusion the sky fix is for. Any other HUD primitive keeps every key - the sky's
+                // gradient and horizon band are strips with vertices along the whole width, and where one of them fell on
+                // a corner of a HUD glyph (a digit of the money, at one time of day and camera pitch), that glyph lost its
+                // anchor for the frame and was drawn at its 4:3 place: a digit jumping out of the money for one frame
+                // (the user's "HUD duplications", 2026-11-23; game-internals.md 6f)
+                // VCS_HUD_SKY=all: every HUD primitive gives them up, as from 2026-11-19 to 2026-11-23 (hud_check.py --money's
+                // control)
+                static const bool skyAll = [] {
+                    const char *e = std::getenv("VCS_HUD_SKY");
+                    return e && e[0] == 'a';
+                }();
+                const bool keepsCorners = p.part == Part::MaskBar || p.part == Part::Screen || (!skyAll && !full(p));
                 for (uint32_t k = 0; k < p.keyCount; ++k)
                 {
                     const uint32_t key = g_primKeys[p.firstKey + k];

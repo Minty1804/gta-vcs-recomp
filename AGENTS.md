@@ -124,7 +124,8 @@ python tools/driver_aim_check.py [OUT]                       # aiming from the d
 python tools/texpack_check.py [OUT] [--real]                # texture packs: DDS as stored vs decoded (memory, picture,
                                                               # every classification checked); --real: a PCSX2 pack too
 python tools/hud_check.py [OUT] [--control]                   # HUD at the screen edges: radar left, centred text in the middle;
-                                                              # the HUD whole in the rain (no layer made stale in its frame)
+                                                              # the HUD whole in the rain (no layer made stale in its frame);
+                                                              # --money: no digit thrown out of the money for a frame
 python tools/menu_check.py [OUT]                              # the pause menu: Escape / Enter, the mouse (hover, click, sliders,
                                                               # map drag), the gamepad as before
 python tools/prompts_check.py [OUT]                           # button prompts: each glyph set in help text and the menu, the

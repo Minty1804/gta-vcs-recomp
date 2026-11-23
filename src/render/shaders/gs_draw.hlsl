@@ -317,6 +317,36 @@ float4 sampleRtFiltered(float2 uv)
     return weights > 0.0 ? sum * (255.0 / weights) : fetchTexel(int2(floor(uv)));
 }
 
+// [gta-recomp] The hardware sampler (linearIipFgeAte.x == 2: anisotropic filtering, a texture pack's image) by normalised
+// coordinates. REGION_CLAMP (WMS / WMT 2) holds on it too: the native HUD layer draws each textured quad clamped to its
+// own texels (gs_hw.cpp appendHudDraw) - font atlases have their glyphs side by side. The sample position is kept half
+// a texel of the level read (from the gradients, never below the hardware's) inside the region's rectangle, so neither the filter nor a mip level reaches the
+// next cell (a pack's 4x font sheet, minified at most resolutions, showed bits of the neighbouring glyphs). The
+// gradients are the unclamped ones: the level is the one the draw would pick anyway.
+float4 sampleHw(float2 uv)
+{
+    float2 n = uv / float2(texSizeWrap.xy);
+    [branch] if (texSizeWrap.z == 2 || texSizeWrap.w == 2)
+    {
+        const float2 dx = ddx(n), dy = ddy(n);
+        uint w, h, levels;
+        tex.GetDimensions(0, w, h, levels);
+        // the level from the gradients (the larger axis: never below the hardware's, so the inset is never too small)
+        const float2 size = float2(w, h);
+        const float rho = max(length(dx * size), length(dy * size));
+        const float lod = clamp(ceil(log2(max(rho, 1e-6))), 0.0, float(levels) - 1.0);
+        const float2 inset = 0.5 * exp2(lod) / float2(w, h);
+        const float2 lo = float2(region.xz) / float2(texSizeWrap.xy) + inset;
+        const float2 hi = float2(region.yw + 1) / float2(texSizeWrap.xy) - inset;
+        if (texSizeWrap.z == 2)
+            n.x = lo.x <= hi.x ? clamp(n.x, lo.x, hi.x) : 0.5 * (lo.x + hi.x);
+        if (texSizeWrap.w == 2)
+            n.y = lo.y <= hi.y ? clamp(n.y, lo.y, hi.y) : 0.5 * (lo.y + hi.y);
+        return tex.SampleGrad(hwSampler, n, dx, dy) * 255.0;
+    }
+    return tex.Sample(hwSampler, n) * 255.0;
+}
+
 float4 sampleTex(float2 uv)
 {
 #if SAMPLE_MODE == 2
@@ -324,7 +354,7 @@ float4 sampleTex(float2 uv)
 #elif SAMPLE_MODE == 3
     return sampleBilinear(uv);
 #elif SAMPLE_MODE == 4
-    return tex.Sample(hwSampler, uv / float2(texSizeWrap.xy)) * 255.0;
+    return sampleHw(uv);
 #elif SAMPLE_MODE == 5
     return sampleGather(uv);
 #elif SAMPLE_MODE == 6
@@ -341,8 +371,9 @@ float4 sampleTex(float2 uv)
     }
     else if (linearIipFgeAte.x == 2)
     {
-        // a game texture with plain wrapping, sampled by the hardware (trilinear, anisotropic); the option
-        r = tex.Sample(hwSampler, uv / float2(texSizeWrap.xy)) * 255.0;
+        // a game texture with plain wrapping, sampled by the hardware (trilinear, anisotropic); the option. A pack's
+        // image (any wrapping): region clamps kept (sampleHw)
+        r = sampleHw(uv);
     }
     else if (linearIipFgeAte.x >= 3)
     {

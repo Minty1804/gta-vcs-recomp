@@ -971,6 +971,29 @@ Found from frame dumps (`PS2X_HW_DUMP`, draw lists with depth) during the widesc
   do not) changed no draw of the frame here: the same post passes (bloom, trails / colour, the motion blur from its
   history) and the motion blur's byte 0x48653C still 1 after the menu closed; a RAM diff shows only the item's own
   choice. Walking 12 s with it off, and with Sharp trails switched every 2 s, showed no HUD fault in the frames kept.
+- **Found** (2026-11-23, the user: "the HUD glitch comes with the texture pack; it started when we brought in work
+  from other projects"). Two things, only the first of them the glitch:
+  - **A digit thrown out of the money for one frame** - the sky fix taken from willzmkv (ab1a765, FORK_IMPORTS item
+    26). Its noteOther records every vertex position of a full-width Im2D drawn outside the HUD context, and
+    resolveAnchors took the anchor of *any* HUD vertex on one of them. The sky's gradient and horizon band are strips
+    with vertices along the whole width, so at some time of day and camera pitch one of them fell on a corner of a money
+    digit. That digit's quad was then no HUD primitive for the GS-side classifier (every vertex must be named), was drawn
+    into the frame unsqueezed, and showed at its 4:3 place - in 16:9 far to the left of the money ("0 $000000 50").
+    Seen by keeping every frame of 40 s of walking Downtown at noon (`burst`) and comparing the money's green pixels
+    against the usual ones: once a run, at the same moment (~12:52 game time), with the texture pack on and off alike;
+    never with `VCS_HUD_SKY=0`. Fixed: only a full-width HUD primitive (the fade, the one the sky fix is for) gives its
+    positions up; `VCS_HUD_SKY=all` = as before. Check: `tools/hud_check.py --money` (0 of 1,198 frames; `--control`
+    catches the jump). `tools/cutscene_check.py` (the sky in the fade-in) and `tools/hud_check.py` still pass.
+  - **A texture pack's images ignored REGION_CLAMP.** The layer draws each textured quad clamped to its own texels
+    (NATIVE_RENDERER.md "HUD layer"). Every HUD texture with the user's pack is a pack image (`PS2X_HW_HUD_TEXWATCH=1`
+    logs the shown layer's textures: all `p`, nearly all region-clamped `r`; no frame fell back to the game's texture or
+    to none), and those were sampled by the hardware sampler over the whole image: the 4x font sheet (1024x1024 BC7,
+    decoded for its clear texels) minified at most output sizes, so trilinear filtering pulled thin lines and specks of
+    the neighbouring glyphs into the clock and the money. Now gs_draw.hlsl `sampleHw` keeps the sample half a texel of
+    the mip level read inside the region (`PS2X_HW_PACK_REGION=0` = as before). Constant, not a one-frame fault.
+  What was measured: the digit's jump came with the pack on and off alike (one frame in ~600 at that spot); the pack's
+  own fault here was the glyph lines. Whether the jump is all the user saw is not known yet (they describe it as tied
+  to the pack): the fix is hoped to be it, and a camera that looks up and down may make it more frequent than here.
 - The colour filter / trails effect is drawn as **strips that sample the frame** itself (textures
   inside render targets, `texIsRt`), plus an alpha-only quad (FBMSK 0xFFFFFF) over x 80..560 at
   z = 0.

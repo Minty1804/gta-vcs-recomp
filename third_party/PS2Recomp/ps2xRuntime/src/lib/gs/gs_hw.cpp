@@ -2894,6 +2894,35 @@ namespace
         }
 
         // the layer over m_display, which shows the buffer from PS2 pixel (displayX, displayY)
+        // [gta-recomp] PS2X_HW_HUD_TEXWATCH=1 (diagnostics): the shown HUD layer's textures - how many of its textured draws
+        // sample a pack's image, the game's own texture, or nothing - logged whenever that changes, with the keys
+        void hudTexWatch(const HudLayer &layer)
+        {
+            static const bool on = std::getenv("PS2X_HW_HUD_TEXWATCH") != nullptr;
+            if (!on)
+                return;
+            static std::string last;
+            std::string now;
+            uint32_t pack = 0, game = 0, missing = 0;
+            for (const DrawCmd &d : layer.draws)
+            {
+                if (!d.s.tme || d.s.texIsRt)
+                    continue;
+                const auto it = m_textures.find(d.s.texKey);
+                const bool has = it != m_textures.end() && it->second;
+                const bool isPack = m_packTextures.count(d.s.texKey) != 0;
+                (has ? (isPack ? pack : game) : missing)++;
+                char b[64];
+                std::snprintf(b, sizeof(b), " %llx%s%s", static_cast<unsigned long long>(d.s.texKey), !has ? "!" : isPack ? "p" : "g",
+                              d.s.wms == 2u ? "r" : "");
+                now += b;
+            }
+            if (now != last)
+                std::fprintf(stderr, "[hud-tex] frame %llu: pack %u game %u missing %u:%s\n", static_cast<unsigned long long>(m_execSerial),
+                             pack, game, missing, now.c_str());
+            last = std::move(now);
+        }
+
         void drawHudLayer(const HudLayer &layer, uint32_t displayX, uint32_t displayY)
         {
             const size_t bytes = layer.vertices.size() * sizeof(HwVertex);
@@ -2935,6 +2964,7 @@ namespace
             t.scaleY = static_cast<float>(h) / static_cast<float>(std::max(m_displayH, 1u));
             t.originX = static_cast<int>(displayX);
             t.originY = static_cast<int>(displayY);
+            hudTexWatch(layer);
             m_dev.pushMarker("gs hud layer");
             for (const DrawCmd &d : layer.draws)
             {
@@ -3121,7 +3151,9 @@ namespace
             // the GS's own bilinear; region wraps, render targets and nearest filtering keep the exact GS path
             rhi::Sampler *hwSampler = nullptr;
             // [gta-recomp] a texture pack's image: by normalised coordinates through the hardware sampler (gs_draw.hlsl mode 4),
-            // nearest-filtered draws too; region wraps are clamped (PCSX2 names region textures apart: not replaced there)
+            // nearest-filtered draws too. REGION_CLAMP is kept in the shader (gs_draw.hlsl sampleHw: the native HUD layer clamps
+            // each quad to its own texels; without it a pack's font sheet bled the neighbouring glyphs in); REGION_REPEAT is
+            // clamped (PCSX2 names region textures apart: not replaced there)
             if (s.tme && !s.texIsRt && !plainTexture && tex && !m_packTextures.empty() && m_packTextures.count(s.texKey))
             {
                 hwSampler = m_packSampler[s.wms == 0u ? 1 : 0][s.wmt == 0u ? 1 : 0].get();
@@ -3199,6 +3231,17 @@ namespace
             c.region[1] = s.maxu;
             c.region[2] = s.minv;
             c.region[3] = s.maxv;
+            // [gta-recomp] PS2X_HW_PACK_REGION=0: the hardware sampler's draws clamp the whole image, as before 2026-11-23 (a
+            // pack's font sheet then bleeds the neighbouring glyphs into the HUD's text; gs_draw.hlsl sampleHw)
+            static const bool packRegion = [] {
+                const char *e = std::getenv("PS2X_HW_PACK_REGION");
+                return !(e && e[0] == '0');
+            }();
+            if (!packRegion && c.linearIipFgeAte[0] == 2)
+            {
+                c.texSizeWrap[2] = c.texSizeWrap[2] == 0 ? 0 : 1;
+                c.texSizeWrap[3] = c.texSizeWrap[3] == 0 ? 0 : 1;
+            }
             c.rtOrigin[0] = s.rtOx;
             c.rtOrigin[1] = s.rtOy;
             c.rtOrigin[2] = pixelCentreOffset();

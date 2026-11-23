@@ -1171,6 +1171,8 @@ Python scripts still usable on their own. docs/LAUNCHER.md has the whole of it; 
 | `VCS_TEXPACK=0`, `VCS_TEXTURE_DUMP=1`, `VCS_TEXTURE_DIR=<dir>` | Graphics > Texture packs for this run: off; dump new textures; the folder holding `replacements/` and `dumps/` (default `textures/SLUS-21590` next to vcs.exe) - game-internals.md 7b; `texpack` command: indexed / hashed / replaced / loaded counts |
 | `VCS_TEXPACK_CACHE_MB=<n>` | decoded pack images kept for textures made again (1024) |
 | `PS2X_HW_PACK_ANISO=<n>` | anisotropic filtering of pack images at most n (4) |
+| `PS2X_HW_PACK_REGION=0` | pack images (the hardware sampler) clamp the whole image, as before 2026-11-23: REGION_CLAMP ignored, the HUD's text picks up lines of the neighbouring glyphs |
+| `PS2X_HW_HUD_TEXWATCH=1` | `[hud-tex]` lines: the shown HUD layer's textures (key, `p` pack image / `g` the game's / `!` none, `r` region-clamped), logged when they change |
 | `VCS_WALK_FIX=0` | Walk (hold) scales the stick as floats, as before 2026-11-16: a diagonal walk (W + D) stands still |
 | `VCS_FOOT_WALL=0` | on foot the mouse's turn does not ask the camera's update for the pull-in at walls: the camera stands at a wall's edge while its heading turns on, as before 2026-11-11 |
 | `VCS_FREEAIM=0` | free aim's hooks not installed (CGame::Process, CCamera::Process, the weapons' line test): the game's aiming untouched, the setting does nothing |
@@ -1240,6 +1242,7 @@ Python scripts still usable on their own. docs/LAUNCHER.md has the whole of it; 
 | `VCS_WIDE_CULL=0` | widescreen: entities culled by the game's 4:3 camera planes (models vanish at the screen edges, as before 2026-10-27) |
 | `VCS_CUTSCENE_FRAMING=1/0` | cutscenes in the PS2's framing (the 4:3 width, Vert-, no bars) / the Hor+ view, for one run (Display > Cutscene framing) |
 | `VCS_HUD_SKY=0` | the sky's full-screen fill may be taken for a fade by the HUD layer, as before 2026-11-19 (the dark sky in a cutscene's fade-in; tools/cutscene_check.py's control) |
+| `VCS_HUD_SKY=all` | every HUD primitive gives up the positions it shares with the sky's fill, as from 2026-11-19 to 2026-11-23 (a money digit thrown to its 4:3 place for a frame; `hud_check.py --money --control`) |
 | `VCS_CUTSCENE_BARS=0/1` | the cutscene letterbox off / on for one run (Display > Cutscene black bars; always on at 4:3) |
 | `VCS_WIDESCREEN=1` / `=game` | the game's own (PS2, anamorphic Vert-) widescreen preference forced on / left to the game and its saves (normally kept off); both show its pause-menu row again |
 | `VCS_SCOPE_FILL=0` | widescreen: the scope / camera mask's side bars squeezed into the middle 4:3 as before 2026-11-06 (the world shows beside the scope) |

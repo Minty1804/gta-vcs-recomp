@@ -1558,7 +1558,9 @@ choices:
   ready, then swapped in under the same texture key - no stall when a new area streams in.
 - **Drawn through the hardware sampler** (gs_draw.hlsl's mode 4: normalised coordinates, trilinear over a mip chain,
   anisotropic up to the setting but at most 4 - `PS2X_HW_PACK_ANISO`), so an image of any size fits; the GS's exact
-  bilinear stays for every other texture. No shader change.
+  bilinear stays for every other texture. No shader change. (2026-11-23: one after all - REGION_CLAMP held in that
+  path, gs_draw.hlsl `sampleHw`: the native HUD layer clamps each quad to its own texels, and without it a pack's font
+  sheet bled the neighbouring glyphs into the HUD's text; game-internals.md 6f.)
 - **DDS decoded on the loader threads, not uploaded compressed** (2026-11-18, the player's pack was all BC7): a
   compressed upload would need BC formats in three RHI backends and the runtime's texture path; decoding the top level
   to RGBA with bcdec (third_party/bcdec, MIT, one header, vendored at 80859ed - it has no tags for deps.py) keeps it in

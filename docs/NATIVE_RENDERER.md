@@ -395,7 +395,9 @@ The HUD, text and radar are drawn over the shown picture at the window's size in
   - Sampling: a textured quad (two triangles over one rectangle, CLAMP) samples only the texels inside its own
     rectangle (REGION_CLAMP). The fonts are atlases with cells side by side; at 1080p a glyph's edge pixels sample
     within half a texel of the cell border and bilinear filtering pulled in the next cell's outline (lines under the
-    clock's digits, beside its colon).
+    clock's digits, beside its colon). A texture pack's image (hardware sampler, normalised coordinates) keeps the
+    clamp too since 2026-11-23: gs_draw.hlsl `sampleHw` holds the sample half a texel of the mip level read inside
+    the region (`PS2X_HW_PACK_REGION=0` = the whole image, as before).
   - Widescreen (2026-10-27): the squeeze towards an element's anchor is applied in the layer after the snap, to the
     vertices and the scissor alike and unrounded (`DrawCmd::hudSqueeze`). Squeezed before the snap, the layer
     rounded to PS2 pixels of the squeezed frame - 6 screen pixels each at 32:9 - and the radar's scissor and corner

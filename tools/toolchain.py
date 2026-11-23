@@ -261,8 +261,9 @@ def tail(path, lines=20):
         return ""
 
 
-def read_png(path):
-    """An 8-bit RGB / RGBA PNG (the game's screenshots) without Pillow: (width, height, rows of RGB bytes)."""
+def read_png(path, max_rows=None):
+    """An 8-bit RGB / RGBA PNG (the game's screenshots) without Pillow: (width, height, rows of RGB bytes). max_rows:
+    only the first rows decoded (a crop near the top; the rest of the picture costs nothing)."""
     import struct
     import zlib
     data = open(path, "rb").read()
@@ -279,7 +280,7 @@ def read_png(path):
     bpp = 4 if colour == 6 else 3
     stride = width * bpp
     rows, prev, i = [], bytearray(stride), 0
-    for _ in range(height):
+    for _ in range(height if max_rows is None else min(height, max_rows)):
         kind, line = raw[i], bytearray(raw[i + 1:i + 1 + stride])
         i += 1 + stride
         for x in range(stride):  # the PNG filters
