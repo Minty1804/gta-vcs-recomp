@@ -283,7 +283,7 @@ namespace
         std::fprintf(stderr, "[settings] Alt+Enter: %s\n", next ? "full screen" : "windowed");
     }
 
-    // Each host frame, before the menus draw: the screenshot key (Keyboard > Menus, F8) saves this frame's picture as
+    // Each host frame, before the menus draw: the screenshot key (Keyboard > Shortcuts, F8) saves this frame's picture as
     // shown - menus and overlays included, at the window's size - as screenshots/vcs_<date>_<time>.png next to vcs.exe
     // (VCS_SCREENSHOT_DIR: another folder). The notices of earlier shots are left out of it; nothing while the settings
     // menu waits for a key to bind.
@@ -486,7 +486,7 @@ namespace
         s = {};
         s.key = "display.cutscene_bars";
         s.page = "Display";
-        s.section = "Screen";
+        s.section = "Cutscenes";
         s.label = "Cutscene black bars";
         s.help = "The black bars above and below cutscenes, as on the PS2, with Cutscene framing: Wide (PS2 framing "
                  "leaves out what they covered). Off shows the whole picture in widescreen (the PS2's own widescreen mode "
@@ -504,7 +504,7 @@ namespace
         s = {};
         s.key = "display.cutscene_framing";
         s.page = "Display";
-        s.section = "Screen";
+        s.section = "Cutscenes";
         s.label = "Cutscene framing";
         s.help = "PS2: cutscenes show the width the PS2 showed and fill the widescreen screen by leaving out the top and "
                  "bottom, as its black bars did - people a scene keeps just off screen stay off screen until they walk in "
@@ -667,7 +667,7 @@ namespace
         s.key = "game.background";
         s.page = "Game";
         s.section = "Window";
-        s.label = "In the background";
+        s.label = "When in the background";
         s.help = "When another window is in front (Alt+Tab): the game keeps running and playing sound as on a console, runs "
                  "silently, or pauses until you come back.";
         s.type = Type::Choice;
@@ -728,7 +728,7 @@ namespace
         s = {};
         s.key = "graphics.sharp_trails";
         s.page = "Graphics";
-        s.section = "Image quality";
+        s.section = "Effects";
         s.label = "Sharp trails";
         s.help = "The game's colour / trails pass without its blur: drawn at the picture's own resolution and without the "
                  "smear that softens the whole picture, its colour kept. The light trails behind moving lights (the game's "
@@ -740,19 +740,13 @@ namespace
         settings::add(s);
 
         // [Minty1804 fork] Smooth gradients (docs/game-internals.md 6g, the user's report 2026-11-20): the sky's colour
-        // gradient rounded through an ordered dither instead of in bands (gs_hw.h gsHwSetGradientDither)
-        s = {};
-        s.key = "graphics.smooth_gradients";
-        s.page = "Graphics";
-        s.section = "Image quality";
-        s.label = "Smooth sky gradients";
-        s.help = "The sky's colours blend without visible bands: each pixel between two shades takes one of them in a "
-                 "fine pattern, so the gradient looks smooth at dusk and dawn. Off is the PS2's banded sky.";
-        s.type = Type::Toggle;
-        s.defaultValue = 1;
-        s.env = "VCS_SMOOTH_GRADIENTS";
-        s.onChange = [](int v) { gsHwSetGradientDither(v != 0); };
-        settings::add(s);
+        // gradient rounded through an ordered dither instead of in bands (gs_hw.h gsHwSetGradientDither). Always on, no
+        // setting (the user's choice, DECISIONS.md 2026-11-23); VCS_SMOOTH_GRADIENTS=0 brings the PS2's banded sky back
+        // for one run. An old vcs.ini's graphics.smooth_gradients line is ignored.
+        {
+            const char *e = std::getenv("VCS_SMOOTH_GRADIENTS");
+            gsHwSetGradientDither(!(e && e[0] == '0'));
+        }
 
         // Fences and leaves at a distance (docs/game-internals.md 6q): their faint, filtered edges write depth and hide
         // what is drawn behind them later - the sky shows through a far fence instead of the building behind it. Always
@@ -812,20 +806,33 @@ namespace
             settings::add(s);
         }
 
+        // [gta-recomp] The menu's order (the user's request, 2026-11-23: the menu reorganised - DECISIONS.md): what
+        // the screen shows, then how it is drawn, the world, the game itself, sound, the controls, and the tools.
+        settings::setLayout({
+            {"Display", {"Screen", "Cutscenes", "Frame rate", "Presets"}},
+            {"Graphics", {"Image quality", "Effects", "Fog", "Texture packs", "Renderer"}},
+            {"World", {"Draw distance", "Traffic and people", "Details", "Memory"}},
+            {"Game", {"Combat", "Map and saving", "Button prompts", "Start-up", "Window"}},
+            {"Audio", {"Volume", "Output"}},
+            {"Keyboard", {"On foot", "Fighting (unarmed, Target held)", "Vehicle (cars, bikes, boats)",
+                          "Aircraft (helicopters, planes)", "All situations", "Mouse", "Menus and pause", "Shortcuts"}},
+            {"Gamepad", {}},
+            {"Advanced", {"Diagnostics", "Reset"}},
+        });
         vcs::input::registerSettings(); // the Keyboard & mouse and Gamepad pages (game/vcs_input.h)
-        vcs::prompts::registerSettings(); // the Enhancements page: button prompts by device (game/vcs_prompts.h)
-        vcs::world::registerSettings();   // Enhancements > World: density, draw distance (game/vcs_world_detail.h)
-        vcs::world_hd::registerSettings(); // Enhancements > World: Detailed city distance (game/vcs_world_hd.h)
-        vcs::memory::registerSettings();   // Game > Memory: Streaming memory (game/vcs_memory.h)
-        vcs::lodlights::registerSettings(); // Enhancements > World: distant lights (game/vcs_lod_lights.h)
+        vcs::prompts::registerSettings(); // Game > Button prompts: button prompts by device (game/vcs_prompts.h)
+        vcs::world::registerSettings();   // World: density, draw distance (game/vcs_world_detail.h)
+        vcs::world_hd::registerSettings(); // World > Draw distance: Detailed city distance (game/vcs_world_hd.h)
+        vcs::memory::registerSettings();   // World > Memory: Streaming memory (game/vcs_memory.h)
+        vcs::lodlights::registerSettings(); // World > Details: distant lights (game/vcs_lod_lights.h)
         vcs::texpack::registerSettings(); // Graphics > Texture packs (game/vcs_texture_pack.h)
         vcs::fog::registerSettings();     // Graphics > Fog: the game's fog distance / start (game/vcs_fog.h; willzmkv's)
-        vcs::driveby::registerSettings(); // Enhancements > Combat: drive-by fire rate (game/vcs_driveby.h)
-        vcs::headshots::registerSettings(); // Enhancements > Combat: headshots always kill (game/vcs_headshots.h)
+        vcs::driveby::registerSettings(); // Game > Combat: drive-by fire rate (game/vcs_driveby.h)
+        vcs::headshots::registerSettings(); // Game > Combat: headshots always kill (game/vcs_headshots.h)
         vcs::aim::registerSettings();     // the instant first shot (always on; VCS_QUICK_FIRST_SHOT=0 turns it off)
-        vcs::gps::registerSettings();     // Enhancements > Radar: GPS route (game/vcs_gps.h)
-        vcs::quicksave::registerSettings(); // Enhancements > Saving + Keyboard > Menus: quick save, F12 (game/vcs_quicksave.h)
-        vcs::registerEffectsSettings();   // Enhancements > Effects: Reduce Post Processing Effects (game/vcs_effects_timing.h)
+        vcs::gps::registerSettings();     // Game > Map and saving: GPS route (game/vcs_gps.h)
+        vcs::quicksave::registerSettings(); // Game > Map and saving + Keyboard > Shortcuts: quick save, F12 (game/vcs_quicksave.h)
+        vcs::registerEffectsSettings();   // Graphics > Effects: Lighter effects above 30 fps (game/vcs_effects_timing.h)
 
         s = {};
         s.key = "graphics.perf_overlay";
@@ -1094,6 +1101,16 @@ int main(int argc, char *argv[])
             reply("ok " + std::to_string(settings::value(key)));
         });
         // menu <page>|close|scroll <0..1> -> ok: the settings menu opened on a page (screenshots of it in hidden runs)
+        // settings -> ok, then one line a setting: key<TAB>page<TAB>section<TAB>label<TAB>type<TAB>default<TAB>value<TAB>
+        // hidden (the F2 menu's whole layout, for its review)
+        ps2control::addCommand("settings", [](const std::string &, ps2control::Reply reply) {
+            std::string s = "ok";
+            for (const settings::Spec &spec : settings::all())
+                s += "\n" + spec.key + "\t" + spec.page + "\t" + spec.section + "\t" + spec.label + "\t" +
+                     std::to_string(static_cast<int>(spec.type)) + "\t" + std::to_string(spec.defaultValue) + "\t" +
+                     std::to_string(settings::value(spec.key)) + "\t" + (spec.hidden ? "1" : "0");
+            reply(s);
+        });
         ps2control::addCommand("menu", [](const std::string &args, ps2control::Reply reply) {
             if (args == "close")
                 ui::closeSettingsMenu();

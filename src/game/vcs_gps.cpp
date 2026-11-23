@@ -1,4 +1,4 @@
-// Enhancements > Radar: GPS routes on the radar and the pause menu's map (docs/mods/GPS_ROUTE.md has the addresses and
+// Game > Map and saving: GPS routes on the radar and the pause menu's map (docs/mods/GPS_ROUTE.md has the addresses and
 // how they were found).
 //
 // Two routes at once, each in its target's colour:
@@ -608,8 +608,8 @@ namespace vcs::gps
     {
         settings::Spec s;
         s.key = "enhance.gps_route";
-        s.page = "Enhancements";
-        s.section = "Radar";
+        s.page = "Game";
+        s.section = "Map and saving";
         s.label = "GPS route";
         s.help = "Lines along the roads to the mission's target and to your own target (set on the pause menu's map), on "
                  "the radar and the map, as in the later games. Off (the original game), on the radar only while you "

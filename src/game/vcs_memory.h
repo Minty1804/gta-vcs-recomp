@@ -1,5 +1,5 @@
 // [Minty1804 fork] The port's memory above the game's 32 MB (runtime/ps2_memory.h: 128 MB of EE RAM on the host, the
-// game sees the PS2's 32; docs/game-internals.md 9d). Its layout: the streaming heap (Game > Memory > Streaming memory),
+// game sees the PS2's 32; docs/game-internals.md 9d). Its layout: the streaming heap (World > Memory > Streaming memory),
 // the detailed city's extra cells (game/vcs_world_hd.cpp) and the world sectors' packet heap. After willzmkv's (dejot)
 // T10 and HD world (their fork, src/game/vcs_memory.h).
 #pragma once
@@ -25,7 +25,7 @@ namespace vcs::memory
     static_assert(kStreamingBase + kStreamingMaxSize <= kHdWorldBase, "the streaming heap runs into the detailed city");
     static_assert(kHdWorldBase + kHdWorldSize <= kPacketHeapBase, "the detailed city runs into the packet heap");
 
-    // Game > Memory > Streaming memory (applies at the next start: the heap is built at boot).
+    // World > Memory > Streaming memory (applies at the next start: the heap is built at boot).
     void registerSettings();
     // The hooks on FUN_002E5688 (the streaming heap), FUN_003C9DE8 (the 51-cap) and FUN_002BB768 (the packet heap), and
     // `memstate` (the heaps' sizes and use).

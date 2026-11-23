@@ -1727,7 +1727,7 @@ namespace vcs::input
         s = {};
         s.key = "controls.menu_key";
         s.page = kKeys;
-        s.section = "Menus";
+        s.section = "Shortcuts";
         s.label = "Settings menu";
         s.help = "Opens and closes this menu. On a gamepad: press Back + Start together.";
         s.type = Type::Key;
@@ -1738,7 +1738,7 @@ namespace vcs::input
         s = {};
         s.key = "controls.trainer_key";
         s.page = kKeys;
-        s.section = "Menus";
+        s.section = "Shortcuts";
         s.label = "Trainer menu";
         s.help = "Opens and closes the trainer (god mode, weapons, vehicles, teleports...). On a gamepad: press Back + RB "
                  "together.";
@@ -1750,7 +1750,7 @@ namespace vcs::input
         s = {};
         s.key = "controls.freecam_key";
         s.page = kKeys;
-        s.section = "Menus";
+        s.section = "Shortcuts";
         s.label = "Free camera";
         s.help = "Turns the trainer's free camera on and off: fly with W / A / S / D, E and Q, the mouse; Shift faster, "
                  "Ctrl slower. On a gamepad: press Back + LB together.";
@@ -1762,7 +1762,7 @@ namespace vcs::input
         s = {};
         s.key = "controls.screenshot_key";
         s.page = kKeys;
-        s.section = "Menus";
+        s.section = "Shortcuts";
         s.label = "Screenshot";
         s.help = "Saves what is on screen (menus and overlays included) as a PNG in the screenshots folder next to vcs.exe.";
         s.type = Type::Key;

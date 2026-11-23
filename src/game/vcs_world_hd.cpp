@@ -1,4 +1,4 @@
-// [Minty1804 fork] The detailed city further (Enhancements > World > Detailed city distance; docs/game-internals.md 6t,
+// [Minty1804 fork] The detailed city further (World > Detailed city distance; docs/game-internals.md 6t,
 // DECISIONS.md 2026-11-19 "Detailed city further"): the detailed city drawn further than the game's own window,
 // through the game's own world draw. By willzmkv (dejot), from their fork's HD world (`hd-world-merge`,
 // src/game/vcs_world_hd.cpp, their game-internals 9j), fitted to this tree.
@@ -2663,8 +2663,8 @@ namespace vcs::world_hd
     {
         settings::Spec s;
         s.key = "world.hd_radius";
-        s.page = "Enhancements";
-        s.section = "World";
+        s.page = "World";
+        s.section = "Draw distance";
         s.label = "Detailed city distance";
         s.help = "How far the city's detailed buildings reach. The game draws them ~260 m around the camera and a "
                  "low-detail image beyond (towers with floating roofs, missing details); more reads the city around "

@@ -434,8 +434,8 @@ namespace vcs::lodlights
     {
         settings::Spec s;
         s.key = "enhance.distant_lights";
-        s.page = "Enhancements";
-        s.section = "World";
+        s.page = "World";
+        s.section = "Details";
         s.label = "Distant lights";
         s.help = "At night, street lamps, windows, signs and traffic lights glow far into the distance (Project2DFX). The "
                  "original game only lights them within about 100 m. Needs the light table the build downloads.";

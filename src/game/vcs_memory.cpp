@@ -5,7 +5,7 @@
 // main heap (0x51D6A0), the pointer goes to heap + 0x130, FUN_002BB768(heap, it, 0x567000, 0) builds the heap there, and
 // heap + 0x12C = 1. CStreaming allocates every model and texture dictionary from it (FUN_003C6478) and, when it is full,
 // unloads what it can and defragments (FUN_0021C300) - the heap's size is the game's whole streaming budget
-// (FUN_003CB760 makes room against its free space alone). With Game > Memory > Streaming memory above the PS2's the hook
+// (FUN_003CB760 makes room against its free space alone). With World > Memory > Streaming memory above the PS2's the hook
 // does the same in the upper memory: no main heap allocation (the main heap keeps the 5.4 MB), the two fields, and
 // FUN_002BB768 as a guest tail call (DECISIONS.md, hooks) with the larger size.
 //
@@ -133,12 +133,12 @@ namespace vcs::memory
     {
         settings::Spec s;
         s.key = "memory.streaming";
-        s.page = "Game";
+        s.page = "World";
         s.section = "Memory";
         s.label = "Streaming memory";
         s.help = "Room for the models and textures the game streams from the disc (cars, people, props, weapons). The PS2 "
                  "has 5.4 MB; more keeps more of them loaded (more different cars in traffic, fewer models dropped and read "
-                 "again) and leaves room for larger mods. The city's buildings stream on their own (Enhancements > World > "
+                 "again) and leaves room for larger mods. The city's buildings stream on their own (World > Draw distance > "
                  "Detailed city distance). From the next start.";
         s.type = settings::Type::Choice;
         s.choices = {{"PS2 (5.4 MB)", 0}, {"12 MB", 12}, {"20 MB", 20}, {"30 MB", 30}};

@@ -191,15 +191,8 @@ namespace ui
             return text;
         }
 
-        // A page's sections in the order their first setting was registered.
-        std::vector<std::string> sections(const std::string &page)
-        {
-            std::vector<std::string> out;
-            for (const settings::Spec &s : settings::all())
-                if (s.page == page && !s.hidden && std::find(out.begin(), out.end(), s.section) == out.end())
-                    out.push_back(s.section);
-            return out;
-        }
+        // A page's sections: the layout's order (settings::setLayout, main.cpp), then registration order.
+        std::vector<std::string> sections(const std::string &page) { return settings::sections(page); }
 
         // One key button: its key's name, or "Press a key..." while it waits for one. `note` runs right after the button.
         template <typename Note> void keySlot(const settings::Spec &s, float width, Note note)

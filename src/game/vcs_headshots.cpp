@@ -1,4 +1,4 @@
-// [Minty1804 fork] Enhancements > Combat: a gunshot to the head kills (docs/game-internals.md 12c "Headshots").
+// [Minty1804 fork] Game > Combat: a gunshot to the head kills (docs/game-internals.md 12c "Headshots").
 //
 // CPed::InflictDamage is FUN_001D7940: a0 the ped hit, a1 the one who did it, a2 the weapon type, f12 the damage,
 // a3 the body piece, t0 the direction. Its switch on the piece (the jump table at 0x4A9C70, pieces 0 - 6) sends piece 6
@@ -95,7 +95,7 @@ namespace vcs::headshots
     {
         settings::Spec s;
         s.key = "enhance.headshots_kill";
-        s.page = "Enhancements";
+        s.page = "Game";
         s.section = "Combat";
         s.label = "Headshots always kill";
         s.help = "Your bullet to the head kills, from any gun - a pistol too. Other hits do the damage they "

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Headshots check (src/game/vcs_headshots.cpp, docs/game-internals.md 12c "Headshots"): Enhancements > Combat >
+"""Headshots check (src/game/vcs_headshots.cpp, docs/game-internals.md 12c "Headshots"): Game > Combat >
 Headshots always kill, checked in the game.
 
     python tools/headshot_check.py [OUT] [--port 47677]

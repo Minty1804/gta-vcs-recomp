@@ -781,8 +781,8 @@ namespace vcs::texpack
 
         s = {};
         s.key = "graphics.texture_dump";
-        s.page = "Graphics";
-        s.section = "Texture packs";
+        s.page = "Advanced";
+        s.section = "Diagnostics";
         s.label = "Dump textures";
         s.help = "Saves every texture the game draws as a PNG in textures/SLUS-21590/dumps, named as PCSX2 names them: "
                  "the files to edit for a texture pack. Costs some time when new textures appear.";

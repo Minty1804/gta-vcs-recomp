@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Button prompts by device (Enhancements > Button prompts; src/game/vcs_prompts.cpp, game-internals.md 6n).
+"""Button prompts by device (Game > Button prompts; src/game/vcs_prompts.cpp, game-internals.md 6n).
 
     python tools/prompts_check.py [OUT] [--port N]
 

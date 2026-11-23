@@ -8,7 +8,7 @@ class PS2Runtime;
 
 namespace vcs::texpack
 {
-    // Graphics > Texture packs: Texture packs (on / off), Dump textures.
+    // Graphics > Texture packs: Texture packs (on / off); Advanced > Diagnostics: Dump textures.
     void registerSettings();
     // The pack folder (<game folder>/textures/SLUS-21590/replacements, as PCSX2 lays it out; VCS_TEXTURE_DIR=<dir> for
     // the folder holding replacements/ and dumps/) indexed and handed to the renderer; the `texpack` command.

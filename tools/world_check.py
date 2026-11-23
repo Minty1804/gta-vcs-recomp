@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Traffic / pedestrian density and draw distance (Enhancements > World; src/game/vcs_world_detail.cpp,
+"""Traffic / pedestrian density and draw distance (World; src/game/vcs_world_detail.cpp,
 game-internals.md 6o and 12d).
 
     python tools/world_check.py [OUT] [--port N] [--seconds S]

@@ -1,4 +1,4 @@
-// Enhancements > Saving: "Quick save" - a key (Keyboard > Menus, F12) opens the game's own Save menu anywhere outside a
+// Game > Map and saving: "Quick save" - a key (Keyboard > Shortcuts, F12) opens the game's own Save menu anywhere outside a
 // mission; the save holds where the player stood (and his vehicle) and the clock does not move on. Loaded - from the
 // Load Game menu or at boot - the game comes back there (docs/mods/QUICKSAVE.md).
 #pragma once
@@ -9,7 +9,7 @@ class PS2Runtime;
 
 namespace vcs::quicksave
 {
-    // Enhancements > Saving: "Quick save" - Off (default) / On (VCS_QUICKSAVE=0/1); Keyboard > Menus: "Quick save" (F12).
+    // Game > Map and saving: "Quick save" - Off (default) / On (VCS_QUICKSAVE=0/1); Keyboard > Shortcuts: "Quick save" (F12).
     void registerSettings();
     // The hooks (ACTIVATE_SAVE_MENU in a vehicle, the save's 6-hour clock step) and the `quicksave` command.
     // VCS_QUICKSAVE_HOOKS=0: none.

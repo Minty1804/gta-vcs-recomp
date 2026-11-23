@@ -102,7 +102,7 @@ namespace vcs::aim
         PS2Runtime::RecompiledFunction g_origGame = nullptr, g_origCamera = nullptr, g_origShotLine = nullptr,
                                        g_origMovesAiming = nullptr, g_origFinishCallback = nullptr, g_origMelee = nullptr,
                                        g_origSprite = nullptr;
-        // the free-aim circle (Enhancements > Combat: Aiming circle)
+        // the free-aim circle (Game > Combat: Aiming circle)
         enum Circle
         {
             CircleOriginal = 0,
@@ -554,7 +554,7 @@ namespace vcs::aim
             g_origSprite(rdram, ctx, runtime);
         }
 
-        // Aim speed (Enhancements > Combat): CPedIK's limb tables (VC's, game-internals.md 12c "Raising the gun") -
+        // Aim speed (Game > Combat): CPedIK's limb tables (VC's, game-internals.md 12c "Raising the gun") -
         // per limb max / min yaw, the yaw step, max / min pitch, the pitch step, radians; the steps are taken once a frame
         // toward the target. Head 0x4881A8, head restore 0x4881C0, torso 0x4881D8, upper arm 0x4881F0, lower arm 0x488208.
         // The functions that read them (all with a0 the CPedIK, whose +0 is its ped) get the steps scaled for the player:
@@ -751,7 +751,7 @@ namespace vcs::aim
 
         settings::Spec s;
         s.key = "enhance.aim_circle";
-        s.page = "Enhancements";
+        s.page = "Game";
         s.section = "Combat";
         s.label = "Aiming circle";
         s.help = "The circle of free aim. Original: the game's. Small: half its size. Spread: as big as the shot - a small "
@@ -765,7 +765,7 @@ namespace vcs::aim
 
         s = {};
         s.key = "enhance.aim_speed";
-        s.page = "Enhancements";
+        s.page = "Game";
         s.section = "Combat";
         s.label = "Aim speed";
         s.help = "How fast Vic raises his gun when he starts aiming, and turns his arms and body with the aim (other people "

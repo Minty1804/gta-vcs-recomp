@@ -82,7 +82,7 @@ namespace vcs
                                        g_origHudFade = nullptr, g_origStreak = nullptr, g_origRubbish = nullptr,
                                        g_origSteam = nullptr;
 
-        std::atomic<bool> g_reduced{false}; // "Reduce Post Processing Effects"
+        std::atomic<bool> g_reduced{false}; // "Lighter effects above 30 fps"
 
         bool envEnabled()
         {
@@ -695,9 +695,9 @@ namespace vcs
     {
         settings::Spec s;
         s.key = "enhance.reduce_postfx";
-        s.page = "Enhancements";
+        s.page = "Graphics";
         s.section = "Effects";
-        s.label = "Reduce Post Processing Effects";
+        s.label = "Lighter effects above 30 fps";
         s.help = "On: the light trails, smoke, sprays, fire, lightning, rain, clouds, camera shake and explosions as the port drew "
                  "them before - lighter and shorter above 30 fps, as each runs once a frame. Off: as on the PS2 at any "
                  "frame rate.";

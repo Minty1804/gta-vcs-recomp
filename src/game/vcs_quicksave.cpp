@@ -1,9 +1,9 @@
-// Enhancements > Saving: "Quick save" (docs/mods/QUICKSAVE.md has the addresses and what was checked in the game):
+// Game > Map and saving: "Quick save" (docs/mods/QUICKSAVE.md has the addresses and what was checked in the game):
 // Off / Enabled (the key) / Enabled + prompt after mission (the key, and the same Save menu by itself after a mission is
 // passed - REGISTER_MISSION_PASSED, opcode 0x01EB, handler FUN_00184D18 - once "Mission passed" has been on screen for
 // 5 s and the mission's script has ended for 1.5 s; dropped when the next mission starts first or a game is loaded).
 //
-// THE SAVE. The quick save key (Keyboard > Menus, F12) runs the game's own safehouse save: the main script's save
+// THE SAVE. The quick save key (Keyboard > Shortcuts, F12) runs the game's own safehouse save: the main script's save
 // subroutine (IP 0xC646; each save point CALLs it, 0x1222B) as a new script of the game's VM (vcs::rig::startScriptAt,
 // returning onto a TERMINATE_THIS_SCRIPT at 0x16E90), named "quicksav", with L0 = 1 (it then fades the screen back in
 // itself; the save points pass 0 and fade in after it). Around ACTIVATE_SAVE_MENU the subroutine takes the player's
@@ -348,7 +348,7 @@ namespace vcs::quicksave
         void startSave(uint8_t *ram, uint32_t time, uint32_t ped)
         {
             if (!g_enabled.load(std::memory_order_relaxed))
-                return refuse("off", "Quick save is off (Settings > Enhancements > Saving)");
+                return refuse("off", "Quick save is off (Settings > Game > Map and saving)");
             if (ram[kMissionRunning])
                 return refuse("mission", "Quick save: not during a mission");
             if (global(ram, G_SAVING) || global(ram, G_SAVING2) || g_restore != Restore::Idle)
@@ -807,10 +807,10 @@ namespace vcs::quicksave
     {
         settings::Spec s;
         s.key = "enhance.quicksave";
-        s.page = "Enhancements";
-        s.section = "Saving";
+        s.page = "Game";
+        s.section = "Map and saving";
         s.label = "Quick save";
-        s.help = "Enabled: the quick save key (Keyboard > Menus, F12) opens the game's Save menu anywhere outside a "
+        s.help = "Enabled: the quick save key (Keyboard > Shortcuts, F12) opens the game's Save menu anywhere outside a "
                  "mission, on foot or in a vehicle: choose a slot, or Cancel. The save keeps where you are (in a safehouse "
                  "or an Empire building too), your vehicle - or the last one you drove, if it is near - your wanted level "
                  "and the time of day; Load Game brings you back there. Not during a mission or a cutscene. "
@@ -830,9 +830,9 @@ namespace vcs::quicksave
         s = {};
         s.key = "controls.quicksave_key";
         s.page = "Keyboard";
-        s.section = "Menus";
+        s.section = "Shortcuts";
         s.label = "Quick save";
-        s.help = "Opens the game's Save menu where you are (Enhancements > Saving > Quick save turns it on). F12 is also "
+        s.help = "Opens the game's Save menu where you are (Game > Map and saving > Quick save turns it on). F12 is also "
                  "Steam's screenshot key: pick another one when the game runs through Steam.";
         s.type = settings::Type::Key;
         s.group = "keys";

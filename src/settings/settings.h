@@ -76,7 +76,18 @@ namespace settings
 
     void add(Spec spec);
     const std::vector<Spec> &all();
-    std::vector<std::string> pages(); // in registration order
+    std::vector<std::string> pages(); // in the layout's order (setLayout), then in registration order
+    // [gta-recomp] A page's sections: in the layout's order, then in the order their first setting was registered.
+    std::vector<std::string> sections(const std::string &page);
+    // [gta-recomp] The menu's order (2026-11-23, the menu reorganised): pages, each with its sections. Pages and sections
+    // it does not name follow the named ones, in registration order - so the layout is one list in main.cpp, and the
+    // modules register their rows wherever they are set up.
+    struct PageLayout
+    {
+        std::string page;
+        std::vector<std::string> sections;
+    };
+    void setLayout(std::vector<PageLayout> layout);
 
     int value(const std::string &key);         // the default for unknown keys / before load
     bool set(const std::string &key, int v);   // validates, saves vcs.ini, calls onChange (Live); false if refused

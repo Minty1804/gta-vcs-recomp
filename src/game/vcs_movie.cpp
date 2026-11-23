@@ -361,7 +361,7 @@ namespace vcs
             const std::string path(reinterpret_cast<const char *>(rdram + (GPR_U32(ctx, 4) & PS2_RAM_MASK)));
             const uint32_t skipAfter = GPR_U32(ctx, 6);
             if (g_skipIntro.load(std::memory_order_relaxed))
-                std::fprintf(stderr, "[movie] %s skipped (Display > Intro movies)\n", path.c_str());
+                std::fprintf(stderr, "[movie] %s skipped (Game > Start-up > Skip intro movies)\n", path.c_str());
 #if VCS_MOVIES
             else
                 play(path, skipAfter, runtime);

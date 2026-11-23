@@ -1146,7 +1146,7 @@ namespace vcs::prompts
     {
         settings::Spec s;
         s.key = "enhance.prompts";
-        s.page = "Enhancements";
+        s.page = "Game";
         s.section = "Button prompts";
         s.label = "Button prompts";
         s.help = "The buttons the game's help text and pause menu show. Automatic follows what you last played with: the "
@@ -1416,6 +1416,6 @@ namespace vcs::prompts
                           g_lastFrameButtons.load(), static_cast<unsigned long long>(gsHwGlyphDraws()));
             reply(buf);
         });
-        std::fprintf(stderr, "[prompts] button prompts ready (Enhancements > Button prompts)\n");
+        std::fprintf(stderr, "[prompts] button prompts ready (Game > Button prompts)\n");
     }
 }

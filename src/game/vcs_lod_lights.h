@@ -1,4 +1,4 @@
-// Distant lights (Enhancements > World, game-internals.md 7c): at night, the glow of street lamps, windows, signs and
+// Distant lights (World, game-internals.md 7c): at night, the glow of street lamps, windows, signs and
 // traffic lights far beyond the ~100 m the game draws its own coronas at - Project2DFX's LOD lights (ThirteenAG's
 // WidescreenFixesPack, MIT: its PCSX2 plugin for this game's PS2 version). The light table is that plugin's lodl.c,
 // downloaded by the build next to vcs.exe (project2dfx/lodl.c; never committed: tools/deps.py, CMakeLists.txt).
@@ -15,7 +15,7 @@ class PS2Runtime;
 
 namespace vcs::lodlights
 {
-    // Enhancements > World: Distant lights.
+    // World: Distant lights.
     void registerSettings();
     // Before runtime.run(): the chain observer; the table is read from gameFolder/project2dfx/lodl.c when first needed.
     void install(PS2Runtime &runtime, const std::filesystem::path &gameFolder);

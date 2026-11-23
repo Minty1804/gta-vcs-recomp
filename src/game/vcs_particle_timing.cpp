@@ -277,7 +277,7 @@ namespace vcs
 
         PS2Runtime::RecompiledFunction g_origAdd = nullptr, g_origAdd2 = nullptr, g_origUpdate = nullptr, g_origJet = nullptr;
 
-        std::atomic<bool> g_reduced{false}; // "Reduce Post Processing Effects" (setParticleTimingReduced)
+        std::atomic<bool> g_reduced{false}; // "Lighter effects above 30 fps" (setParticleTimingReduced)
 
         bool enabled()
         {

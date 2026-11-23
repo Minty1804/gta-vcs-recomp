@@ -123,12 +123,46 @@ namespace settings
 
     const std::vector<Spec> &all() { return g_specs; }
 
+    namespace
+    {
+        std::vector<PageLayout> g_layout;
+
+        // `names` in registration order, those the layout lists first, in its order
+        std::vector<std::string> ordered(std::vector<std::string> names, const std::vector<std::string> &first)
+        {
+            std::vector<std::string> out;
+            for (const std::string &n : first)
+                if (std::find(names.begin(), names.end(), n) != names.end())
+                    out.push_back(n);
+            for (const std::string &n : names)
+                if (std::find(out.begin(), out.end(), n) == out.end())
+                    out.push_back(n);
+            return out;
+        }
+    }
+
+    void setLayout(std::vector<PageLayout> layout) { g_layout = std::move(layout); }
+
     std::vector<std::string> pages()
     {
-        std::vector<std::string> out;
+        std::vector<std::string> out, first;
         for (const Spec &s : g_specs)
             if (std::find(out.begin(), out.end(), s.page) == out.end())
                 out.push_back(s.page);
+        for (const PageLayout &p : g_layout)
+            first.push_back(p.page);
+        return ordered(out, first);
+    }
+
+    std::vector<std::string> sections(const std::string &page)
+    {
+        std::vector<std::string> out;
+        for (const Spec &s : g_specs)
+            if (s.page == page && !s.hidden && std::find(out.begin(), out.end(), s.section) == out.end())
+                out.push_back(s.section);
+        for (const PageLayout &p : g_layout)
+            if (p.page == page)
+                return ordered(out, p.sections);
         return out;
     }
 

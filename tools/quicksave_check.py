@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check of Enhancements > Saving: "Quick save" (docs/mods/QUICKSAVE.md), in hidden games.
+"""Check of Game > Map and saving: "Quick save" (docs/mods/QUICKSAVE.md), in hidden games.
 
     python tools/quicksave_check.py [OUT] [--port N] [--save DIR]
 

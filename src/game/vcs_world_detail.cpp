@@ -1,4 +1,4 @@
-// Enhancements > World: traffic / pedestrian density and draw distance (docs/game-internals.md 6o, 12d).
+// World: traffic / pedestrian density and draw distance (docs/game-internals.md 6o, 12d).
 //
 // Density. Mission scripts set the game's density multipliers all the time (0 to clear the streets, 10 for the
 // credits; CarDensityMultiplier 0x48A968, PedDensityMultiplier 0x487FF8), and saves keep them, so those stay the
@@ -133,7 +133,7 @@ namespace vcs::world
 
         // VCS_FAR_CLIP: the far plane (and so the fog end) at this distance instead of 2000 (outdoors only)
         float g_farClip = 0.0f;
-        // [Minty1804 fork] Enhancements > World "Far view from interiors" (the user's report, 2026-11-19: from the
+        // [Minty1804 fork] World "Far view from interiors" (the user's report, 2026-11-19: from the
         // safehouse window the city showed while aiming and vanished when not). Indoors (currArea not 0 / 4) the
         // follow-ped camera FUN_0029DAB0 sets the far plane to 1000 (jals at 0x29DB7C and 0x29F8B8, near 0.3 before
         // each); every other camera mode - aiming (mode 11) among them - keeps the 2000 FUN_0021E950 sets. The far
@@ -565,7 +565,7 @@ namespace vcs::world
         {
             settings::Spec s;
             s.key = key;
-            s.page = "Enhancements";
+            s.page = "World"; // (each caller sets its section)
             s.section = "World";
             s.label = label;
             s.help = help;
@@ -582,23 +582,43 @@ namespace vcs::world
 
     void registerSettings()
     {
-        settings::add(percentSpec("enhance.traffic", "Traffic density",
+        {
+            settings::Spec traffic = percentSpec("enhance.traffic", "Traffic density",
                                   "How many cars drive around the city. 100% is the original game; missions that clear "
                                   "the streets still do. Costs some CPU time.",
-                                  "VCS_TRAFFIC", g_traffic));
-        settings::add(percentSpec("enhance.peds", "Pedestrian density",
+                                  "VCS_TRAFFIC", g_traffic);
+            traffic.page = "World";
+            traffic.section = "Traffic and people";
+            settings::add(traffic);
+        }
+
+        {
+            settings::Spec peds = percentSpec("enhance.peds", "Pedestrian density",
                                   "How many people walk the streets. 100% is the original game; missions that clear "
                                   "the streets still do. Costs some CPU time.",
-                                  "VCS_PEDS", g_peds));
-        settings::add(percentSpec("enhance.draw_distance", "Draw distance",
+                                  "VCS_PEDS", g_peds);
+            peds.page = "World";
+            peds.section = "Traffic and people";
+            settings::add(peds);
+        }
+
+        {
+            settings::Spec draw = percentSpec("enhance.draw_distance", "Draw distance",
                                   "How far away people, cars, props and detailed models still show. 100% is the original "
                                   "game. Costs GPU time.",
-                                  "VCS_DRAW_DISTANCE", g_draw));
+                                  "VCS_DRAW_DISTANCE", g_draw);
+            draw.page = "World";
+            draw.section = "Draw distance";
+            settings::add(draw);
+        }
+
         settings::Spec s = percentSpec("enhance.ped_distance", "Pedestrian distance",
                                        "How far away people appear and are removed. 100% is the original game (they "
                                        "appear 35-60 m away). Raise the draw distance with it so they are drawn that far; "
                                        "the same number of people spreads over a wider area.",
                                        "VCS_PED_DISTANCE", g_pedDistance);
+        s.page = "World";
+        s.section = "Draw distance";
         s.max = kPedDistanceMax;
         settings::add(s);
         settings::Spec c = percentSpec("enhance.car_distance", "Car distance",
@@ -606,13 +626,15 @@ namespace vcs::world
                                        "original game (cars appear about 110 m ahead). Raise the draw distance with it so "
                                        "they are drawn that far.",
                                        "VCS_CAR_DISTANCE", g_carDistance);
+        c.page = "World";
+        c.section = "Draw distance";
         c.max = kCarDistanceMax;
         settings::add(c);
 
         settings::Spec f;
         f.key = "enhance.solid_far_palms";
-        f.page = "Enhancements";
-        f.section = "World";
+        f.page = "World";
+        f.section = "Details";
         f.label = "Solid far palms";
         f.help = "Far-away palms and trees stay solid. In the original game they fade out with distance, so with a "
                  "longer draw distance whole rows of them look like ghosts. Off is the original game.";
@@ -629,8 +651,8 @@ namespace vcs::world
 
         settings::Spec sh;
         sh.key = "enhance.ped_shadows";
-        sh.page = "Enhancements";
-        sh.section = "World";
+        sh.page = "World";
+        sh.section = "Details";
         sh.label = "Character shadows";
         sh.help = "The round shadow under Vic and everyone else on foot. On is the original game; cars and lamps keep "
                   "their shadows either way.";
