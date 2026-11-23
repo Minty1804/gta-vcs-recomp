@@ -456,6 +456,8 @@ is listed here (the full list of candidates, done or not: [docs/FORK_IMPORTS.md]
   [gta-stories-recompiled](https://github.com/batinium/gta-stories-recompiled) (commit 1ec8297).
 - **Downloads through Windows' curl** when OpenSSL can't check a certificate: [willzmkv](https://github.com/willzmkv)
   (dejot), from their fork (commit f68c195, its tools part).
+- **Detailed city: a sector's glass kept** (Downtown's construction building): [willzmkv](https://github.com/willzmkv)
+  (dejot), from their fork (commit 2d22363), re-done on our detailed city.
 - **This README's layout** (centred header, badges, feature tables side by side, collapsed sections): after
   [willzmkv](https://github.com/willzmkv)'s (dejot) README for their fork.
 

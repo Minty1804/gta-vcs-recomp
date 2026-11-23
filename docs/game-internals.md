@@ -2151,6 +2151,15 @@ measurement and the tools behind it.
 - **At the user's spot** (the floating roof, 6o: -739,-1158 heading 273.6 at 18:41): their build at radius 3 draws
   the tower detailed with its lit windows, no slab, and the buildings beside it (2026-11-19, `build/lod/roof_ref3`
   against `roof_ref0` in their build).
+- **A sector with records in two buckets** (willzmkv 2d22363, FORK_IMPORTS row 41, 2026-11-23): one detailed sector id
+  can have records in more than one of the eight buckets - Downtown's construction building at (-975, 475): opaque in
+  bucket 4, its blue glass in bucket 7 (`914` gids 1282 / 1283 at -794,478 r 31, `915` gids 1284 / 1285 at -795,528 r 23,
+  extra cell 12,23). The duplicate rule (the same sphere under another id, r >= 20 is enough) took the glass records for
+  a second copy of the opaque ones and left them out at radius 3. `sameSphere()` now never matches a record of the same
+  id (`VCS_HD_SAME_ID_DUPES=1`: the old rule), records hidden by the 0x8000 flag of the game's own list no longer count
+  as drawn spheres, and a sector of ours enters the table only when it shows. `VCS_HD_DUPES=1` splits its count into
+  `game` (both in the game's own list - kept, as at radius 0) and `extra`; `VCS_HD_PROBE` says why a record was skipped
+  (`twin`, `dupe`, `skipextra`).
 - Switches: `VCS_HD_RADIUS=0..3` (the setting for one run). Analysis: `VCS_HD_PROBE=x,y,r`, `VCS_HD_TWINS=1`,
   `VCS_HD_DUPES=1`, `VCS_HD_OSC=1`, `VCS_HD_LATE=1`, `VCS_HD_DRAWCHECK=1`, `VCS_HD_PKTDEBUG=1`, `VCS_HD_DRAWMODE`;
   control-channel commands `hdworld`, `hdpairs`, `hdcompare`, `skipextra`, `keeplod`, `memstate`; tools
