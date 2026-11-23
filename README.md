@@ -454,6 +454,8 @@ is listed here (the full list of candidates, done or not: [docs/FORK_IMPORTS.md]
 - **Runtime speed-ups** (VIF1 unpacking, the GS stage's queue and lock, CLUT hashing, upload bookkeeping) and a GS
   crash fix: [batinium](https://github.com/batinium), from
   [gta-stories-recompiled](https://github.com/batinium/gta-stories-recompiled) (commit 1ec8297).
+- **Downloads through Windows' curl** when OpenSSL can't check a certificate: [willzmkv](https://github.com/willzmkv)
+  (dejot), from their fork (commit f68c195, its tools part).
 - **This README's layout** (centred header, badges, feature tables side by side, collapsed sections): after
   [willzmkv](https://github.com/willzmkv)'s (dejot) README for their fork.
 

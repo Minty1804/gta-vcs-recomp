@@ -28,7 +28,6 @@ import subprocess
 import sys
 import tarfile
 import time
-import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import toolchain as tc  # noqa: E402
@@ -134,8 +133,7 @@ def _move(src, dst):
 
 
 def download(url, out):
-    with urllib.request.urlopen(url, timeout=120) as r, open(out + ".part", "wb") as f:
-        shutil.copyfileobj(r, f, 1 << 20)
+    tc.download_file(url, out + ".part", timeout=120)
     os.replace(out + ".part", out)
 
 
