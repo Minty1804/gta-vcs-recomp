@@ -6031,12 +6031,14 @@ namespace
             // [gta-recomp] PS2X_HW_EARLY_TEXTURES: 0 off, 1 on; unset: on with D3D11, off with Vulkan - its main thread
             // only records a copy per new texture (~8 ms a 350-texture burst, D3D11's creation was 52), and on a
             // 2-core CPU the helpers slowed the GS stage's decode more than they saved there (PERFORMANCE.md 25). Metal
-            // (macOS): on, as D3D11 - a new texture's contents are written in place on the helper thread
+            // (macOS): on, as D3D11 - a new texture's contents are written in place on the helper thread. D3D12: on (willzmkv's
+            // 28ef950) - a texture made on the main thread cost ~0.7 ms, a 267-texture burst held a frame 193 ms
             static const int early = [] {
                 const char *e = std::getenv("PS2X_HW_EARLY_TEXTURES");
                 return e && *e ? (*e == '0' ? 0 : 1) : -1;
             }();
             const bool earlyOn = early == 1 || (early < 0 && (device.backend() == rhi::Backend::D3D11 ||
+                                                              device.backend() == rhi::Backend::D3D12 ||
                                                               device.backend() == rhi::Backend::Metal));
             g_blockCompression.store(device.blockCompression(), std::memory_order_relaxed); // [gta-recomp] gsHwBlockCompression
             g_videoMemory.store(device.videoMemory(), std::memory_order_relaxed);         // [gta-recomp] keepPackGpu's size

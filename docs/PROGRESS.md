@@ -1424,8 +1424,9 @@ Python scripts still usable on their own. docs/LAUNCHER.md has the whole of it; 
 | `python tools/scenes.py capture OUT` / `compare REF NEW` | reference scenes (screenshots + perf) from an empty card; diff two captures |
 | `VCS_DATA_DIR=dir` | save / cache folder instead of %LOCALAPPDATA%/VCSRecomp (Linux: $XDG_DATA_HOME/VCSRecomp) |
 | `PS2X_D3D_DEBUG=1` | D3D11 debug layer (needs Windows' Graphics Tools feature) |
-| `VCS_RHI=d3d11\|vulkan\|null` | the renderer for one run (Graphics > Graphics API when the build has two; docs/LINUX.md) |
-| `PS2X_RHI_DEBUG=1` | the API's validation layer: D3D11 debug layer / Vulkan's Khronos validation; their messages in the log (`[rhi] d3d11` once per kind, `[rhi] vulkan`) |
+| `VCS_RHI=d3d11\|d3d12\|vulkan\|null` | the renderer for one run (Graphics > Graphics API when the build has two; D3D12 on Windows: NATIVE_RENDERER.md; docs/LINUX.md) |
+| `PS2X_PIPELINE_CACHE=0` | D3D12: no pipeline cache (`<data>/cache/d3d12_pipelines.bin`, the shader warm-up): every pipeline compiled when first made |
+| `PS2X_RHI_DEBUG=1` | the API's validation layer: D3D11 / D3D12 debug layer (D3D12: the first 500) / Vulkan's Khronos validation; their messages in the log (`[rhi] d3d11` once per kind, `[rhi] vulkan`) |
 | `VCS_D3D11_STATE_CACHE=0` | D3D11: every state call reaches the driver, as before the state cache (its reference; PERFORMANCE.md 34) |
 | `PS2X_HW_NATIVE_MERGE=0`, `PS2X_HW_NATIVE_MERGE_LOG=1` | One native draw per VU1 batch, as before the join (its reference) / the join's counts every 600 frames: draws in and out, groups drawn whole and in parts, meshes made and cached (PERFORMANCE.md 35) |
 | `PS2X_RHI_WARP=1` | D3D11 on WARP, Windows' software rasteriser: a third implementation for a picture that differs between GPU vendors (a few frames a second) |

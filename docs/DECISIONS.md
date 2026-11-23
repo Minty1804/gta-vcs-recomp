@@ -2045,3 +2045,26 @@ turn off, leaving them always on.
   launcher's look did not need one).
 - **Fonts**: Inter when installed, else Segoe UI (Windows), Cantarell / Noto / Ubuntu / DejaVu (Linux), and - added here,
   theirs had no macOS branch - Arial from macOS's Supplemental fonts. None is shipped: none of them may be.
+
+## 2026-11-23 - Direct3D 12 taken from willzmkv's fork: a choice, D3D11 stays the default (the user's request)
+
+- **What**: willzmkv's (dejot) D3D12 backend (ae6c99e, 28ef950, 8c60c8d, d9f73ed; `src/rhi/d3d12/rhi_d3d12.cpp`, taken at
+  their `main`) as Graphics > Graphics API > D3D12 (`VCS_RHI=d3d12`). Their RHI differs from ours in small ways, so the file
+  is adapted, not copied: `Backend::D3D12` after Metal (vcs.ini stores the number: their 3 is our Metal), no BGRA8 / BC4 /
+  BC5 formats and no `drawInstanced` (ours has neither yet), `blockCompression()` answered (our default is false), and the
+  card from Graphics > Graphics card (theirs always took the high-performance one): the D3D11 backend's DXGI list is shared
+  through `rhi/d3d11/dxgi_cards.h`, so both APIs mean the same card by the same id. No D3D12 device: D3D11 for the run
+  (their d9f73ed). The GS textures are made on the helper threads with D3D12 too (their 28ef950).
+- **Why not the default**, as in their fork: D3D11 is the reference everything here is checked against, and the D3D12
+  path is checked on one machine so far (an RX 6950 XT). Their reason for switching - AMD's D3D11 driver's per-draw cost in
+  dense streets - is real on AMD, so the choice is offered; the default changes only once scenes compare, texpack_check,
+  hud_check and cruise pass on it here (PROGRESS.md).
+- **The shader warm-up** (their 283bb56 "SCSKiller") is re-done inside the backend. Theirs compiled, in the launcher, a list
+  of pipeline descriptions written by hand to fill the driver's own cache - a guess that has to match the game's real
+  pipelines byte for byte, root signature included, and that the game itself never read. Here every pipeline the game
+  really makes is stored in an `ID3D12PipelineLibrary`, written to `<data>/cache/d3d12_pipelines.bin` after 3 s without a
+  new one and at the end, and loaded from there the next run instead of compiled (named by a hash of the whole description,
+  the shaders' bytes included; a file from another driver or card is refused by D3D12 and started again).
+  `PS2X_PIPELINE_CACHE=0` turns it off. Measured: a cold first pipeline burst 21 pipelines in 160.8 ms (a 188 ms frame);
+  from the library 21 in 3.4 ms. On this AMD driver its own disk cache already made a second run cheap (4.2 ms); the
+  library makes it so whatever the driver keeps.

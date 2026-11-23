@@ -768,16 +768,17 @@ namespace
             vcs::setReflectionFilter(mode);
         }
 
-        // The graphics API, when the build has more than one (Windows with VCS_RHI_VULKAN); VCS_RHI=d3d11|vulkan|null
-        // chooses for one run (render/presenter.h).
+        // The graphics API, when the build has more than one (Windows: D3D11, D3D12, Vulkan with VCS_RHI_VULKAN);
+        // VCS_RHI=d3d11|d3d12|vulkan|null chooses for one run (render/presenter.h).
         s = {};
         s.key = "display.renderer";
         s.page = "Graphics";
         s.section = "Renderer";
         s.label = "Graphics API";
-        s.help = "The graphics API the game draws with. D3D11 is the reference on Windows; Vulkan is the one on Linux.";
+        s.help = "The graphics API the game draws with. D3D11 is the reference on Windows (the default); D3D12 costs the "
+                 "processor less per draw (dense streets, many cars); Vulkan is the one on Linux.";
         s.type = Type::Choice;
-        for (rhi::Backend b : {rhi::Backend::D3D11, rhi::Backend::Vulkan, rhi::Backend::Metal})
+        for (rhi::Backend b : {rhi::Backend::D3D11, rhi::Backend::D3D12, rhi::Backend::Vulkan, rhi::Backend::Metal})
             if (rhi::backendBuilt(b))
                 s.choices.push_back({rhi::backendName(b), static_cast<int>(b)});
         s.defaultValue = static_cast<int>(rhi::defaultBackend());
@@ -1001,6 +1002,10 @@ int main(int argc, char *argv[])
 
         const fs::path data = dataDirectory();
         const fs::path elfPath = data / "cache" / kElfName;
+        // [Minty1804 fork] the renderer's compiled pipelines across runs (D3D12's pipeline library: the shader warm-up;
+        // PS2X_PIPELINE_CACHE=0 none)
+        if (const char *pc = std::getenv("PS2X_PIPELINE_CACHE"); !pc || pc[0] != '0')
+            present::setPipelineCache((data / "cache" / "d3d12_pipelines.bin").string());
         std::string error;
         if (const int code = stageElf(iso, elfPath, error))
         {

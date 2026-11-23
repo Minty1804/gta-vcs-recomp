@@ -12,6 +12,8 @@
 #include <dxgi1_6.h>
 #include <wrl/client.h>
 
+#include "rhi/d3d11/dxgi_cards.h"
+
 #include "imgui.h"
 #include "imgui_impl_dx11.h"
 
@@ -1201,6 +1203,9 @@ namespace rhi
             return nullptr;
         return device;
     }
+
+    // [Minty1804 fork] dxgi_cards.h: the D3D12 backend takes the same card for the same id
+    Microsoft::WRL::ComPtr<IDXGIAdapter1> pickDxgiAdapter(int id) { return pickAdapter(id); }
 
     std::vector<Gpu> listD3D11Gpus()
     {

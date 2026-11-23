@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <vector>
 
 namespace rhi
@@ -30,6 +31,9 @@ namespace present
     bool backendNeedsVulkanWindow(); // platform::WindowDesc::vulkan
     // The graphics card on a PC with more than one (Graphics > Graphics card; before init): an rhi::Gpu id.
     void setGpu(int id);
+    // [Minty1804 fork] Where the renderer keeps compiled pipelines across runs (rhi::DeviceDesc::pipelineCache); before
+    // init.
+    void setPipelineCache(const std::string &path);
 
     // On the platform layer's window (platform::init first).
     bool init(int width, int height);

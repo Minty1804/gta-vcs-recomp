@@ -471,6 +471,8 @@ is listed here (the full list of candidates, done or not: [docs/FORK_IMPORTS.md]
   / public domain).
 - **F2 menu and F5 trainer in the launcher's look**: [willzmkv](https://github.com/willzmkv) (dejot), from their fork
   (commit 8a37ad6), merged onto our menu's layout.
+- **Direct3D 12 backend**: [willzmkv](https://github.com/willzmkv) (dejot), from their fork (commits ae6c99e, 28ef950,
+  8c60c8d, d9f73ed); the shader warm-up after their commit 283bb56, re-done as a pipeline cache in the backend.
 - **This README's layout** (centred header, badges, feature tables side by side, collapsed sections): after
   [willzmkv](https://github.com/willzmkv)'s (dejot) README for their fork.
 

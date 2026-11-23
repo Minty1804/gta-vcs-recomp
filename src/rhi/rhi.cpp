@@ -15,6 +15,7 @@ namespace rhi
         case Backend::Vulkan: return "Vulkan";
         case Backend::Null: return "null";
         case Backend::Metal: return "Metal";
+        case Backend::D3D12: return "D3D12";
         }
         return "?";
     }
@@ -34,6 +35,8 @@ namespace rhi
             out = Backend::Null;
         else if (std::strcmp(lower, "metal") == 0)
             out = Backend::Metal;
+        else if (std::strcmp(lower, "d3d12") == 0)
+            out = Backend::D3D12;
         else
             return false;
         return true;
@@ -51,6 +54,9 @@ namespace rhi
 #endif
 #if defined(VCS_HAVE_METAL)
         case Backend::Metal: return true;
+#endif
+#if defined(VCS_HAVE_D3D12)
+        case Backend::D3D12: return true;
 #endif
         case Backend::Null: return true;
         default: return false;
@@ -120,6 +126,9 @@ namespace rhi
 #endif
 #if defined(VCS_HAVE_METAL)
         case Backend::Metal: return createMetalDevice(desc, error);
+#endif
+#if defined(VCS_HAVE_D3D12)
+        case Backend::D3D12: return createD3D12Device(desc, error);
 #endif
         case Backend::Null: return createNullDevice(desc, error);
         default: break;

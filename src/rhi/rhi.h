@@ -1,6 +1,7 @@
 // Render hardware interface (docs/NATIVE_RENDERER.md): the small set of GPU operations the renderer needs, so the
-// renderer never sees a graphics API. One backend per API: D3D11 (rhi/d3d11, Windows), Vulkan (rhi/vulkan, Linux, and
-// Windows to compare), Metal (rhi/metal, macOS) and null (rhi/null, no GPU work). Immutable pipelines, explicit passes, copies and readbacks as
+// renderer never sees a graphics API. One backend per API: D3D11 (rhi/d3d11, Windows), D3D12 (rhi/d3d12, Windows: the
+// lower per-draw cost), Vulkan (rhi/vulkan, Linux, and Windows to compare), Metal (rhi/metal, macOS) and null (rhi/null,
+// no GPU work). Immutable pipelines, explicit passes, copies and readbacks as
 // plain operations.
 //
 // Threading: one device, used from one thread (the main thread). No API types appear in this header.
@@ -197,7 +198,7 @@ namespace rhi
         uint32_t offset = 0;
     };
 
-    // Compiled shader for this device (D3D11: DXBC from fxc; Vulkan: SPIR-V from tools/hlsl_spirv.py; Metal: MSL text
+    // Compiled shader for this device (D3D11 / D3D12: DXBC from fxc; Vulkan: SPIR-V from tools/hlsl_spirv.py; Metal: MSL text
     // from tools/hlsl_msl.py, compiled by the device).
     struct ShaderCode
     {
@@ -245,9 +246,10 @@ namespace rhi
         Vulkan,
         Null, // no GPU work: textures read back as zeros (bring-up and tests of the CPU side)
         Metal, // macOS (after Null: the values are kept in vcs.ini)
+        D3D12, // [Minty1804 fork] Windows (willzmkv's (dejot) backend; after Metal: vcs.ini keeps the others' numbers)
     };
-    const char *backendName(Backend backend);         // "D3D11", "Vulkan", "null", "Metal"
-    bool backendFromName(const char *name, Backend &out); // d3d11 | vulkan | null | metal, any case
+    const char *backendName(Backend backend);         // "D3D11", "Vulkan", "null", "Metal", "D3D12"
+    bool backendFromName(const char *name, Backend &out); // d3d11 | vulkan | null | metal | d3d12, any case
     bool backendBuilt(Backend backend);               // compiled into this build
     Backend defaultBackend();                         // D3D11 on Windows, Metal on macOS, Vulkan elsewhere
 
@@ -278,13 +280,16 @@ namespace rhi
     {
         Backend backend = defaultBackend();
         int gpu = 0; // a Gpu::id; 0 or an id no card has: the fastest (the first of listGpus)
-        void *nativeWindow = nullptr; // D3D11: the HWND
+        void *nativeWindow = nullptr; // D3D11 / D3D12: the HWND
         VulkanWindow vulkan;          // Vulkan
         void *metalLayer = nullptr;   // Metal: the window's CAMetalLayer (platform::metalLayer)
         uint32_t width = 0;
         uint32_t height = 0;
         bool debug = false;     // API validation layer (when installed)
         bool offscreen = false; // Vulkan / Metal: no swapchain, the back buffer is a texture (hidden windows: test runs)
+        // [Minty1804 fork] A file the backend keeps its compiled pipelines in across runs (D3D12: an
+        // ID3D12PipelineLibrary - the shader warm-up); empty: none.
+        std::string pipelineCache;
     };
 
     class Device
@@ -383,6 +388,7 @@ namespace rhi
     std::unique_ptr<Device> createVulkanDevice(const DeviceDesc &desc, std::string &error);
     std::unique_ptr<Device> createNullDevice(const DeviceDesc &desc, std::string &error);
     std::unique_ptr<Device> createMetalDevice(const DeviceDesc &desc, std::string &error);
+    std::unique_ptr<Device> createD3D12Device(const DeviceDesc &desc, std::string &error);
     std::vector<Gpu> listD3D11Gpus();  // listGpus() for each backend
     std::vector<Gpu> listVulkanGpus();
     std::vector<Gpu> listMetalGpus();

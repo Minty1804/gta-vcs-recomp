@@ -760,3 +760,32 @@ which is D3D11's, on Metal:
   render pass with a resolve store.
 - First numbers (M1, intro cutscene, 60 fps cap): ~1,500 draws and 28 passes a frame, 1 suspend, 60 fps held.
 
+### D3D12 backend (Windows, 2026-11-23)
+
+`src/rhi/d3d12/rhi_d3d12.cpp`, willzmkv's (dejot) backend taken at their `main` (DECISIONS.md 2026-11-23): Graphics >
+Graphics API > D3D12 or `VCS_RHI=d3d12`; D3D11 stays the default and the reference. Built as the Vulkan backend is, an
+explicit API behind the same D3D11-shaped interface, with D3D11's DXBC:
+
+- One root signature for every pipeline: b0..b3 as root constant buffer views, t0..t7 and s0..s7 as two descriptor
+  tables, copied into shader-visible heaps when the bindings change. Pipelines per (target format, depth format,
+  samples) at the first draw that needs one.
+- Dynamic buffers keep their contents on the CPU and take a slice of the frame's upload ring at their first use after
+  an update (D3D11's WRITE_DISCARD); static ones live in GPU memory. Sampled textures with first contents are placed in
+  128 MB heaps (a committed resource each was ~0.35 ms of driver time); textures made on helper threads stage through
+  64 MB upload ranges, copied by the owner's set-up commands, which run before the frame's own. Frees go to a reaper
+  thread once the GPU is done with their frame (a resource's release is ~0.25 ms in the driver).
+- The card: Graphics > Graphics card, from the D3D11 backend's DXGI list (`rhi/d3d11/dxgi_cards.h`), so both APIs mean
+  the same card by the same id. No D3D12 device: the run falls back to D3D11 (`presenter.cpp`).
+- **Pipeline cache (the shader warm-up)**: every pipeline made goes into an `ID3D12PipelineLibrary`, named by a hash of
+  its whole description (the shaders' bytes included), and `<data>/cache/d3d12_pipelines.bin` is written after 3 s with
+  nothing new and at the end (`.part`, then renamed). The next run loads each from it instead of compiling it: a cold
+  burst of 21 pipelines held a frame 188 ms (160.8 ms of compiles), the same 21 from the library took 3.4 ms. A file
+  from another driver or card is refused by D3D12 and started again. `PS2X_PIPELINE_CACHE=0`: none.
+- Not in this fork's RHI, so left out of theirs: BGRA8 / BC4 / BC5 formats and `drawInstanced`.
+- **Checked here** (2026-11-23, RX 6950 XT, `VCS_RHI=d3d12`, hidden runs): `scenes.py capture` on D3D11 and D3D12,
+  then `compare`: every scene within the run-to-run noise (flyover_road 0.02 %, gameplay_hud 0.19 %, the pause map 0 %)
+  but `loading`, whose picture the game picks at random per load (another illustration that run); the same draws,
+  vertices and game / worker / GS milliseconds in perf. `hud_check --money`, `texpack_check`, `mods_check` (a mod
+  texture over the pack and back, while the game runs), `menu_check` and `controls_check` (every F2 page in the
+  launcher's look) all pass on D3D12; the logs show `[present] D3D12` and the pipeline cache loaded again (102 KB) on
+  the second run with the same data folder.

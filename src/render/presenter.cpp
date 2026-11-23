@@ -46,6 +46,7 @@ namespace present
         std::atomic<float> g_displayAspect{4.0f / 3.0f};
         int g_backendSetting = -1; // rhi::Backend; -1: the default
         int g_gpuSetting = 0;      // an rhi::Gpu id (0: the fastest card)
+        std::string g_pipelineCache; // [Minty1804 fork] rhi::DeviceDesc::pipelineCache
 
         rhi::Backend chooseBackend()
         {
@@ -54,7 +55,7 @@ namespace present
             if (env && *env)
             {
                 if (!rhi::backendFromName(env, b))
-                    std::fprintf(stderr, "[present] VCS_RHI=%s not understood (d3d11, vulkan, metal or null)\n", env);
+                    std::fprintf(stderr, "[present] VCS_RHI=%s not understood (d3d11, d3d12, vulkan, metal or null)\n", env);
             }
             else if (g_backendSetting >= 0)
                 b = static_cast<rhi::Backend>(g_backendSetting);
@@ -95,6 +96,8 @@ namespace present
 
     void setGpu(int id) { g_gpuSetting = id; }
 
+    void setPipelineCache(const std::string &path) { g_pipelineCache = path; }
+
     int backend() { return static_cast<int>(g_device ? g_device->backend() : chooseBackend()); }
 
     bool backendNeedsVulkanWindow() { return chooseBackend() == rhi::Backend::Vulkan; }
@@ -104,6 +107,7 @@ namespace present
         rhi::DeviceDesc desc;
         desc.backend = chooseBackend();
         desc.gpu = g_gpuSetting;
+        desc.pipelineCache = g_pipelineCache;
         desc.nativeWindow = platform::nativeWindow();
         desc.vulkan.instanceExtensions = platform::vulkanInstanceExtensions;
         desc.vulkan.createSurface = platform::vulkanCreateSurface;
@@ -119,6 +123,13 @@ namespace present
         desc.debug = debug && *debug && *debug != '0';
         std::string error;
         g_device = rhi::createDevice(desc, error);
+        if (!g_device && desc.backend == rhi::Backend::D3D12 && rhi::backendBuilt(rhi::Backend::D3D11))
+        {
+            // no D3D12 device (an old driver, a card without it): D3D11, the reference, for this run (willzmkv's d9f73ed)
+            std::fprintf(stderr, "[present] D3D12: %s - D3D11 instead\n", error.c_str());
+            desc.backend = rhi::Backend::D3D11;
+            g_device = rhi::createDevice(desc, error);
+        }
         if (!g_device)
         {
             std::fprintf(stderr, "[present] %s: %s\n", rhi::backendName(desc.backend), error.c_str());
