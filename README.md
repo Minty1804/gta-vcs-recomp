@@ -1,25 +1,187 @@
-# GTA: Vice City Stories — Native PC port (PS2 static recompilation)
+<div align="center">
 
-A native **Windows and Linux** port of **Grand Theft Auto: Vice City Stories** (PS2, USA, SLUS-21590), made by
-recompiling the game's PS2 executable into C++. Both are built from the same source and run natively: Direct3D 11 on
-Windows, Vulkan on Linux.
+# GTA: Vice City Stories — Native PC port
 
-**This repository contains no game code or game data.** You need your own copy of the game as an `.iso`.
-The build reads the executable from your disc, and the finished game reads everything else from it while it runs.
+**The PS2 game (SLUS-21590, USA) statically recompiled to C++ and drawn natively — with a set of optional
+enhancements on top.**
 
-Status: in development. See [docs/PROGRESS.md](docs/PROGRESS.md) for what works, and [docs/LINUX.md](docs/LINUX.md)
-for the Linux build in detail.
+[![Platforms](https://img.shields.io/badge/Windows_10%2F11_%7C_Linux_%7C_macOS_(Apple_Silicon)-00d4ff?style=for-the-badge&labelColor=181425)](#getting-it)
+[![Renderer](https://img.shields.io/badge/D3D11_%7C_Vulkan_%7C_Metal-a855f7?style=for-the-badge&labelColor=181425)](docs/NATIVE_RENDERER.md)
+[![Branch](https://img.shields.io/badge/branch-mod--reload--walk--camera-ff4fa3?style=for-the-badge&labelColor=181425&logo=git&logoColor=white)](https://github.com/Minty1804/gta-vcs-recomp/tree/mod-reload-walk-camera)
+[![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-f59e0b?style=for-the-badge&labelColor=181425)](LICENSE)
+
+[Getting it](#getting-it) ·
+[What this fork adds](#what-this-fork-adds) ·
+[Port features](#port-features) ·
+[Keys](#in-game-keys) ·
+[Problems](#problems) ·
+[For developers](#for-developers) ·
+[Credits](#credits)
+
+</div>
+
+---
+
+This is a fork of [gothamor/gta-vcs-recomp](https://github.com/gothamor/gta-vcs-recomp): a native port of
+**Grand Theft Auto: Vice City Stories**, made by recompiling the game's PS2 executable into C++. The game's own code runs
+on the PC — not in an emulator — and the 3D world, characters, vehicles, HUD and menus are drawn by a native renderer:
+Direct3D 11 on Windows, Vulkan on Linux, Metal on macOS. Sound and streaming run on the PC; the movies are decoded with
+FFmpeg.
+
+The fork keeps upstream as it is and adds the changes below: better graphics, a further detailed city, PC-style
+controls and combat, a GPS route and a quick save, and a faster renderer. **The original is always the baseline**: what
+changes how the game looks or plays is a setting in the menu (F2) with the PS2's behaviour as one of its choices, and
+only a few plain fixes nobody would turn off are always on.
+
+> [!IMPORTANT]
+> **This repository contains no game code or game data.** You need your own copy of the game: the **USA release
+> (SLUS-21590)** as an `.iso`. The build reads the executable from your disc and the finished game reads everything else
+> from it while it runs.
+
+> [!NOTE]
+> In development. What works: [docs/PROGRESS.md](docs/PROGRESS.md). The newest changes are built and tested on
+> Windows; Linux ([docs/LINUX.md](docs/LINUX.md)) and macOS ([docs/MACOS.md](docs/MACOS.md)) build from the same source
+> but haven't been re-tested with every recent change.
+
+---
+
+## Getting it
+
+This fork makes **no releases**: you build the branch from git on your own PC. Upstream's release zips and the
+launcher's *Update* button install upstream's version, which doesn't have these changes.
+
+**1. Install Python 3 and Git** (once). On Windows: [python.org](https://www.python.org/downloads/) (tick *Add
+python.exe to PATH*) and [git-scm.com](https://git-scm.com/download/win). That is all: the build downloads its own
+compiler ([llvm-mingw](https://github.com/mstorsjo/llvm-mingw), ~190 MB once) — no Visual Studio needed. On Linux and
+macOS see *The build tools by hand* just below.
+
+**2. Get the source** into a short, local folder (like `C:\Games\vcs-recomp`; not Program Files, not a OneDrive folder
+such as Desktop or Documents — the build writes thousands of files):
+
+```bash
+git clone -b mod-reload-walk-camera https://github.com/Minty1804/gta-vcs-recomp.git vcs-recomp
+cd vcs-recomp
+```
+
+**3. Build and play**, either way:
+
+| With the launcher (easiest) | By hand |
+|---|---|
+| `python tools/build.py --launcher` builds `VCSLauncher.exe` in the folder (no disc needed, ~20 s). Start it: it walks you through **Folder**, **Disc** (finds or asks for your `.iso`, checks it's the USA release), **Build tools** and **Build**, then shows **Play**. It also backs up your saves and zips logs for bug reports. | Copy your `.iso` into the folder, then `python tools/build.py --recompile` (Linux / macOS: `python3`). It ends with `[build] ok: build\vcs.exe (optimised: ThinLTO)`. Start `build\vcs.exe` (`build/vcs` on Linux). |
+
+The first build turns the game into about 200 MB of C++ and compiles it: 15 minutes on a 4-core laptop, up to an hour
+on a slow PC. Saves live in `%LOCALAPPDATA%\VCSRecomp` (Windows), `~/.local/share/VCSRecomp` (Linux) or
+`~/Library/Application Support/VCSRecomp` (macOS), and are zipped into `backups/` before every change.
+
+**Updating**: `git pull`, then `python tools/build.py --recompile-if-needed` (it recompiles only when the recompiler
+or its config changed). To follow upstream's newest work on top of this fork's changes:
+`git fetch upstream && git rebase upstream/main` (add `upstream` once with
+`git remote add upstream https://github.com/gothamor/gta-vcs-recomp.git`).
+
+<details>
+<summary><b>The build tools by hand: Windows, Linux and macOS</b></summary>
+
+<br />
+
+**Windows.** Python 3 and Git are all. CMake and Ninja are found wherever they are (Visual Studio's, the CMake
+installer, winget, scoop, Chocolatey, pip...); when none is new enough (CMake 3.21, Ninja 1.10) the build downloads
+them too (~55 MB). With Visual Studio 2022 or newer (*Desktop development with C++* and *C++ Clang tools for
+Windows*), `set VCS_TOOLCHAIN=msvc` builds with its clang-cl instead: the game is the same and as fast.
+
+**Linux.** Python 3 and Git, then in the source folder
+
+```bash
+python3 tools/build.py --check-deps
+```
+
+lists what is missing and the command that installs it (`apt`, `dnf` or `pacman`): clang 19 or newer with lld, glslang,
+and the FFmpeg and SDL3 development packages. On Ubuntu 24.04 / Linux Mint 22 that is
+
+```bash
+sudo apt install clang-20 lld-20 llvm-20 cmake ninja-build pkg-config git glslang-tools \
+    libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libswresample-dev \
+    libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxss-dev \
+    libwayland-dev wayland-protocols libxkbcommon-dev libdecor-0-dev \
+    libpipewire-0.3-dev libpulse-dev libasound2-dev libudev-dev libdbus-1-dev
+```
+
+You also need a graphics driver with Vulkan 1.3 (Mesa or NVIDIA's; `vulkaninfo --summary` shows it).
+
+**macOS** (Apple Silicon, macOS 13 or newer). Apple's free Command Line Tools (`xcode-select --install`) and Python 3;
+`python3 tools/build.py --check-deps` says what is missing. Details: [docs/MACOS.md](docs/MACOS.md).
+
+Optional check that your disc is the right one:
+
+```bash
+python tools/vcs_disc.py info "Grand Theft Auto - Vice City Stories (USA).iso"
+```
+
+</details>
+
+---
 
 ## What this fork adds
 
-This is a fork of [gothamor/gta-vcs-recomp](https://github.com/gothamor/gta-vcs-recomp): the original port plus the
-changes below, on the branch
-[`mod-reload-walk-camera`](https://github.com/Minty1804/gta-vcs-recomp/tree/mod-reload-walk-camera). Everything else
-is the same as upstream. A change that alters how the game looks or plays is a setting in the menu (F2), with the
-original as one of its choices; a few plain fixes are always on. Who made what: [Credits](#credits).
-
 The settings menu (F2) is laid out by what a setting does: **Display**, **Graphics**, **World**, **Game**, **Audio**,
-**Keyboard**, **Gamepad**, **Advanced**. The paths below are written as *Page > Section > Setting*.
+**Keyboard**, **Gamepad**, **Advanced**. Paths below are *Page > Section > Setting*. Who made what: [Credits](#credits).
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+### Graphics
+
+- **HD texture packs** made for PCSX2, as they are: PNG and DDS (BC1 / BC3 / BC7, sent to the card compressed).
+- **Fog distance and fog start**: the city further, the world's edge still hidden.
+- **Exposure**: shadows open up, white stays white, the HUD keeps its colours.
+- **Sharp trails**: the blurred colour pass at full resolution.
+- A smooth sky at dusk, without colour bands.
+
+</td>
+<td width="50%" valign="top">
+
+### World and draw distance
+
+- **Detailed city distance**: the detailed buildings of neighbouring cells instead of the low-detail city, in memory
+  beyond the PS2's 32 MB.
+- **Pedestrian and car distance** up to twice as far, parked cars too; cars keep their detail further.
+- **Distant lights**: ~4,400 street lights glowing over the city at night (Project2DFX's table).
+- **Streaming memory** up to 30 MB: more different cars in traffic.
+- Far palms solid, far fences see-through, the city in view from interiors.
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+### Controls and combat
+
+- **The PC games' keyboard scheme**: an action per key by situation, Vice City's default keys, a menu by action as
+  in San Andreas.
+- **Button prompts** of the device you use, with the key that works there.
+- **R reloads**, **one press of F** gets you out of a moving car, a diagonal walk, a mouse camera that stays put.
+- **Free aim from the driver's seat** with a pistol or SMG; the wheel switches guns.
+- **Headshots always kill**, faster aiming, a smaller or a true-spread aiming circle.
+
+</td>
+<td width="50%" valign="top">
+
+### Cutscenes, map, saving and speed
+
+- **Cutscenes** in the PS2's framing in widescreen, the sky fading in with the scene.
+- **GPS route**: a line along the roads to the mission's target and to your own map target.
+- **Quick save**: F12 opens the game's save menu anywhere outside a mission, and loading puts you back there.
+- **A faster renderer**: half the draw calls, state sent only when it changes, runtime speed-ups from the LCS port.
+- The HUD no longer flickers in the rain or throws a digit for a frame.
+
+</td>
+</tr>
+</table>
+
+<details>
+<summary><b>Every change in detail: upstream vs this fork, where the setting is and its default</b></summary>
+
+<br />
 
 ### Graphics
 
@@ -94,244 +256,103 @@ PCSX2's region (`-r<w>x<h>-`) and mip-level (`-mip<n>`) file names (skipped and 
   helicopter's and hovercraft's dust and glow).
 - Runtime speed-ups (VIF1 unpacking, the GS stage's queue and lock, palette hashing, upload bookkeeping) and a GS crash
   fix from the LCS port.
-- The HUD: 2D drawn after the HUD no longer drops it (the flicker in the rain), HUD glyphs keep their corners.
+- The HUD: 2D drawn after the HUD no longer drops it (the flicker in the rain), HUD glyphs keep their corners, no money
+  digit thrown to the side for a frame.
 - Texture packs: no stutter when an HD image comes back into view (each keeps its GPU texture).
 
-### Getting it
+</details>
 
-Build this branch as in *Install by hand* below. In step 2, clone it with:
-```bash
-git clone -b mod-reload-walk-camera https://github.com/Minty1804/gta-vcs-recomp.git vcs-recomp
-```
-The launcher's **Update** button installs upstream's release, which doesn't have these changes. Update with git
-instead:
-```bash
-git fetch upstream && git rebase upstream/main
-```
-Then `python tools/build.py`. `upstream` is `https://github.com/gothamor/gta-vcs-recomp.git`; add it once with
-`git remote add upstream <URL>`. The changes are kept separate (mostly their own files under `src/game/`) so that they
-move to new upstream versions easily. Details: [docs/game-internals.md](docs/game-internals.md),
-[docs/DECISIONS.md](docs/DECISIONS.md), and what other forks have that could be brought in:
-[docs/FORK_IMPORTS.md](docs/FORK_IMPORTS.md).
+The changes are kept apart from upstream's code (mostly their own files under `src/game/`) so they move to new upstream
+versions easily. How they work: [docs/game-internals.md](docs/game-internals.md), [docs/DECISIONS.md](docs/DECISIONS.md).
+What other forks have, what was taken and what could come next: [docs/FORK_IMPORTS.md](docs/FORK_IMPORTS.md).
 
-## Install on Windows: the launcher (easiest)
+---
 
-1. Download the newest `VCS-Recomp-<version>-windows.zip` from the [Releases](../../releases) page and extract it
-   somewhere short and local, like `C:\Games\VCS` (not Program Files, not a OneDrive-synced folder such as Desktop or
-   Documents: the build writes thousands of files).
-2. Start **`VCSLauncher.exe`** in that folder. It walks you through four steps, one at a time, then shows a big
-   **Play** button:
-   - **Folder**: the game is built in `build\` next to the launcher, or in a folder you choose (another drive with
-     more room, say): *Choose another folder* on this step.
-   - **Disc**: it looks for your `.iso` in Downloads, Desktop, Documents and its own folder; otherwise choose it (or
-     drag it onto the window, or copy your disc from a DVD drive). It checks that it is the USA release.
-   - **Build tools**: the game is compiled on your PC with Microsoft's free C++ tools. If they are missing,
-     *Install build tools* runs Microsoft's installer with the right options (about 6 GB; Windows asks for permission).
-   - **Build**: recompiles the game from your disc and compiles it, with a progress bar - 20 to 60 minutes the first
-     time, a few minutes after an update. Nothing is downloaded during the build: the release brings Python and the
-     libraries.
-   - **Play**.
+## Port features
 
-The launcher also backs up and restores your saves, makes a desktop shortcut, checks for a new release (only when you
-ask, or at start if you turn that on in *Settings*), and zips the logs into a report for bug reports. Windows may warn
-that the launcher is from an unknown publisher (it isn't signed): *More info > Run anyway*. How it works:
-[docs/LAUNCHER.md](docs/LAUNCHER.md). Everything it does is a script in `tools/` you can also run yourself (below).
-If the *Pricedown* font (GTA's lettering, free for personal desktop use from Typodermic) is installed on your PC, the
-launcher uses it for its title and Play button; its licence doesn't allow including it, so it isn't.
+What the port itself does (upstream's work). The defaults are the PS2 game as it was, except the frame rate: 60 fps
+with frame-rate independent timing. *Display > Presets* has **Balanced** (widescreen, 60 fps, twice the original
+resolution) and **Authentic (PS2)** to go back to the PS2's 30 fps.
 
-## Install on Linux: the launcher (easiest)
+<table>
+<tr>
+<td width="50%" valign="top">
 
-1. Download the newest `VCS-Recomp-<version>-x86_64.AppImage` from the [Releases](../../releases) page. It runs on
-   any 64-bit desktop with glibc 2.35 or newer: Ubuntu 22.04, Debian 12, Linux Mint 21, Fedora, Arch and later, on
-   X11 or Wayland. It needs a Vulkan driver (Mesa or NVIDIA's) and `python3`, which every desktop has.
-2. Make it executable and start it: in the file manager, *Properties > Permissions > Allow executing as a program*, or
-   `chmod +x VCS-Recomp-*.AppImage && ./VCS-Recomp-*.AppImage`. The first start puts the game's files (the source,
-   the scripts, the libraries) in `~/.local/share/VCSRecomp/install`, where the game is built, then walks you through
-   the same steps as on Windows:
-   - **Folder**: where the game is built (another drive with more room: *Choose another folder*).
-   - **Disc**: your `.iso` from Downloads, Desktop or Documents, chosen, or dropped onto the window.
-   - **Build tools**: the compiler (clang 19 or newer) and the libraries the build needs, from your distribution.
-     *Install packages* asks for your password and installs them; *Install in a terminal* shows the command instead.
-     On Ubuntu 22.04 and Debian 12, whose clang is older, it adds LLVM's own repository ([apt.llvm.org](https://apt.llvm.org)) first.
-   - **Build**, then **Play**.
+### Frame rate
 
-The AppImage is the whole launcher: *Add a shortcut to the desktop* in *Settings* puts it in your applications menu
-too. Updates replace the AppImage itself (*Settings > Check now*); the next start puts the new files in place and only
-what changed is rebuilt. Without FUSE (some containers and minimal systems), start it with
-`--appimage-extract-and-run`.
+- 60, 100, 120, 144, 165, 240 fps, your display's refresh rate or uncapped, with game time following real time — or
+  the original timing at 30 fps.
+- What the PS2 game counted per frame (vehicle physics, mission meters and timers, particles, effects) put back on real
+  time, so it keeps its speed at high frame rates.
+- Well past 100 fps nearly everywhere at the original resolution; a locked 60 on a 2015 laptop with integrated
+  graphics ([docs/PERFORMANCE.md](docs/PERFORMANCE.md)).
+- Low input delay, vsync on or off, a tearing mode for G-Sync / FreeSync.
 
-## Install on macOS: the launcher (easiest)
+</td>
+<td width="50%" valign="top">
 
-1. Download the newest `VCS-Recomp-<version>-macos-arm64.dmg` from the [Releases](../../releases) page. It needs a Mac
-   with Apple Silicon (M1 or later) and macOS 13 or newer.
-2. Open it and drag **VCSLauncher** onto the **Applications** folder next to it, then eject the disk image.
-3. Start it from Applications. The launcher isn't signed by an Apple developer yet, so the first time macOS refuses
-   it: open *System Settings > Privacy & Security* and choose *Open Anyway* (once). The first start puts the game's
-   files in `~/Library/Application Support/VCSRecomp/install`, where the game is built, then walks you through the
-   same steps as on Windows; the build tools are Apple's free Command Line Tools (*Install the Command Line Tools*
-   runs macOS' own installer).
+### Picture
 
-Updates (*Settings > Check now*) replace the app in Applications; that is also why it has to be there, not started
-from the disk image or Downloads.
-
-## Install by hand (Windows and Linux)
-
-The release zip contains the full source: the steps below work in it too, and in a git clone.
-
-### 1. Install the tools (once)
-
-**Windows**
-- **Python 3**: [python.org](https://www.python.org/downloads/). During setup, tick *Add python.exe to PATH*.
-- **Git**: [git-scm.com](https://git-scm.com/download/win) (the default options are fine). The first build uses it
-  to download the libraries the game needs (SDL3, FFmpeg, ...), so it also needs an internet connection.
-
-That's all: there's no compiler to install. The first build downloads [llvm-mingw](https://github.com/mstorsjo/llvm-mingw)
-(clang, lld, libc++ and the Windows headers in one package; ~190 MB once, into `build\build-tools`). CMake and Ninja
-are found wherever they are (Visual Studio's own, the CMake installer, winget, scoop, Chocolatey, pip, CLion...); when
-none is new enough (CMake 3.21, Ninja 1.10), the build downloads them too (~55 MB).
-
-With Visual Studio 2022 or newer installed (*Desktop development with C++* and *C++ Clang tools for Windows*),
-`set VCS_TOOLCHAIN=msvc` before building uses its clang-cl instead. The game is the same and runs as fast
-(docs/PERFORMANCE.md 29).
-
-**Linux**
-- Python 3 and Git (most distributions have both), then let the build list the rest: in the source folder (step 2),
-  ```bash
-  python3 tools/build.py --check-deps
-  ```
-  prints what is missing and the command that installs it (`apt`, `dnf` or `pacman`): clang 19 or newer with lld,
-  glslang, and the FFmpeg and SDL3 development packages (CMake and Ninja too if you like; without them, or with ones
-  that are too old, the build downloads its own). On Ubuntu 24.04 / Linux Mint 22 that is
-  ```bash
-  sudo apt install clang-20 lld-20 llvm-20 cmake ninja-build pkg-config git glslang-tools \
-      libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libswresample-dev \
-      libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxss-dev \
-      libwayland-dev wayland-protocols libxkbcommon-dev libdecor-0-dev \
-      libpipewire-0.3-dev libpulse-dev libasound2-dev libudev-dev libdbus-1-dev
-  ```
-- A graphics driver with Vulkan 1.3: Mesa (AMD, Intel) or NVIDIA's own. `vulkaninfo --summary` shows it.
-
-### 2. Get the source and your disc
-
-1. Get the source, e.g. into `C:\Games\vcs-recomp` (Windows) or `~/games/vcs-recomp` (Linux):
-   ```bash
-   git clone <this repository's URL> vcs-recomp
-   ```
-   (*Code > Download ZIP* on GitHub works too.)
-2. Copy your disc image into that folder. It must be the USA release, and its file name must contain
-   `Vice City Stories`, like the usual `Grand Theft Auto - Vice City Stories (USA).iso`.
-
-Optional check that the disc is the right one:
-```bash
-python tools/vcs_disc.py info "Grand Theft Auto - Vice City Stories (USA).iso"
-```
-
-### 3. Build
-
-Open a terminal in the folder (Windows Explorer: right-click the folder > *Open in Terminal*) and run:
-```bash
-python tools/build.py --recompile        # Windows
-python3 tools/build.py --recompile       # Linux
-```
-This recompiles the game from your disc and builds it, optimised. The first time takes a while: the game becomes
-about 200 MB of C++ to compile (about 15 minutes on a 4-core laptop). It ends with:
-```
-[build] ok: build\vcs.exe (optimised: ThinLTO)        (Linux: build/vcs)
-```
-If your `.iso` is somewhere else, give its path: `python tools/build.py --recompile "D:\path\to\your.iso"`.
-
-### 4. Play
-
-Start `build\vcs.exe` on Windows, `build/vcs` on Linux (a desktop shortcut works well). The build already told it
-where your disc is.
-
-- **F2** opens the settings: presets, resolution, widescreen, frame rate, vsync, sound, and every key, mouse and
-  gamepad binding. The defaults match the PS2 except the frame rate (60 fps, frame-rate independent); every other
-  improvement is an option you turn on (Display > Presets has quick starting points). Settings are
-  saved in `vcs.ini` next to the game.
-- **Alt+Enter** switches between full screen and the window.
-- **F5** opens the trainer ([docs/TRAINER.md](docs/TRAINER.md)).
-- **F8** saves a screenshot to the `screenshots` folder next to the game.
-- Keyboard, mouse and gamepads (Xbox, PlayStation, Switch Pro, ...) all work: [docs/CONTROLS.md](docs/CONTROLS.md).
-- Saves (the memory card) live in `%LOCALAPPDATA%\VCSRecomp` on Windows and `~/.local/share/VCSRecomp` on Linux.
-
-## Features
-
-The defaults are the PS2 game as it was, except the frame rate: 60 fps with frame-rate independent timing. Every
-other improvement below is an option in the settings menu (F2), and *Authentic (PS2)* goes back to the PS2's 30 fps.
-*Display > Presets* has **Balanced** (widescreen, 60 fps, twice the original resolution) and **Authentic (PS2)** to
-go back.
-
-**Runs natively, on Windows and Linux.** The game's own code, recompiled to C++ and running on the PC, not in an
-emulator. The 3D world, characters, vehicles, HUD and menus are drawn by a native renderer - Direct3D 11 on Windows,
-Vulkan on Linux -, sound and streaming run on the PC, and the movies are decoded with FFmpeg.
-
-**Frame rate**
-- Frame-rate independent timing: 60, 100, 120, 144, 165, 240 fps, your display's refresh rate or uncapped (up to
-  240), with game time following real time - 60 by default. Or the original timing at 30 fps, or 60.
-- Things the PS2 game counted per frame (vehicle physics, mission meters and timers) put back on real time, so they
-  keep their speed at high frame rates. Some behaviour at high frame rates is still being fixed
-  ([docs/PROGRESS.md](docs/PROGRESS.md)).
-- Fast: well past 100 fps nearly everywhere at the original resolution (over 200 in most of the city on an
-  i7-7700K + GTX 1080 Ti), and a locked 60 on a 2015 laptop with integrated graphics (Linux, Intel HD 520;
-  [docs/PERFORMANCE.md](docs/PERFORMANCE.md)).
-- Low input delay with frame-rate independent timing: each frame starts on fresh input just in time to be shown.
-- Vertical sync on or off, and a tearing mode for G-Sync / FreeSync monitors.
-- Frame rate counter, and a performance overlay (F3) with CSV recording (F4).
-
-**Widescreen and ultrawide**
-- Hor+ widescreen: 16:10, 16:9, 21:9, 32:9, or *Match window* for any shape between 4:3 and 32:9 (3440x1440 and
-  other monitors that are not exactly 21:9). You see more to the sides; nothing is cropped or stretched.
-- The HUD kept at 4:3 in the middle, moved to the screen edges (keeping its shape), or stretched.
-
-**Image quality**
-- Internal resolution from 1x (640x448) up to 8x, or the window's own resolution, with the effects keeping their
-  original look.
-- Anti-aliasing (MSAA 2x / 4x / 8x) and anisotropic texture filtering (up to 16x).
+- Hor+ widescreen: 16:10, 16:9, 21:9, 32:9 or *Match window* for any shape — more to the sides, nothing cropped or
+  stretched. The HUD at 4:3 in the middle, at the screen edges, or stretched.
+- Internal resolution 1x (640x448) to 8x, or the window's own; the effects keep their original look.
+- MSAA 2x / 4x / 8x, anisotropic filtering up to 16x.
 - Windowed or borderless full screen (Alt+Enter).
 
-**Controls**
-- Keyboard, mouse and gamepads (Xbox, DualShock / DualSense, Switch Pro and anything else SDL3 knows), mixed freely.
-- Mouse look on foot, as in a PC game (the mouse turns the camera itself), with sensitivity and inversion; right click
-  locks on.
-- Driving on W / S / Space (accelerate, brake / reverse, handbrake), keys that do something else on foot.
-- Every key, mouse button and gamepad button rebindable, with two keys per control and a *Walk* key for walking speed
-  on the keyboard.
-- Stick deadzones, camera speed, trigger press point, swapped sticks, inverted camera axes.
-- DualShock 2 rumble on your gamepad, from 0% to 200%.
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
 
-**Sound**
-- Master, music, sound effects and movie volume; stereo, mono or swapped speakers.
-- Keep running, mute or pause when the game is in the background.
+### Controls and sound
 
-**Built-in trainer (F5)**, a list menu in the style of RDR2's Native Trainer ([docs/TRAINER.md](docs/TRAINER.md)):
-- Player: god mode, heal, never wanted, set the wanted level, money, infinite sprint, police / everyone ignore you.
-- Weapons: any weapon, loadouts, unlimited ammo, no reload, fast reload.
-- Vehicles: spawn any of the 110 vehicles (cars, bikes, boats, helicopters, planes), invincible, repair, flip,
-  boost, random paint.
-- Teleport to every district, save and return to a position.
-- Start any of the 59 story missions or a side job (Paramedic, Vigilante, Fire Truck, Air Rescue, Taxi).
-- World: time of day, freeze time, weather, game speed 25% to 200%.
-- Works through the game's own script commands, and nothing of it is ever saved: every start is the original game.
+- Keyboard, mouse and gamepads (Xbox, DualShock / DualSense, Switch Pro and anything SDL3 knows), mixed freely
+  ([docs/CONTROLS.md](docs/CONTROLS.md)).
+- Mouse look on foot as in a PC game; every key and button rebindable, two keys per control; deadzones, camera speed,
+  inverted axes; DualShock 2 rumble on your gamepad.
+- Master, music, effects and movie volume; stereo, mono or swapped speakers; keep running, mute or pause in the
+  background.
 
-**Also**
-- Skip the intro movies (off by default, as on the PS2).
-- Saves on a memory card (`%LOCALAPPDATA%\VCSRecomp` on Windows, `~/.local/share/VCSRecomp` on Linux), written and
-  read by the game's own save code.
-- Every setting kept in `vcs.ini` next to the game.
+</td>
+<td width="50%" valign="top">
 
-The fork's own additions are listed in [What this fork adds](#what-this-fork-adds).
+### Trainer (F5) and more
 
-## Updating
+- A list menu in the style of RDR2's Native Trainer ([docs/TRAINER.md](docs/TRAINER.md)): god mode, wanted level,
+  money, weapons, any of the 110 vehicles, teleports, any of the 59 story missions or a side job, time, weather, game
+  speed — through the game's own script commands, never saved.
+- Saves written and read by the game's own save code; every setting kept in `vcs.ini` next to the game.
+- Skip the intro movies (off by default).
 
-- **A release** (the launcher): *Check for updates*, then *Update now*: it puts the new release in place (keeping
-  your built game, settings and saves) and the next *Update the build* compiles only what changed. By hand:
-  `python tools/update.py check` / `python tools/update.py apply`. On Linux the AppImage file is replaced; start it
-  again and it puts the new files in place.
-- **A git clone**: `git pull`, then build again: `python tools/build.py --recompile-if-needed` recompiles only when
-  the recompiler or its config changed.
+</td>
+</tr>
+</table>
+
+---
+
+## In-game keys
+
+| Key | What |
+|---|---|
+| **F2** *(or Back + Start)* | Settings menu — saved in `vcs.ini` next to the game |
+| **F3** | Performance overlay and the game's state (position, vehicle, camera, clock, scripts) |
+| **F4** | Record one CSV row per frame (`python tools/perf_report.py <file>` sums it up) |
+| **F5** *(or Back + RB)* | Trainer |
+| **F6** *(or Back + LB)* | Free camera |
+| **F8** | Screenshot to the `screenshots` folder next to the game |
+| **F12** | Quick save, when turned on in *Game > Map and saving* |
+| **Alt + Enter** | Full screen / window |
+
+Every shortcut can be moved in *Keyboard > Shortcuts*; the controls themselves: [docs/CONTROLS.md](docs/CONTROLS.md).
+
+---
 
 ## Problems
+
+<details>
+<summary><b>What you see, and what to do</b></summary>
+
+<br />
 
 | What you see | What to do |
 |---|---|
@@ -343,6 +364,7 @@ The fork's own additions are listed in [What this fork adds](#what-this-fork-add
 | CMake configure fails while downloading | Check the internet connection and that `git --version` works in a new terminal. |
 | `CMake 3.21 or newer not found, and downloading it failed` | Check the internet connection, or install CMake yourself ([cmake.org](https://cmake.org/download), or Visual Studio Installer, *Modify*, **C++ CMake tools for Windows**). `VCS_CMAKE` / `VCS_NINJA` set to a full path choose a particular one. |
 | A step fails within seconds, its log empty or ending in `exit code 0xC000001D (illegal instruction ...)` | The build was made for a newer processor than this PC's. Build again: the build follows the PC's processor (AVX2, AVX or SSE4; `python tools/doctor.py` shows which). Processors without SSE4.2 (before 2008) can't run the game. |
+| `ninja: error: manifest 'build.ninja' still dirty` | Files dated in the future (a zip from another time zone, or a wrong clock): set the clock and build again. |
 | `vcs.exe` does nothing when started | It can't find the disc: put `iso=C:\path\to\your.iso` in `vcs.ini` next to `vcs.exe`. |
 | Linux: `clang 19 or newer not found` / `missing build dependencies` | Install what `python3 tools/build.py --check-deps` lists. |
 | Linux: `cannot find -lstdc++` | Install `libstdc++-<N>-dev` for your newest GCC (`build.py` works around it when an older one has it). |
@@ -352,7 +374,16 @@ The build's full output is in `build/build.log` (`build/configure.log` for the c
 `python tools/doctor.py` checks everything at once (folder, compiler, disc, whether the game is current) and says what
 to do next; `python tools/report.py` zips the logs for a bug report (no game files, no saves).
 
+</details>
+
+---
+
 ## For developers
+
+<details>
+<summary><b>Commands and the repository's layout</b></summary>
+
+<br />
 
 | Command | What |
 |---|---|
@@ -366,14 +397,13 @@ to do next; `python tools/report.py` zips the logs for a bug report (no game fil
 | `python tools/doctor.py` | everything checked: folder, memory, compiler, disc, build state, the next step (`--json` for the launcher) |
 | `python tools/build_dir.py [set PATH \| reset]` | build in another folder (another drive...) instead of `build\`; every tool follows it |
 | `python tools/backup.py create\|list\|restore` | the memory card backed up / restored (order and times kept) |
-| `python tools/release.py [--worktree]` | the Windows release zip (source, launcher, embeddable Python, `deps/`), self-tested; refuses game files, and uncommitted changes without `--worktree`. On Linux, `--platform linux` makes the AppImage |
 | `python tools/deps.py fetch` | the libraries the build downloads, into `deps/` (offline builds) |
 | `python tools/run.py 0` | run the game with its output logged to `build/run/run.log` (`run.py 60 name`: stop after 60 s, log to `name.log`) |
 | `python tools/gamectl.py` | control a running game: screenshots, key presses, perf numbers, quit |
 | `python tools/ghidra_analyze.py` | redo the Ghidra analysis (Ghidra 12 + JDK 21) |
 
-All tools are Python 3 scripts using only the standard library. [AGENTS.md](AGENTS.md) is the guide to working
-on the code; the documentation is in [docs/](docs).
+All tools are Python 3 scripts using only the standard library. [AGENTS.md](AGENTS.md) is the guide to working on the
+code (and the full list of test tools); the documentation is in [docs/](docs).
 
 | Path | What |
 |---|---|
@@ -381,8 +411,12 @@ on the code; the documentation is in [docs/](docs).
 | `game/vcs` | Recompiler config and function map for SLUS_215.90 |
 | `src` | Game-specific code (overrides, renderer, settings, platform) |
 | `tools` | Disc reader, build pipeline, launcher back end, test and analysis scripts |
-| `launcher` | The launcher (Windows and Linux, its own renderer and UI; runs the tools) |
+| `launcher` | The launcher (Windows, Linux and macOS, its own renderer and UI; runs the tools) |
 | `docs` | How the game works, decisions, progress |
+
+</details>
+
+---
 
 ## Credits
 
@@ -420,8 +454,10 @@ is listed here (the full list of candidates, done or not: [docs/FORK_IMPORTS.md]
 - **Runtime speed-ups** (VIF1 unpacking, the GS stage's queue and lock, CLUT hashing, upload bookkeeping) and a GS
   crash fix: [batinium](https://github.com/batinium), from
   [gta-stories-recompiled](https://github.com/batinium/gta-stories-recompiled) (commit 1ec8297).
+- **This README's layout** (centred header, badges, feature tables side by side, collapsed sections): after
+  [willzmkv](https://github.com/willzmkv)'s (dejot) README for their fork.
 
 ## License
 
-GPL-3.0 (inherited from PS2Recomp). Grand Theft Auto and all game content are property of Rockstar Games /
-Take-Two Interactive.
+GPL-3.0 (inherited from PS2Recomp). Grand Theft Auto, Vice City Stories and all game content are trademarks and
+property of Rockstar Games / Take-Two Interactive. This project contains no game files.
