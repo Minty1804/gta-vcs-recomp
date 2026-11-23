@@ -355,6 +355,7 @@ namespace rhi
                 DXGI_ADAPTER_DESC adapterDesc{};
                 adapter->GetDesc(&adapterDesc);
                 m_adapterName = narrow(adapterDesc.Description);
+                m_videoMemory = adapterDesc.DedicatedVideoMemory; // [Minty1804 fork] rhi::Device::videoMemory
                 if (FAILED(adapter->GetParent(IID_PPV_ARGS(&factory))))
                 {
                     error = "no IDXGIFactory2";
@@ -551,6 +552,7 @@ namespace rhi
             bool freeThreadedCreation() const override { return true; } // only m_device: no immediate-context calls there
 
             bool blockCompression() const override { return true; } // feature level 11: BC1-BC7
+            uint64_t videoMemory() const override { return m_videoMemory; }
 
             std::unique_ptr<Texture> createTextureLevels(const TextureDesc &desc, const void *const *levels, uint32_t levelCount) override
             {
@@ -1119,6 +1121,7 @@ namespace rhi
             UINT m_swapFlags = 0;
             uint32_t m_width = 0, m_height = 0;
             std::string m_adapterName;
+            uint64_t m_videoMemory = 0;
             D3DPipeline *m_pipeline = nullptr;
             float m_blendConstant[4] = {0, 0, 0, 0};
             // The state last given to the context (after willzmkv's (dejot) "D3D11: state reaches the driver only when it

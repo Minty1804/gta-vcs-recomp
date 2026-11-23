@@ -317,6 +317,10 @@ namespace rhi
         // [Minty1804 fork] Whether block-compressed textures can be made (D3D11: always, feature level 11; Vulkan:
         // textureCompressionBC; Metal: supportsBCTextureCompression).
         virtual bool blockCompression() const { return false; }
+        // [Minty1804 fork] The card's own memory in bytes, 0 when unknown (D3D11: DXGI's dedicated video memory; Vulkan:
+        // the largest device-local heap; Metal: recommendedMaxWorkingSetSize): what the texture packs' GPU cache is sized
+        // by (gs_hw.cpp keepPackGpu; after willzmkv's (dejot) 91b4e40).
+        virtual uint64_t videoMemory() const { return 0; }
         // True when createTexture (one level, with data, not a target) and createTextureLevels may be called from any
         // thread while the owner draws (D3D11: device creation calls are free-threaded; Vulkan: the image is made there
         // and its first contents staged, then recorded into the set-up commands at the owner's next submit).

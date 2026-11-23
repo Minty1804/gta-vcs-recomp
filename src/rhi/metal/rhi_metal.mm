@@ -487,6 +487,9 @@ namespace rhi
 
             bool freeThreadedCreation() const override { return true; } // MTLDevice is thread-safe; a new texture is no one's yet
 
+            // [Minty1804 fork] the memory Metal recommends for one process (unified memory: a share of the RAM)
+            uint64_t videoMemory() const override { return [m_device recommendedMaxWorkingSetSize]; }
+
             // [Minty1804 fork] Apple silicon has BC (macOS 11+): asked, not assumed
             bool blockCompression() const override
             {

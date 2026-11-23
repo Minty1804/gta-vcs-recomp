@@ -841,6 +841,7 @@ namespace rhi
             }
 
             bool blockCompression() const override { return m_blockCompression; }
+            uint64_t videoMemory() const override { return m_videoMemory; }
 
             std::unique_ptr<Texture> createTextureLevels(const TextureDesc &desc, const void *const *levels, uint32_t levelCount) override
             {
@@ -1422,6 +1423,13 @@ namespace rhi
                                  props.deviceName,
                                  bestScore == 100 ? "" : " (no graphics card can be used: is its Vulkan driver installed?)");
                 m_adapterName = props.deviceName;
+                { // [Minty1804 fork] rhi::Device::videoMemory: the largest device-local heap
+                    VkPhysicalDeviceMemoryProperties memory{};
+                    vkGetPhysicalDeviceMemoryProperties(m_core->physical, &memory);
+                    for (uint32_t h = 0; h < memory.memoryHeapCount; ++h)
+                        if (memory.memoryHeaps[h].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT)
+                            m_videoMemory = std::max<uint64_t>(m_videoMemory, memory.memoryHeaps[h].size);
+                }
                 m_maxAnisotropy = props.limits.maxSamplerAnisotropy;
                 VkPhysicalDeviceDriverProperties driver{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES};
                 VkPhysicalDeviceProperties2 p2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
@@ -2993,6 +3001,7 @@ namespace rhi
             bool m_debugUtils = false;
             bool m_anisotropy = false;
             bool m_blockCompression = false;
+            uint64_t m_videoMemory = 0; // [Minty1804 fork] the largest device-local heap
             float m_maxAnisotropy = 1.0f;
             std::string m_adapterName;
             VkDescriptorSetLayout m_setLayout = VK_NULL_HANDLE;

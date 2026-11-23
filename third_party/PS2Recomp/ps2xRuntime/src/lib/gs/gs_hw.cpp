@@ -118,10 +118,12 @@ namespace
     std::atomic<GSHwTexturePack *> g_texturePack{nullptr};                   // [gta-recomp] gsHwSetTexturePack
     std::atomic<uint64_t> g_packHashed{0}, g_packReplaced{0};
     std::atomic<bool> g_blockCompression{false}; // [gta-recomp] gsHwBlockCompression
+    std::atomic<uint64_t> g_videoMemory{0};      // [gta-recomp] the device's memory: the packs' GPU cache (keepPackGpu)
 }
 
 // [gta-recomp] Texture packs: each image's GPU texture by its pack handle, kept after the game's texture goes (LRU,
-// PS2X_HW_PACK_GPU_MB, 1536): the game makes the same textures again and again while driving, and each time the HD image
+// PS2X_HW_PACK_GPU_MB; else 35 % of the card's memory, 512 MB - 4 GB - 1536 when the device doesn't say; after willzmkv's
+// (dejot) 91b4e40: a fixed size was too much for a 2 GB card and held a fraction of a large pack on an 11 GB one): the game makes the same textures again and again while driving, and each time the HD image
 // was uploaded again (10 GB in a 140 s drive, up to 100 MB a frame; Present then waited 20-40 ms on the GPU). Filled and
 // trimmed by the main thread (the executor, only for textures made on the helper threads: D3D11 / Metal, where a texture
 // is shared across threads); the GS stage looks up under the mutex. PERFORMANCE.md 33.
@@ -151,8 +153,13 @@ namespace
     void keepPackGpu(uint64_t handle, const std::shared_ptr<rhi::Texture> &tex, size_t bytes)
     {
         static const size_t limit = [] {
-            const char *e = std::getenv("PS2X_HW_PACK_GPU_MB");
-            return size_t(e && *e ? std::strtoull(e, nullptr, 10) : 1536u) << 20;
+            if (const char *e = std::getenv("PS2X_HW_PACK_GPU_MB"); e && *e)
+                return size_t(std::strtoull(e, nullptr, 10)) << 20;
+            const uint64_t card = g_videoMemory.load(std::memory_order_relaxed);
+            const size_t mb = card ? size_t(std::clamp<uint64_t>((card >> 20) * 35u / 100u, 512u, 4096u)) : 1536u;
+            std::fprintf(stderr, "[textures] pack GPU cache %zu MB (%s %llu MB)\n", mb, card ? "35% of the card's" : "card unknown,",
+                         static_cast<unsigned long long>(card >> 20));
+            return mb << 20;
         }();
         if (!limit)
             return;
@@ -5917,6 +5924,7 @@ namespace
             const bool earlyOn = early == 1 || (early < 0 && (device.backend() == rhi::Backend::D3D11 ||
                                                               device.backend() == rhi::Backend::Metal));
             g_blockCompression.store(device.blockCompression(), std::memory_order_relaxed); // [gta-recomp] gsHwBlockCompression
+            g_videoMemory.store(device.videoMemory(), std::memory_order_relaxed);         // [gta-recomp] keepPackGpu's size
             if (earlyOn && !m_earlyDevice.load(std::memory_order_relaxed) && device.freeThreadedCreation())
                 m_earlyDevice.store(&device, std::memory_order_release);
             if (m_nativeFrame) // [gta-recomp] the picture's targets follow the window (gsHwSetFrameSize)
