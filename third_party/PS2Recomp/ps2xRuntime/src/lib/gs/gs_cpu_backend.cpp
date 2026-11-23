@@ -8,6 +8,7 @@
 #include "runtime/gs/ps2_gs_memory.h"
 #include "ps2_log.h"
 #include <atomic>
+#include <bit>
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -537,6 +538,7 @@ void GSCpuBackend::ResetUnlocked()
 {
     m_clut.fill(0u);
     m_clutHashDirty = true;
+    m_clutDirtyChunks = ~0u; // [gta-recomp] (ClutHash)
     m_clutCbp.fill(0u);
     m_texturePageCache.Invalidate();
     m_transfer = {};
@@ -682,11 +684,13 @@ bool GSCpuBackend::loadClutEntries(const GSTex0Reg &tex0, const GSTexClutReg &te
         if (sixteenBit)
         {
             m_clut[destination] = static_cast<uint16_t>(raw);
+            m_clutDirtyChunks |= 1u << (destination >> 4u); // [gta-recomp] (ClutHash)
         }
         else
         {
             m_clut[destination] = static_cast<uint16_t>(raw & 0xFFFFu);
             m_clut[destination + 256u] = static_cast<uint16_t>(raw >> 16u);
+            m_clutDirtyChunks |= (1u << (destination >> 4u)) | (1u << ((destination + 256u) >> 4u)); // [gta-recomp]
         }
     }
     return true;
@@ -1300,19 +1304,35 @@ uint64_t GSCpuBackend::ClutHash(const GSTex0Reg &tex0) const
     if (m_clutHashDirty) // [gta-recomp] hashing 512 entries per paletted draw was ~17% of the frame
     {
         // [gta-recomp] 8 bytes at a time in four independent lanes: VCS loads a CLUT before nearly every draw, so this
-        // ran per draw - the one-entry-at-a-time FNV chain was ~5% of the render worker in the city
-        uint64_t h[4] = {0x9E3779B97F4A7C15ull, 0xC2B2AE3D27D4EB4Full, 0x165667B19E3779F9ull, 0x27D4EB2F165667C5ull};
+        // ran per draw - the one-entry-at-a-time FNV chain was ~5% of the render worker in the city. [gta-recomp] Per
+        // 32-byte chunk, only the chunks a load wrote (m_clutDirtyChunks), then the 32 chunk hashes combined
+        // (batinium's gta-stories-recompiled; a 16-entry CSM1 load rehashes 1 chunk instead of 32).
+        static const bool chunks = [] {
+            const char *e = std::getenv("PS2X_CLUT_CHUNKS");
+            return !(e && e[0] == '0');
+        }();
+        if (!chunks)
+            m_clutDirtyChunks = ~0u;
         const uint8_t *bytes = reinterpret_cast<const uint8_t *>(m_clut.data());
-        static_assert(sizeof(m_clut) % 32u == 0u);
-        for (size_t i = 0; i < sizeof(m_clut); i += 32u)
+        static_assert(sizeof(m_clut) == 32u * 32u);
+        for (uint32_t dirty = m_clutDirtyChunks; dirty != 0u; dirty &= dirty - 1u)
+        {
+            const uint32_t chunk = static_cast<uint32_t>(std::countr_zero(dirty));
+            uint64_t h[4] = {0x9E3779B97F4A7C15ull ^ chunk, 0xC2B2AE3D27D4EB4Full, 0x165667B19E3779F9ull, 0x27D4EB2F165667C5ull};
             for (int l = 0; l < 4; ++l)
             {
                 uint64_t v;
-                std::memcpy(&v, bytes + i + l * 8u, 8);
+                std::memcpy(&v, bytes + chunk * 32u + l * 8u, 8);
                 h[l] = (h[l] ^ (v * 0xBF58476D1CE4E5B9ull)) * 0x94D049BB133111EBull;
                 h[l] ^= h[l] >> 29;
             }
-        m_clutHashCache = ((h[0] * 31u + h[1]) * 31u + h[2]) * 31u + h[3];
+            m_clutChunkHash[chunk] = ((h[0] * 31u + h[1]) * 31u + h[2]) * 31u + h[3];
+        }
+        m_clutDirtyChunks = 0u;
+        uint64_t combined = 0x2545F4914F6CDD1Dull;
+        for (uint64_t c : m_clutChunkHash)
+            combined = (combined ^ c) * 0x100000001B3ull + (combined >> 29);
+        m_clutHashCache = combined;
         m_clutHashDirty = false;
     }
     return m_clutHashCache ^ (uint64_t(tex0.cpsm) << 56) ^ (uint64_t(tex0.csa) << 48) ^ (uint64_t(tex0.csm) << 40);

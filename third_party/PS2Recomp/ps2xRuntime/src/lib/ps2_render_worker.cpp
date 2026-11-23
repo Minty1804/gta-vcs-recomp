@@ -61,6 +61,7 @@ namespace ps2_render_worker
 
         std::atomic<int> g_enabled{-1}; // -1 until configure()
         thread_local bool t_onWorker = false;   // the worker or the GS stage
+        thread_local uint64_t t_idleNs = 0u;    // [gta-recomp] noteIdle: waits inside the current item, not busy time
         thread_local bool t_onGsStage = false;  // the GS stage
 
         uint64_t nowNs()
@@ -93,9 +94,15 @@ namespace ps2_render_worker
             uint8_t *ring = nullptr;
             alignas(64) std::atomic<uint64_t> head{0}; // the consumer's position: everything before it has run
             alignas(64) std::atomic<uint64_t> tail{0}; // the producer's committed end
-            uint64_t reserved = 0;                     // the producer's reserved record end (gsSend commits it)
-            std::atomic<uint32_t> framesPending{0};    // frame ends sent, not run yet
+            // [gta-recomp] the producer's own, on their own cache line: they shared `tail`'s, which the GS stage reads, and
+            // every gsReserve / gsSend wrote them (the line went back and forth between the two threads per record)
+            alignas(64) uint64_t reserved = 0;         // the producer's reserved record end (gsSend commits it)
+            uint64_t committed = 0;                    // [gta-recomp] the producer's committed end, published to `tail` in batches
+            uint64_t cachedHead = 0;                   // [gta-recomp] `head` when last read: room known without reading it
+            uint32_t unpublished = 0;                  // [gta-recomp] records committed since the last publish
+            alignas(64) std::atomic<uint32_t> framesPending{0}; // frame ends sent, not run yet
             std::atomic<bool> consumerWaiting{false}, producerWaiting{false};
+            std::atomic<bool> producerWaitingFrame{false}; // [gta-recomp] the producer waits for the frame bound (gsWaitProducer)
             std::atomic<uint32_t> drainWaiters{0};
             std::atomic<uint64_t> drains{0}, drainWaits{0}, drainWaitNs{0}; // [gta-recomp] PS2X_RENDER_THREAD_LOG
             std::mutex mutex;
@@ -103,6 +110,7 @@ namespace ps2_render_worker
             bool started = false, stopping = false;
             ps2x::Thread thread; // [gta-recomp] a guest-sized stack (ps2_host_std.h)
             GsHandler handler = nullptr;
+            GsPauseHandler pause = nullptr; // [gta-recomp] setGsPauseHandler
         };
 
         GsStage &gsState()
@@ -119,6 +127,32 @@ namespace ps2_render_worker
             cv.notify_all();
         }
 
+        // [gta-recomp] Records committed by gsSend reach the GS stage in batches (batinium's gta-stories-recompiled):
+        // LCS sends ~50k records a frame (a GIF packet each), and a seq_cst tail store, a consumer-waiting check and often
+        // a wake-up per record were ~14% of its render worker, the GS stage's matching head store / empty-ring spin and
+        // timing another ~10%. Published when kGsBatchRecords are waiting, at every run-on-stage command (frame ends),
+        // before the producer waits or drains, and when the worker finishes an item (so nothing is left behind while it
+        // waits for the game). PS2X_GS_BATCH=1: every record published as it is sent (as before).
+        uint32_t gsBatchRecords()
+        {
+            static const uint32_t n = [] {
+                const char *e = std::getenv("PS2X_GS_BATCH");
+                const long v = e && *e ? std::strtol(e, nullptr, 10) : 32;
+                return static_cast<uint32_t>(v < 1 ? 1 : v > 4096 ? 4096 : v);
+            }();
+            return n;
+        }
+
+        void gsPublish(GsStage &g)
+        {
+            g.unpublished = 0;
+            if (g.tail.load(std::memory_order_relaxed) == g.committed)
+                return;
+            g.tail.store(g.committed, std::memory_order_seq_cst);
+            if (g.consumerWaiting.load(std::memory_order_seq_cst))
+                gsNotify(g, g.workCv);
+        }
+
         void gsRun()
         {
             ThreadNaming::SetCurrentThreadName("GsStage");
@@ -126,11 +160,16 @@ namespace ps2_render_worker
             t_onGsStage = true;
             GsStage &g = gsState();
             uint64_t busySince = 0;
+            uint64_t knownTail = 0; // [gta-recomp] `tail` when last read: records up to it run without reading it again
             for (;;)
             {
                 const uint64_t head = g.head.load(std::memory_order_relaxed);
-                if (g.tail.load(std::memory_order_acquire) == head)
+                if (knownTail == head)
+                    knownTail = g.tail.load(std::memory_order_acquire);
+                if (knownTail == head)
                 {
+                    if (g.pause) // [gta-recomp] before anything waits on this stage (drainers, a full ring's producer)
+                        g.pause();
                     if (busySince)
                     {
                         ps2perf::addGsStageTime(nowNs() - busySince);
@@ -138,6 +177,9 @@ namespace ps2_render_worker
                     }
                     if (g.drainWaiters.load(std::memory_order_seq_cst))
                         gsNotify(g, g.doneCv);
+                    std::atomic_thread_fence(std::memory_order_seq_cst); // [gta-recomp] (the release head store above)
+                    if (g.producerWaiting.load(std::memory_order_seq_cst))
+                        gsNotify(g, g.spaceCv);
                     bool more = false;
                     for (int i = 0; i < 4000 && !more; ++i) // the next command is usually microseconds away
                     {
@@ -169,6 +211,8 @@ namespace ps2_render_worker
                     {
                         if (c.type == kGsRun)
                         {
+                            if (g.pause) // [gta-recomp] work items run without the lock held for a run of records
+                                g.pause();
                             auto *work = reinterpret_cast<std::function<void()> *>(static_cast<uintptr_t>(c.a));
                             (*work)();
                             delete work;
@@ -191,15 +235,22 @@ namespace ps2_render_worker
                     if (c.type == kGsRun && c.b)
                         g.framesPending.fetch_sub(1u, std::memory_order_seq_cst);
                 }
-                g.head.store(head + size, std::memory_order_seq_cst);
-                if (g.producerWaiting.load(std::memory_order_seq_cst))
+                // [gta-recomp] release, not seq_cst (an xchg per record): a producer waiting for space whose wake this
+                // check misses is woken at the next record (it waits only with the ring nearly full) or at the empty-ring
+                // check above; a frame end's fetch_sub already orders its check. PS2X_GS_BATCH=1: seq_cst as before.
+                g.head.store(head + size, gsBatchRecords() > 1u ? std::memory_order_release : std::memory_order_seq_cst);
+                // [gta-recomp] a producer waiting for the frame bound only after a frame end: woken (lock, notify, its
+                // wait re-locking and checking again) after every record while the worker sat on the frame bound, the
+                // two threads took turns on the mutex (~10% of the GS stage in LCS's Fort Staunton)
+                if (g.producerWaiting.load(std::memory_order_seq_cst) &&
+                    (!g.producerWaitingFrame.load(std::memory_order_relaxed) || (c.type == kGsRun && c.b)))
                     gsNotify(g, g.spaceCv);
             }
         }
 
         // the producer waits until `ready()` (space in the ring, the frame bound)
         template <typename Ready>
-        void gsWaitProducer(GsStage &g, Ready ready)
+        void gsWaitProducer(GsStage &g, Ready ready, bool frameBound = false)
         {
             for (int i = 0; i < 2000; ++i)
             {
@@ -208,9 +259,11 @@ namespace ps2_render_worker
                 ps2x::cpuRelax();
             }
             std::unique_lock<std::mutex> lock(g.mutex);
+            g.producerWaitingFrame.store(frameBound, std::memory_order_relaxed); // [gta-recomp] (before the seq_cst store)
             g.producerWaiting.store(true, std::memory_order_seq_cst);
             g.spaceCv.wait(lock, ready);
             g.producerWaiting.store(false, std::memory_order_relaxed);
+            g.producerWaitingFrame.store(false, std::memory_order_relaxed);
         }
 
         void gsStart(GsStage &g)
@@ -256,8 +309,12 @@ namespace ps2_render_worker
                     if (reported++ < 20)
                         std::fprintf(stderr, "[render-worker] work failed (unknown exception)\n");
                 }
+                if (g_gsStageOn.load(std::memory_order_relaxed) == 1 && gsState().started)
+                    gsPublish(gsState()); // [gta-recomp] the item's batched GS records (gsPublish)
                 item.work = nullptr; // its captures (chain buffers) go outside the lock
-                ps2perf::addWorkerTime(nowNs() - start);
+                const uint64_t busyNs = nowNs() - start;
+                ps2perf::addWorkerTime(busyNs > t_idleNs ? busyNs - t_idleNs : 0u); // [gta-recomp] (noteIdle)
+                t_idleNs = 0u;
                 lock.lock();
                 s.busy = false;
                 if (item.frameEnd)
@@ -316,6 +373,8 @@ namespace ps2_render_worker
     {
         return t_onWorker;
     }
+
+    void noteIdle(uint64_t ns) { t_idleNs += ns; } // [gta-recomp]
 
     void post(std::function<void()> work, bool frameEnd)
     {
@@ -393,6 +452,11 @@ namespace ps2_render_worker
         gsState().handler = handler;
     }
 
+    void setGsPauseHandler(GsPauseHandler handler) // [gta-recomp]
+    {
+        gsState().pause = handler;
+    }
+
     bool gsStage()
     {
         return t_onWorker && !t_onGsStage && g_gsStageOn.load(std::memory_order_relaxed) == 1;
@@ -413,11 +477,22 @@ namespace ps2_render_worker
             gsDrain();
             return nullptr;
         }
-        uint64_t at = g.tail.load(std::memory_order_relaxed); // the producer's own
+        uint64_t at = g.committed; // the producer's own ([gta-recomp] committed, maybe not published yet)
         const uint64_t offset = at & (kGsRingBytes - 1u);
         const uint64_t toEnd = kGsRingBytes - offset;
         const uint64_t total = need > toEnd ? toEnd + need : need;
-        gsWaitProducer(g, [&] { return at + total - g.head.load(std::memory_order_seq_cst) <= kGsRingBytes; });
+        // [gta-recomp] the room known from the last read of `head` first (it only grows)
+        auto space = [&] {
+            if (at + total - g.cachedHead <= kGsRingBytes)
+                return true;
+            g.cachedHead = g.head.load(std::memory_order_seq_cst);
+            return at + total - g.cachedHead <= kGsRingBytes;
+        };
+        if (!space())
+        {
+            gsPublish(g); // [gta-recomp] the stage must see what it is to make room from
+            gsWaitProducer(g, space);
+        }
         if (need > toEnd) // a skip to the ring's end (records are multiples of 64 bytes, so toEnd holds a header)
         {
             GsCommand skip;
@@ -437,9 +512,9 @@ namespace ps2_render_worker
     void gsSend()
     {
         GsStage &g = gsState();
-        g.tail.store(g.reserved, std::memory_order_seq_cst);
-        if (g.consumerWaiting.load(std::memory_order_seq_cst))
-            gsNotify(g, g.workCv);
+        g.committed = g.reserved;
+        if (++g.unpublished >= gsBatchRecords()) // [gta-recomp] in batches (gsPublish)
+            gsPublish(g);
     }
 
     void runOnGsStage(std::function<void()> work, bool frameEnd)
@@ -453,7 +528,8 @@ namespace ps2_render_worker
         if (frameEnd) // at most one frame end waiting on the GS stage
         {
             gsStart(g);
-            gsWaitProducer(g, [&] { return g.framesPending.load(std::memory_order_seq_cst) < 1u; });
+            gsPublish(g); // [gta-recomp] (batched records first)
+            gsWaitProducer(g, [&] { return g.framesPending.load(std::memory_order_seq_cst) < 1u; }, true);
             g.framesPending.fetch_add(1u, std::memory_order_seq_cst);
         }
         GsCommand c;
@@ -462,6 +538,7 @@ namespace ps2_render_worker
         c.b = frameEnd ? 1u : 0u;
         gsReserve(c); // (no payload: never too large)
         gsSend();
+        gsPublish(g); // [gta-recomp] work to run there: now
     }
 
     void gsDrain()
@@ -469,6 +546,8 @@ namespace ps2_render_worker
         if (t_onGsStage)
             return;
         GsStage &g = gsState();
+        if (t_onWorker && g.started) // [gta-recomp] the producer: its batched records first
+            gsPublish(g);
         g.drains.fetch_add(1u, std::memory_order_relaxed);
         const uint64_t target = g.tail.load(std::memory_order_seq_cst);
         auto done = [&] { return g.head.load(std::memory_order_seq_cst) >= target; };

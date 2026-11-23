@@ -3406,6 +3406,113 @@ namespace
         rhi::Texture *m_passColor = nullptr, *m_passDepth = nullptr;
     };
 
+    // [gta-recomp] uint64 -> V map, open addressing (linear probing, backward-shift erase), for the GS stage's per-draw
+    // lookups (the native draws' mesh LRU). From batinium's gta-stories-recompiled (FlatMap64 there): an unordered_map's
+    // find - a division and a node pointer chase per draw, the node cold in cache with thousands of meshes - was ~6% of
+    // LCS's GS stage. The table grows at half full. Key 0 has its own slot. Iteration order differs from unordered_map's
+    // (only evictMeshes iterates: it sorts by age; which of equally old meshes goes first was never fixed).
+    template <class V> class FlatMap
+    {
+    public:
+        V *find(uint64_t key)
+        {
+            if (key == 0u)
+                return m_hasZero ? &m_zero : nullptr;
+            if (m_slots.empty())
+                return nullptr;
+            for (size_t i = slot(key);; i = (i + 1u) & m_mask)
+            {
+                if (m_slots[i].first == key)
+                    return &m_slots[i].second;
+                if (m_slots[i].first == 0u)
+                    return nullptr;
+            }
+        }
+        V &operator[](uint64_t key)
+        {
+            if (V *v = find(key))
+                return *v;
+            if (key == 0u)
+            {
+                m_hasZero = true;
+                ++m_count;
+                m_zero = V{};
+                return m_zero;
+            }
+            if ((m_count + 1u) * 2u > m_slots.size())
+                grow();
+            size_t i = slot(key);
+            while (m_slots[i].first != 0u)
+                i = (i + 1u) & m_mask;
+            m_slots[i] = {key, V{}};
+            ++m_count;
+            return m_slots[i].second;
+        }
+        void erase(uint64_t key)
+        {
+            if (key == 0u)
+            {
+                if (m_hasZero)
+                    --m_count;
+                m_hasZero = false;
+                return;
+            }
+            if (m_slots.empty())
+                return;
+            size_t i = slot(key);
+            while (m_slots[i].first != key)
+            {
+                if (m_slots[i].first == 0u)
+                    return;
+                i = (i + 1u) & m_mask;
+            }
+            --m_count;
+            for (size_t j = (i + 1u) & m_mask;; j = (j + 1u) & m_mask) // backward shift: no tombstones
+            {
+                if (m_slots[j].first == 0u)
+                    break;
+                const size_t home = slot(m_slots[j].first);
+                // j's entry may move to the hole at i unless its home lies cyclically in (i, j]
+                if (((j - home) & m_mask) >= ((j - i) & m_mask))
+                {
+                    m_slots[i] = m_slots[j];
+                    i = j;
+                }
+            }
+            m_slots[i] = {0u, V{}};
+        }
+        size_t size() const { return m_count; }
+        template <class F> void forEach(F f) const
+        {
+            if (m_hasZero)
+                f(uint64_t(0), m_zero);
+            for (const auto &e : m_slots)
+                if (e.first != 0u)
+                    f(e.first, e.second);
+        }
+
+    private:
+        size_t slot(uint64_t key) const { return static_cast<size_t>((key * 0x9E3779B97F4A7C15ull) >> 32) & m_mask; }
+        void grow()
+        {
+            std::vector<std::pair<uint64_t, V>> old = std::move(m_slots);
+            m_slots.assign(old.empty() ? 1024u : old.size() * 2u, {0u, V{}});
+            m_mask = m_slots.size() - 1u;
+            for (const auto &e : old)
+                if (e.first != 0u)
+                {
+                    size_t i = slot(e.first);
+                    while (m_slots[i].first != 0u)
+                        i = (i + 1u) & m_mask;
+                    m_slots[i] = e;
+                }
+        }
+        std::vector<std::pair<uint64_t, V>> m_slots;
+        size_t m_mask = 0, m_count = 0;
+        bool m_hasZero = false;
+        V m_zero{};
+    };
+
     // ------------------------------------------------------------------------------------------------------
     class HwBackend final : public GSHwBackendHandle, public GSHwPresenter
     {
@@ -4940,6 +5047,19 @@ namespace
             std::vector<uint8_t>().swap(data);
         }
 
+        // [gta-recomp] queued uploads' block lists kept with their capacity (deferUpload; batinium's gta-stories-recompiled:
+        // an allocation and a free per upload were ~5% of LCS's GS stage)
+        std::vector<std::vector<uint16_t>> m_blockListPool;
+        void recycleBlockList(std::vector<uint16_t> &blocks)
+        {
+            if (m_blockListPool.size() < 1024u && blocks.capacity() <= 4096u)
+            {
+                blocks.clear();
+                m_blockListPool.push_back(std::move(blocks));
+            }
+            std::vector<uint16_t>().swap(blocks);
+        }
+
         void Flush() override { m_cpu.Flush(); }
         void TextureFlush() override { m_cpu.TextureFlush(); }
         void Sync(GSSyncReason reason) override { m_cpu.Sync(reason); }
@@ -5012,6 +5132,15 @@ namespace
         };
         uint32_t m_uploadRaster = 0; // [gta-recomp] UploadImage -> deferUpload
 
+        static bool flatMapsEnabled() // [gta-recomp] PS2X_HW_FLAT_MAPS=0: m_uploadAt / m_meshLru as unordered_maps
+        {
+            static const bool on = [] {
+                const char *v = std::getenv("PS2X_HW_FLAT_MAPS");
+                return !(v && v[0] == '0');
+            }();
+            return on;
+        }
+
         static bool lazyUploadsEnabled()
         {
             static const bool on = [] {
@@ -5057,14 +5186,12 @@ namespace
             const PendingUpload *source = nullptr;
             for (uint16_t b : blocks)
             {
+                // [gta-recomp] the ids are in queue order (pushed as made, pruned in place): the latest pending writer is the
+                // first pending one from the back (batinium's gta-stories-recompiled; was a scan of the whole list)
                 const PendingUpload *latest = nullptr;
-                uint64_t latestId = 0;
-                for (uint64_t id : m_blockUploads[b])
-                    if (const PendingUpload *u = pendingById(id); u && (!latest || id > latestId))
-                    {
-                        latest = u;
-                        latestId = id;
-                    }
+                const std::vector<uint64_t> &ids = m_blockUploads[b];
+                for (auto it = ids.rbegin(); it != ids.rend() && !latest; ++it)
+                    latest = pendingById(*it);
                 if (!latest || (source && latest != source))
                     return nullptr;
                 source = latest;
@@ -5079,6 +5206,7 @@ namespace
                 --m_blockPending[b];
             m_pendingBytes -= u.data.size();
             recycleUploadData(u.data);
+            recycleBlockList(u.blocks); // [gta-recomp]
             while (!m_pendingUploads.empty() && m_pendingUploads.front().done)
             {
                 m_pendingUploads.pop_front();
@@ -5114,7 +5242,12 @@ namespace
                 m_uploadBufferPool.pop_back();
             }
             pu.data.assign(data, data + sizeBytes);
-            pu.blocks = m_scratchTouched;
+            if (!m_blockListPool.empty()) // [gta-recomp] (recycleBlockList)
+            {
+                pu.blocks = std::move(m_blockListPool.back());
+                m_blockListPool.pop_back();
+            }
+            pu.blocks.assign(m_scratchTouched.begin(), m_scratchTouched.end());
             std::sort(pu.blocks.begin(), pu.blocks.end());
             pu.blocks.erase(std::unique(pu.blocks.begin(), pu.blocks.end()), pu.blocks.end());
             pu.live = static_cast<uint32_t>(pu.blocks.size());
@@ -5249,6 +5382,7 @@ namespace
                     --m_blockPending[b];
                 m_pendingBytes -= u.data.size();
                 recycleUploadData(u.data);
+                recycleBlockList(u.blocks); // [gta-recomp] (a done upload's blocks are never read again)
                 ++m_lazyWritten;
                 wrote = true;
             }
@@ -5620,10 +5754,9 @@ namespace
         // a mesh used by a draw: cached, or created ahead of it (slot: a reserved MeshCreate)
         void useMesh(Frame &f, uint64_t key, uint32_t stride, const uint8_t *bytes, uint32_t count, uint32_t slot = UINT32_MAX)
         {
-            auto lru = m_meshLru.find(key);
-            if (lru != m_meshLru.end())
+            if (MeshUse *lru = m_meshLru.find(key))
             {
-                lru->second.frame = m_frameIndex;
+                lru->frame = m_frameIndex;
                 return;
             }
             if (!bytes || !count) // (never: every native draw carries its vertices; nothing to draw from otherwise)
@@ -5745,8 +5878,7 @@ namespace
         {
             std::vector<std::pair<uint64_t, uint64_t>> byAge;
             byAge.reserve(m_meshLru.size());
-            for (const auto &e : m_meshLru)
-                byAge.emplace_back(e.first, e.second.frame);
+            m_meshLru.forEach([&](uint64_t key, const MeshUse &use) { byAge.emplace_back(key, use.frame); });
             std::sort(byAge.begin(), byAge.end(), [](auto &a, auto &b) { return a.second < b.second; });
             Frame &f = *m_frame;
             const size_t quarter = byAge.size() / 4;
@@ -5756,9 +5888,8 @@ namespace
                     break;
                 f.cmds.push_back({CmdType::MeshDelete, static_cast<uint32_t>(f.meshDeletes.size())});
                 f.meshDeletes.push_back(byAge[i].first);
-                auto it = m_meshLru.find(byAge[i].first);
-                m_meshBytes -= it->second.bytes;
-                m_meshLru.erase(it);
+                m_meshBytes -= m_meshLru.find(byAge[i].first)->bytes;
+                m_meshLru.erase(byAge[i].first);
             }
         }
 
@@ -6160,9 +6291,9 @@ namespace
             // shared VRAM area every frame finds its decoded GPU copy again.
             bool contentKeyed = false;
             uint32_t raster = 0;
-            if (auto up = m_uploadAt.find(t.tbp0); up != m_uploadAt.end())
+            if (const UploadInfo *up = m_uploadAt.find(t.tbp0))
             {
-                const UploadInfo &u = up->second;
+                const UploadInfo &u = *up;
                 if (u.dpsm == t.psm && u.dbw == t.tbw && u.x == 0u && u.y == 0u && u.w >= d.textureWidth && u.h >= d.textureHeight &&
                     first >= u.first && last <= u.first + u.gens.size())
                 {
@@ -6214,9 +6345,9 @@ namespace
                 static int logged = 0;
                 if (stats && !raster && logged++ < 40)
                 {
-                    const auto up = m_uploadAt.find(t.tbp0);
+                    const UploadInfo *up = m_uploadAt.find(t.tbp0);
                     std::fprintf(stderr, "[upload] texture without a raster: tbp %u tbw %u psm %u %ux%u, %s\n", t.tbp0, t.tbw, t.psm, d.textureWidth,
-                                 d.textureHeight, !contentKeyed ? (up == m_uploadAt.end() ? "no whole upload at its base" : "its upload's pages written since or not covering it")
+                                 d.textureHeight, !contentKeyed ? (!up ? "no whole upload at its base" : "its upload's pages written since or not covering it")
                                                                 : "its upload's source unknown");
                 }
             }
@@ -6851,7 +6982,41 @@ namespace
         };
         uint64_t m_texNamed = 0, m_texUnnamed = 0; // [gta-recomp] textures made, by whether their raster is known
         uint64_t m_bindCalls = 0, m_bindRepeats = 0, m_bindLookups = 0, m_bindLookupHits = 0; // [gta-recomp] PS2X_HW_UPSTATS
-        std::unordered_map<uint32_t, UploadInfo> m_uploadAt;
+        // [gta-recomp] the last whole upload per base pointer: indexed by the base (BITBLTBUF.DBP / TEX0.TBP0 are 14-bit block
+        // numbers) instead of an unordered_map - looked up / written once per upload (batinium's gta-stories-recompiled:
+        // ~2% of LCS's GS stage). Same find / [] semantics; a base past 14 bits (never) goes to the map.
+        // PS2X_HW_FLAT_MAPS=0: the map alone, as before.
+        struct UploadAtTable
+        {
+            static constexpr uint32_t kBases = 16384u;
+            std::vector<UploadInfo> byBase;
+            std::vector<uint8_t> present;
+            std::unordered_map<uint32_t, UploadInfo> other;
+            const bool flat = flatMapsEnabled();
+
+            UploadInfo &operator[](uint32_t base)
+            {
+                if (!flat || base >= kBases)
+                    return other[base];
+                if (byBase.empty())
+                {
+                    byBase.resize(kBases);
+                    present.assign(kBases, 0u);
+                }
+                present[base] = 1u;
+                return byBase[base];
+            }
+            const UploadInfo *find(uint32_t base) const
+            {
+                if (!flat || base >= kBases)
+                {
+                    const auto it = other.find(base);
+                    return it == other.end() ? nullptr : &it->second;
+                }
+                return !present.empty() && present[base] ? &byBase[base] : nullptr;
+            }
+        };
+        UploadAtTable m_uploadAt;
         uint64_t m_skippedUploads = 0;
         std::unordered_map<uint64_t, uint64_t> m_texLru;  // key -> last frame used
         struct MeshUse
@@ -6859,7 +7024,32 @@ namespace
             uint64_t frame = 0; // last frame used
             size_t bytes = 0;
         };
-        std::unordered_map<uint64_t, MeshUse> m_meshLru; // [gta-recomp] native draws' meshes on the GPU, by key
+        // [gta-recomp] native draws' meshes on the GPU, by key (FlatMap; PS2X_HW_FLAT_MAPS=0: an unordered_map, as before)
+        struct MeshLru
+        {
+            const bool flat = flatMapsEnabled();
+            FlatMap<MeshUse> fm;
+            std::unordered_map<uint64_t, MeshUse> node;
+            MeshUse *find(uint64_t key)
+            {
+                if (flat)
+                    return fm.find(key);
+                const auto it = node.find(key);
+                return it == node.end() ? nullptr : &it->second;
+            }
+            MeshUse &operator[](uint64_t key) { return flat ? fm[key] : node[key]; }
+            void erase(uint64_t key) { flat ? fm.erase(key) : static_cast<void>(node.erase(key)); }
+            size_t size() const { return flat ? fm.size() : node.size(); }
+            template <class F> void forEach(F f) const
+            {
+                if (flat)
+                    fm.forEach(f);
+                else
+                    for (const auto &e : node)
+                        f(e.first, e.second);
+            }
+        };
+        MeshLru m_meshLru;
         size_t m_meshBytes = 0;                           // [gta-recomp] their bytes
         std::unordered_map<uint32_t, RtInfo> m_rts;       // fbp -> extent (game thread's view)
         // [gta-recomp] texture packs (bindTextureUncached, pollTexturePack)

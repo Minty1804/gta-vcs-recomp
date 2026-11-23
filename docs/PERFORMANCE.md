@@ -1149,3 +1149,42 @@ Measured with the real 6,279-file BC7 pack (`tools/texpack_check.py --real`, the
 The GPU copy (`keepPackGpu`) shrinks the same way. Load time an image, from a drive with the pack (the first run of a
 session reads the files cold, so runs alternated): 0.5 ms as stored against 1.4-1.8 ms decoded. The classification
 needs no decode: before the endpoint bounds, the first version decoded level 0 of every BC7 image to check it.
+
+### 37. Runtime speed-ups from batinium's LCS port (2026-11-23)
+
+From [gta-stories-recompiled](https://github.com/batinium/gta-stories-recompiled) (Liberty City Stories on the same
+runtime, commit 1ec8297), ported into ours with a switch back each (PS2RECOMP_PATCHES.md, PROGRESS.md):
+
+- **VIF1 UNPACK typed paths**: the format a template argument, SSE lane masks for MODE 0 / 3 (`PS2X_VIF_UNPACK_FAST`,
+  `PS2X_VIF_UNPACK_SIMD`). `PS2X_VIF_UNPACK_FAST=verify` over the bench route (Fort Baxter, four city spots, the AI
+  drive): 3,276,800 UNPACKs checked, 0 differ; with `PS2X_VIF_UNPACK_SIMD=0` (the typed path for every mode)
+  3,211,264, 0 differ.
+- **The GS stage's ring in batches of 32** (`PS2X_GS_BATCH`), **the GS state lock across 32 records** (`PS2X_GS_HOLD`).
+- **ClutHash per 32-byte chunk** (`PS2X_CLUT_CHUNKS`), **block lists from a pool**, **`soleQueuedWriter` from the
+  back**, **flat maps** for the mesh LRU and the last upload per base (`PS2X_HW_FLAT_MAPS`).
+
+Measured: `bench.py`, ThinLTO + PGO, the same exe, every switch back (`PS2X_VIF_UNPACK_FAST=1 PS2X_GS_BATCH=1
+PS2X_GS_HOLD=1 PS2X_CLUT_CHUNKS=0 PS2X_HW_FLAT_MAPS=0`) against the defaults, two runs each, alternated (the 60 fps
+setting: worker / GS stage ms):
+
+| spot | before (run 1, run 2) | after (run 1, run 2) |
+|---|---|---|
+| Fort Baxter | 1.7 / 1.4, 1.9 / 1.4 | 1.6 / 1.1, 1.5 / 1.1 |
+| city spots (4) | 0.3-1.0 / 0.3-1.0 | the same |
+| AI drive | 6.0 / 6.4, 6.0 / 6.1 | 5.5 / 5.5, 5.9 / 5.8 |
+
+Much less than LCS's numbers (UNPACK 34 -> 18 % of its worker, Staunton 87 -> 112 fps at a 120 cap): VCS's world is
+drawn natively from the RSL recordings, so the worker runs ~3M UNPACKs over the whole bench route, and the GS
+stage sees far fewer records than LCS's ~50k a frame. The gain is where the emulated paths
+still run (the fort's interiors, peds and cars while driving).
+
+`cruise.py` (the stutter rig, 140 s at 144 km/h): one run with the lock hold had a ~2 s freeze at t = 73 s (the whole
+process: the presenter, the game and audio underruns, so not the GS stage alone); a second run with it and one with
+`PS2X_GS_HOLD=1` had none (max 42 / 36 ms, p99.9 24.7 / 30.7). batinium's own notes list the lock hold as "tried
+and dropped (no measurable change)" though their code has it on; if a freeze like that comes back, `PS2X_GS_HOLD=1`
+is the first switch to try.
+
+Not taken: the asynchronous chain walk (`PS2X_CHAIN_ASYNC`: in their port too the walk stays on the game thread whenever
+RSL observers are on, as ours always are, and it needs game-specific waits where the model heap frees or moves memory)
+and chain images (texture pixel REFs interned and passed by reference: written for LCS's ~5 MB of pixel REFs a frame,
+needs the write watch and our RSL recordings' bounds checked again; FORK_IMPORTS.md item 40).

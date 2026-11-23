@@ -1197,7 +1197,12 @@ Python scripts still usable on their own. docs/LAUNCHER.md has the whole of it; 
 | `VCS_PROFILE=s` | sampling profiler (guest functions + host symbols) |
 | `VCS_PROFILE_LINES=name` | with `VCS_PROFILE`: source lines of the host functions whose name contains `name` |
 | `VCS_PROFILE_RAW=<file>` | with `VCS_PROFILE` (Linux): the samples dladdr cannot name, appended as `module offset count` lines per report - for `llvm-symbolizer --obj=<module>` (anonymous namespaces, static libraries: gs_hw, the RHI; PERFORMANCE.md 27) |
-| `PS2X_VIF_UNPACK_FAST=0\|verify` | VIF1 UNPACK general loop only / both, compared |
+| `PS2X_VIF_UNPACK_FAST=0\|1\|verify` | VIF1 UNPACK: the general loop only / the older unmasked CL == WL fast path / the typed path (the default since 2026-11-23) checked against the general loop (`[vif1-unpack-verify] N checked, M differ`) |
+| `PS2X_VIF_UNPACK_SIMD=0` | the VIF1 UNPACK typed path for every mode (default: the SSE blend path for MODE 0 / 3) |
+| `PS2X_GS_BATCH=<n>` | GS stage records published every n (default 32; 1: each as sent, as before 2026-11-23) |
+| `PS2X_GS_HOLD=<n>` | the GS stage holds the GS state lock across n records (default 32; 0 / 1: per record, as before 2026-11-23) |
+| `PS2X_CLUT_CHUNKS=0` | the CLUT hash over all 32 chunks every time (default: only the chunks a load wrote) |
+| `PS2X_HW_FLAT_MAPS=0` | the HW renderer's mesh LRU and last-upload-per-base table as unordered_maps (as before 2026-11-23) |
 | `PS2X_GS_RECT_VERIFY=1` | every 64th rect upload also written pixel by pixel and compared |
 | `PS2X_HW_LAZY_INDEX=0` | lazy uploads to write found by rescanning the queue (the old way) |
 | `VCS_SKIN_VERIFY=1` | native ped skinning (SSE) checked against the scalar reference, a line every 16k packets |

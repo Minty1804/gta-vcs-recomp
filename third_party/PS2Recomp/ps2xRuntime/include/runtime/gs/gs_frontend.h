@@ -135,6 +135,10 @@ public:
     // False when the backend cannot draw it (nothing changed then).
     bool submitNative(uint64_t prim, const GSNativeDraw &draw);
 
+    // [gta-recomp] the GS stage takes / drops the state lock around a run of its records (gs_frontend.cpp, gsHoldRecords)
+    void lockStateForStage() { m_stateMutex.lock(); }
+    void unlockStateForStage() { m_stateMutex.unlock(); }
+
     const uint8_t *lockDisplaySnapshot(uint32_t &outSize);
     void unlockDisplaySnapshot();
     uint32_t getLastDisplayBaseBytes() const;

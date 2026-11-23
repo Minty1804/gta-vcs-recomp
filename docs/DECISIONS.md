@@ -1980,3 +1980,17 @@ current list's low-detail sectors they lie inside are hidden, as the game hides 
   shows up minutes later as a hang somewhere else.
 - Streaming memory stays at the PS2's 5.4 MB by default (willzmkv's T10 used 30 MB): authentic by default; 12 / 20 / 30
   MB are choices in Game > Memory.
+
+## 2026-11-23 - batinium's runtime speed-ups taken, two parts left (the user's request: "only point 3")
+
+- Taken from batinium's gta-stories-recompiled (LCS, same runtime, GPL-3.0; commit 1ec8297): VIF1 UNPACK typed / SSE
+  paths, the GS stage's ring in batches, the GS state lock across 32 records, ClutHash per chunk, block-list pool,
+  flat maps, and a GIF bounds crash fix. Each keeps a switch back (PROGRESS.md) and the UNPACK path its verify mode
+  (rule 1). PERFORMANCE.md 37 has the numbers: smaller than LCS's, because VCS's world is drawn natively.
+- The GS lock hold stays on although their notes call it "tried and dropped": it is bounded (32 records, dropped
+  whenever the ring is empty and before work items), and the one freeze seen in a cruise run took the whole process,
+  audio included, so it was not the GS lock alone, and it did not come back. `PS2X_GS_HOLD=1` is the first thing to try if
+  a freeze like it shows up.
+- Not taken: the asynchronous chain walk (off in their port too whenever RSL observers are on, as ours always are; it
+  needs game-specific waits on the model heap) and chain images (built for LCS's ~5 MB of texture REFs a frame; would
+  need the write watch and our RSL recordings' memory bound re-checked). FORK_IMPORTS.md items 39 / 40.

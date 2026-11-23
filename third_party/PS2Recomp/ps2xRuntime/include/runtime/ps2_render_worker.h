@@ -48,6 +48,9 @@ namespace ps2_render_worker
     // frame (~4% of the game thread while driving, docs/PS2RECOMP_PATCHES.md).
     std::vector<uint8_t> takeBuffer(size_t want = 0);
     void recycleBuffer(std::vector<uint8_t> &&buffer);
+    // [gta-recomp] on the worker: ns of the current item spent waiting, left out of its busy time (the perf overlay's
+    // worker ms). From batinium's gta-stories-recompiled, where the asynchronous chain walk calls it; nothing does here.
+    void noteIdle(uint64_t ns);
 
     // Runtime shutdown: runs what is queued, then ends the thread.
     void shutdown();
@@ -68,6 +71,10 @@ namespace ps2_render_worker
 
     void configureGsStage(bool defaultOn); // at start, after configure(); off when the worker is
     void setGsHandler(GsHandler handler);  // the GS front end, once
+    // [gta-recomp] called on the GS stage before it waits for more records and before it runs a runOnGsStage work item
+    // (the GS front end drops the state lock it holds across a run of records there)
+    using GsPauseHandler = void (*)();
+    void setGsPauseHandler(GsPauseHandler handler);
     // GS calls made on this thread go to the GS stage (the worker, with the stage on)
     bool gsStage();
     bool onGsStage();

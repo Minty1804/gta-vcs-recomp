@@ -121,6 +121,307 @@ namespace
 
         return 0u;
     }
+
+    // [gta-recomp] UNPACK with the format known at compile time, for every case the general loop in processVIF1Data
+    // decodes (all but V2/V3-5 = vl 3 with vn != 3): masks, CL != WL (skipping and filling writes), MODE 1 / 2. The same
+    // writes as that loop, vector for vector - without its per-vector divisions (cycle position, block), per-vector format
+    // switch and per-field mask shifts. From batinium's gta-stories-recompiled (LCS: the general loop was ~30% of its render
+    // worker in Fort Staunton). PS2X_VIF_UNPACK_FAST=1: only the older unmasked CL == WL fast
+    // path; 0: the general loop alone; verify: this one checked against the general loop.
+    template <uint32_t VL, uint32_t VN>
+    inline void unpackDecode(const uint8_t *v, uint32_t (&out)[4], bool zeroExtend)
+    {
+        constexpr uint32_t comps = VN + 1u;
+        if constexpr (VL == 0u)
+        {
+            if constexpr (comps == 1u)
+            {
+                uint32_t s;
+                std::memcpy(&s, v, 4u);
+                out[0] = out[1] = out[2] = out[3] = s;
+            }
+            else
+                std::memcpy(out, v, comps * 4u);
+        }
+        else if constexpr (VL == 1u)
+        {
+            for (uint32_t c = 0; c < comps; ++c)
+            {
+                uint16_t raw;
+                std::memcpy(&raw, v + c * 2u, 2u);
+                out[c] = zeroExtend ? raw : static_cast<uint32_t>(static_cast<int32_t>(static_cast<int16_t>(raw)));
+            }
+            if constexpr (comps == 1u)
+                out[1] = out[2] = out[3] = out[0];
+        }
+        else if constexpr (VL == 2u)
+        {
+            for (uint32_t c = 0; c < comps; ++c)
+                out[c] = zeroExtend ? v[c] : static_cast<uint32_t>(static_cast<int32_t>(static_cast<int8_t>(v[c])));
+            if constexpr (comps == 1u)
+                out[1] = out[2] = out[3] = out[0];
+        }
+        else
+        {
+            static_assert(VN == 3u, "V4-5 only");
+            uint16_t packed;
+            std::memcpy(&packed, v, 2u);
+            out[0] = (packed & 0x001Fu) << 3u;
+            out[1] = (packed & 0x03E0u) >> 2u;
+            out[2] = (packed & 0x7C00u) >> 7u;
+            out[3] = (packed & 0x8000u) >> 8u;
+        }
+    }
+
+    struct UnpackArgs
+    {
+        uint8_t *vu;        // VU1 data memory (16 KB)
+        const uint8_t *src; // the UNPACK's data
+        uint32_t vuAddr, writeCount, cl, wl, mode, mask;
+        bool maskEnable, zeroExtend;
+        uint32_t *row;       // vif1 ROW (MODE 2 writes it)
+        const uint32_t *col; // vif1 COL
+    };
+
+    template <uint32_t VL, uint32_t VN>
+    void unpackTyped(const UnpackArgs &a)
+    {
+        constexpr uint32_t comps = VN + 1u;
+        constexpr uint32_t bytesPerVector = VL == 3u ? 2u : comps * (VL == 0u ? 4u : VL == 1u ? 2u : 1u);
+        constexpr bool canAdd = VL != 3u;
+        // the mask's choice per field for cycle positions 0..3 (later positions use 3's, as the general loop)
+        uint8_t spec[4][4];
+        for (uint32_t c = 0; c < 4u; ++c)
+            for (uint32_t f = 0; f < 4u; ++f)
+                spec[c][f] = a.maskEnable ? static_cast<uint8_t>((a.mask >> ((c * 4u + f) * 2u)) & 3u) : 0u;
+        const bool add = canAdd && (a.mode == 1u || a.mode == 2u);
+        const bool accumulate = a.mode == 2u;
+        const bool skipping = a.cl >= a.wl; // else filling: positions >= CL take no source vector
+        uint32_t cyc = 0u, blockBase = a.vuAddr, srcIndex = 0u;
+        for (uint32_t w = 0; w < a.writeCount; ++w)
+        {
+            const uint32_t dest = (skipping ? blockBase + cyc : a.vuAddr + w) & 0x3FFu;
+            uint8_t *dst = a.vu + dest * 16u;
+            const uint32_t clamp = cyc > 3u ? 3u : cyc;
+            const uint8_t *sp = spec[clamp];
+            uint32_t lanes[4];
+            std::memcpy(lanes, dst, sizeof(lanes));
+            if (skipping || cyc < a.cl)
+            {
+                uint32_t dec[4] = {lanes[0], lanes[1], lanes[2], lanes[3]};
+                unpackDecode<VL, VN>(a.src + srcIndex * bytesPerVector, dec, a.zeroExtend);
+                ++srcIndex;
+                for (uint32_t f = 0; f < 4u; ++f)
+                {
+                    switch (sp[f])
+                    {
+                    case 0u:
+                    {
+                        uint32_t v = dec[f];
+                        if (add)
+                        {
+                            v += a.row[f];
+                            if (accumulate)
+                                a.row[f] = v;
+                        }
+                        lanes[f] = v;
+                        break;
+                    }
+                    case 1u:
+                        lanes[f] = a.row[f];
+                        break;
+                    case 2u:
+                        lanes[f] = a.col[clamp];
+                        break;
+                    default:
+                        break; // write-protect
+                    }
+                }
+            }
+            else
+            {
+                for (uint32_t f = 0; f < 4u; ++f) // a filling write: data selections take ROW
+                {
+                    const uint8_t s = sp[f];
+                    if (s <= 1u)
+                        lanes[f] = a.row[f];
+                    else if (s == 2u)
+                        lanes[f] = a.col[clamp];
+                }
+            }
+            std::memcpy(dst, lanes, sizeof(lanes));
+            if (++cyc == a.wl)
+            {
+                cyc = 0u;
+                blockBase += a.cl;
+            }
+        }
+    }
+
+    // [gta-recomp] The format's fields of one vector as four lanes (`old` where the format supplies none, as the typed
+    // path's decode leaves them)
+    template <uint32_t VL, uint32_t VN>
+    inline __m128i unpackDecodeVector(const uint8_t *v, __m128i old, bool zeroExtend)
+    {
+        constexpr uint32_t comps = VN + 1u;
+        if constexpr (VL == 0u)
+        {
+            if constexpr (comps == 1u)
+            {
+                int32_t s;
+                std::memcpy(&s, v, 4u);
+                return _mm_set1_epi32(s);
+            }
+            else if constexpr (comps == 4u)
+                return _mm_loadu_si128(reinterpret_cast<const __m128i *>(v));
+            else
+            {
+                alignas(16) uint32_t lanes[4];
+                _mm_store_si128(reinterpret_cast<__m128i *>(lanes), old);
+                std::memcpy(lanes, v, comps * 4u);
+                return _mm_load_si128(reinterpret_cast<const __m128i *>(lanes));
+            }
+        }
+        else if constexpr (VL == 3u)
+        {
+            uint16_t packed;
+            std::memcpy(&packed, v, 2u);
+            return _mm_setr_epi32(int((packed & 0x001Fu) << 3u), int((packed & 0x03E0u) >> 2u), int((packed & 0x7C00u) >> 7u),
+                                  int((packed & 0x8000u) >> 8u));
+        }
+        else
+        {
+            // 16- / 8-bit fields widened to 32 bits, sign- or zero-extended
+            __m128i raw;
+            if constexpr (VL == 1u)
+            {
+                uint64_t bits = 0;
+                std::memcpy(&bits, v, comps * 2u);
+                raw = _mm_cvtsi64_si128(static_cast<long long>(bits));
+                raw = zeroExtend ? _mm_unpacklo_epi16(raw, _mm_setzero_si128()) : _mm_srai_epi32(_mm_unpacklo_epi16(raw, raw), 16);
+            }
+            else
+            {
+                uint32_t bits = 0;
+                std::memcpy(&bits, v, comps);
+                raw = _mm_cvtsi32_si128(static_cast<int>(bits));
+                const __m128i w16 = _mm_unpacklo_epi8(raw, raw);
+                raw = zeroExtend ? _mm_srli_epi32(_mm_unpacklo_epi16(w16, w16), 24) : _mm_srai_epi32(_mm_unpacklo_epi16(w16, w16), 24);
+            }
+            if constexpr (comps == 1u)
+                return _mm_shuffle_epi32(raw, 0x00);
+            else if constexpr (comps == 4u)
+                return raw;
+            else
+            {
+                const __m128i fmt = comps == 2u ? _mm_setr_epi32(-1, -1, 0, 0) : _mm_setr_epi32(-1, -1, -1, 0);
+                return _mm_or_si128(_mm_and_si128(raw, fmt), _mm_andnot_si128(fmt, old));
+            }
+        }
+    }
+
+    // [gta-recomp] unpackTyped without MODE 1 / 2 (no ROW arithmetic): each write a blend of the decoded vector, ROW, the
+    // cycle's COL and the old contents by lane masks made once per UNPACK (the typed path's per-field mask switch was
+    // ~20% of the render worker in Fort Staunton). PS2X_VIF_UNPACK_SIMD=0: the typed path for every mode.
+    template <uint32_t VL, uint32_t VN>
+    void unpackBlend(const UnpackArgs &a)
+    {
+        constexpr uint32_t comps = VN + 1u;
+        constexpr uint32_t bytesPerVector = VL == 3u ? 2u : comps * (VL == 0u ? 4u : VL == 1u ? 2u : 1u);
+        // per cycle position: the lanes taking the data, the ROW / COL constants of the others, the write-protected lanes;
+        // a filling write (no source vector) takes ROW for data selections too
+        __m128i dataMask[4], constVal[4], keepMask[4], fillConst[4];
+        const __m128i row = _mm_loadu_si128(reinterpret_cast<const __m128i *>(a.row));
+        for (uint32_t c = 0; c < 4u; ++c)
+        {
+            alignas(16) int32_t d[4], r[4], k[4], p[4], f[4];
+            for (uint32_t field = 0; field < 4u; ++field)
+            {
+                const uint32_t s = a.maskEnable ? (a.mask >> ((c * 4u + field) * 2u)) & 3u : 0u;
+                d[field] = s == 0u ? -1 : 0;
+                r[field] = s == 1u ? -1 : 0;
+                k[field] = s == 2u ? -1 : 0;
+                p[field] = s == 3u ? -1 : 0;
+                f[field] = s <= 1u ? -1 : 0;
+            }
+            const __m128i col = _mm_set1_epi32(static_cast<int>(a.col[c]));
+            const __m128i colLanes = _mm_and_si128(col, _mm_load_si128(reinterpret_cast<const __m128i *>(k)));
+            dataMask[c] = _mm_load_si128(reinterpret_cast<const __m128i *>(d));
+            constVal[c] = _mm_or_si128(_mm_and_si128(row, _mm_load_si128(reinterpret_cast<const __m128i *>(r))), colLanes);
+            keepMask[c] = _mm_load_si128(reinterpret_cast<const __m128i *>(p));
+            fillConst[c] = _mm_or_si128(_mm_and_si128(row, _mm_load_si128(reinterpret_cast<const __m128i *>(f))), colLanes);
+        }
+        const bool skipping = a.cl >= a.wl;
+        uint32_t cyc = 0u, blockBase = a.vuAddr, srcIndex = 0u;
+        for (uint32_t w = 0; w < a.writeCount; ++w)
+        {
+            const uint32_t dest = (skipping ? blockBase + cyc : a.vuAddr + w) & 0x3FFu;
+            __m128i *dst = reinterpret_cast<__m128i *>(a.vu + dest * 16u);
+            const uint32_t clamp = cyc > 3u ? 3u : cyc;
+            const __m128i old = _mm_loadu_si128(dst);
+            __m128i out = _mm_and_si128(old, keepMask[clamp]);
+            if (skipping || cyc < a.cl)
+            {
+                const __m128i dec = unpackDecodeVector<VL, VN>(a.src + srcIndex * bytesPerVector, old, a.zeroExtend);
+                ++srcIndex;
+                out = _mm_or_si128(out, _mm_or_si128(_mm_and_si128(dec, dataMask[clamp]), constVal[clamp]));
+            }
+            else
+                out = _mm_or_si128(out, fillConst[clamp]);
+            _mm_storeu_si128(dst, out);
+            if (++cyc == a.wl)
+            {
+                cyc = 0u;
+                blockBase += a.cl;
+            }
+        }
+    }
+
+    // false: a format the typed paths do not take (vl 3 with vn != 3)
+    bool unpackTypedDispatch(uint32_t vl, uint32_t vn, const UnpackArgs &a)
+    {
+        static const bool simd = [] {
+            const char *e = std::getenv("PS2X_VIF_UNPACK_SIMD");
+            return !(e && *e == '0');
+        }();
+        if (simd && a.mode != 1u && a.mode != 2u)
+        {
+            switch (vl * 4u + vn)
+            {
+            case 0u: unpackBlend<0u, 0u>(a); return true;
+            case 1u: unpackBlend<0u, 1u>(a); return true;
+            case 2u: unpackBlend<0u, 2u>(a); return true;
+            case 3u: unpackBlend<0u, 3u>(a); return true;
+            case 4u: unpackBlend<1u, 0u>(a); return true;
+            case 5u: unpackBlend<1u, 1u>(a); return true;
+            case 6u: unpackBlend<1u, 2u>(a); return true;
+            case 7u: unpackBlend<1u, 3u>(a); return true;
+            case 8u: unpackBlend<2u, 0u>(a); return true;
+            case 9u: unpackBlend<2u, 1u>(a); return true;
+            case 10u: unpackBlend<2u, 2u>(a); return true;
+            case 11u: unpackBlend<2u, 3u>(a); return true;
+            case 15u: unpackBlend<3u, 3u>(a); return true;
+            default: return false;
+            }
+        }
+        switch (vl * 4u + vn)
+        {
+        case 0u: unpackTyped<0u, 0u>(a); return true;
+        case 1u: unpackTyped<0u, 1u>(a); return true;
+        case 2u: unpackTyped<0u, 2u>(a); return true;
+        case 3u: unpackTyped<0u, 3u>(a); return true;
+        case 4u: unpackTyped<1u, 0u>(a); return true;
+        case 5u: unpackTyped<1u, 1u>(a); return true;
+        case 6u: unpackTyped<1u, 2u>(a); return true;
+        case 7u: unpackTyped<1u, 3u>(a); return true;
+        case 8u: unpackTyped<2u, 0u>(a); return true;
+        case 9u: unpackTyped<2u, 1u>(a); return true;
+        case 10u: unpackTyped<2u, 2u>(a); return true;
+        case 11u: unpackTyped<2u, 3u>(a); return true;
+        case 15u: unpackTyped<3u, 3u>(a); return true;
+        default: return false;
+        }
+    }
 }
 
 void PS2Memory::processVIF0Data(uint32_t srcPhys, uint32_t sizeBytes)
@@ -738,15 +1039,47 @@ void PS2Memory::processVIF1Data(const uint8_t *data, uint32_t sizeBytes)
 
             const bool zeroExtend = (imm & 0x4000u) != 0u;
 
-            // PS2X_VIF_UNPACK_FAST=0: the general loop only; =verify: both, compared (reported as [vif1-unpack-verify])
+            // PS2X_VIF_UNPACK_FAST=0: the general loop only; =verify: the typed path and the general loop, compared
+            // (reported as [vif1-unpack-verify]); =1: the unmasked CL == WL fast path below, the general loop for the rest;
+            // default: the typed path (unpackTyped, above) for every format it takes
             static const int unpackFast = [] {
                 const char *e = std::getenv("PS2X_VIF_UNPACK_FAST");
-                return !e ? 1 : *e == '0' ? 0 : *e == 'v' ? 2 : 1;
+                return !e ? 3 : *e == '0' ? 0 : *e == 'v' ? 2 : *e == '1' ? 1 : 3;
             }();
             bool fastDone = false;
             std::vector<uint8_t> verifyBefore, verifyFast;
             uint32_t verifyRowBefore[4] = {}, verifyRowFast[4] = {};
-            if (unpackFast && m_vu1Data && totalBytes > 0 && pos + totalBytes <= sizeBytes && !maskEnable && cl == wl &&
+            if (unpackFast >= 2 && m_vu1Data && totalBytes > 0 && pos + totalBytes <= sizeBytes && (vl != 3u || vn == 3u)) // [gta-recomp]
+            {
+                if (unpackFast == 2)
+                {
+                    verifyBefore.assign(m_vu1Data, m_vu1Data + PS2_VU1_DATA_SIZE);
+                    std::memcpy(verifyRowBefore, vif1_regs.row, sizeof(verifyRowBefore));
+                }
+                UnpackArgs a;
+                a.vu = m_vu1Data;
+                a.src = data + pos;
+                a.vuAddr = vuAddr;
+                a.writeCount = writeVectorCount;
+                a.cl = cl;
+                a.wl = wl;
+                a.mode = vif1_regs.mode & 3u;
+                a.mask = vif1_regs.mask;
+                a.maskEnable = maskEnable;
+                a.zeroExtend = zeroExtend;
+                a.row = vif1_regs.row;
+                a.col = vif1_regs.col;
+                fastDone = unpackTypedDispatch(vl, vn, a);
+                if (unpackFast == 2)
+                {
+                    verifyFast.assign(m_vu1Data, m_vu1Data + PS2_VU1_DATA_SIZE);
+                    std::memcpy(verifyRowFast, vif1_regs.row, sizeof(verifyRowFast));
+                    std::memcpy(m_vu1Data, verifyBefore.data(), PS2_VU1_DATA_SIZE);
+                    std::memcpy(vif1_regs.row, verifyRowBefore, sizeof(verifyRowBefore));
+                    fastDone = false;
+                }
+            }
+            else if (unpackFast == 1 && m_vu1Data && totalBytes > 0 && pos + totalBytes <= sizeBytes && !maskEnable && cl == wl &&
                 (vl != 3u || vn == 3u))
             {
                 if (unpackFast == 2)

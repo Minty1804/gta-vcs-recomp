@@ -181,6 +181,31 @@ namespace
     };
     GS *g_stageGs = nullptr;
 
+    // [gta-recomp] The GS stage keeps the state lock across a run of records (at most gsHoldRecords; dropped when the ring
+    // is empty and before a work item - setGsPauseHandler - so nothing that waits on the stage waits on the lock too).
+    // From batinium's gta-stories-recompiled: LCS sends ~50k records a frame, each one GS call taking and dropping the
+    // lock - ~8% of its GS stage in SRW lock acquire / release. The calls inside take it recursively (an owner check, no
+    // atomic). Other threads wait at most one run. PS2X_GS_HOLD=<n> records per run (default 32); 0 or 1: per record.
+    uint32_t gsHoldRecords()
+    {
+        static const uint32_t n = [] {
+            const char *e = std::getenv("PS2X_GS_HOLD");
+            return e && *e ? static_cast<uint32_t>(std::strtoul(e, nullptr, 10)) : 32u;
+        }();
+        return n;
+    }
+    bool g_stageHeld = false;    // the GS stage thread only
+    uint32_t g_stageHeldRun = 0; // records in the current run
+
+    void gsStagePause()
+    {
+        if (g_stageHeld)
+        {
+            g_stageHeld = false;
+            g_stageGs->unlockStateForStage();
+        }
+    }
+
     void gsStageHandler(const ps2_render_worker::GsCommand &c, const uint8_t *payload)
     {
         g_currentGifPath = static_cast<uint8_t>(c.gifPath);
@@ -188,6 +213,21 @@ namespace
         if (c.uploadBytes)
             gsHwSetUploadSource(c.uploadAddress, c.uploadBytes);
         GS &gs = *g_stageGs;
+        if (gsHoldRecords() > 1u)
+        {
+            if (!g_stageHeld)
+            {
+                gs.lockStateForStage();
+                g_stageHeld = true;
+                g_stageHeldRun = 0;
+            }
+            else if (++g_stageHeldRun >= gsHoldRecords())
+            {
+                gs.unlockStateForStage(); // a turn for anyone waiting
+                gs.lockStateForStage();
+                g_stageHeldRun = 0;
+            }
+        }
         switch (c.type)
         {
         case kGsGif:
@@ -253,6 +293,7 @@ void GS::init(uint8_t *vram, uint32_t vramSize, GSRegisters *privRegs)
 {
     g_stageGs = this; // [gta-recomp] the GS stage runs its commands on this GS
     ps2_render_worker::setGsHandler(&gsStageHandler);
+    ps2_render_worker::setGsPauseHandler(&gsStagePause); // [gta-recomp] (gsHoldRecords)
     m_localMemoryStorage = vram;
     m_localMemorySize = vramSize;
     m_privRegs = privRegs;
@@ -1077,7 +1118,9 @@ bool GS::submitPackedKick(const uint8_t *data, uint32_t sizeBytes) // [gta-recom
     // send PRIM with their state in an earlier packet - drawn with the current PRIM; the vertices already in the queue
     // (a strip / fan the earlier packet began) go first, without a kick of their own, as the front end has them.
     else if (flg == GIF_FMT_PACKED && nreg == 1u && (regs & 0xFu) == 0xEu && nloop >= 1u && sizeBytes == 16u + nloop * 16u &&
-             (((loadLE64(data + 24u + leadStates(data, nloop) * 16u) & 0xFFu) == GS_REG_PRIM &&
+             // [gta-recomp] (batinium's gta-stories-recompiled, 2026-11-17) a packet of state writes only: leadStates is
+             // nloop and the PRIM read below would be 8 bytes past the packet - a crash when it ended at a page edge
+             ((leadStates(data, nloop) < nloop && (loadLE64(data + 24u + leadStates(data, nloop) * 16u) & 0xFFu) == GS_REG_PRIM &&
                nloop >= leadStates(data, nloop) + 2u && isTriangles(loadLE64(data + 16u + leadStates(data, nloop) * 16u) & 0x7FFu) &&
                verticesOnly(data, nloop, leadStates(data, nloop) + 1u)) ||
               (continuedRuns() && isVertexWrite(static_cast<uint32_t>(loadLE64(data + 24) & 0xFFu)) &&

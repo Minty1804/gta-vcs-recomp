@@ -49,6 +49,17 @@ The items are in the order we go through them, one at a time. Status: open / don
 | 27 | Sniper scope mask bars keep their corners in widescreen | willzmkv ab6d89c | S | check ours, re-do | done 2026-11-19 with item 26 (its fix only matters with 26's sky fix); regress scopemask passes |
 | 37 | Sharp trails: the trails / colour pass at full resolution, without its blur (not a fork: the user's request, 2026-11-20) | aap, sharptrails for GTA III / VC on PC (MIT) | S | re-do in gs_hw.cpp's native trails pass | done 2026-11-20: Graphics > Image quality, off by default (game-internals 6g) |
 
+## F. batinium's gta-stories-recompiled (LCS, not a fork of ours)
+
+[batinium/gta-stories-recompiled](https://github.com/batinium/gta-stories-recompiled) is Liberty City Stories on the
+same PS2Recomp runtime (GPL-3.0). Surveyed 2026-11-23; the runtime's performance work taken (the user's point 3).
+
+| # | What | From | Size | How | Status |
+|---|---|---|---|---|---|
+| 38 | Runtime speed: VIF1 UNPACK typed / SSE paths, the GS stage's ring in batches, the GS state lock across 32 records, ClutHash per chunk, block-list pool, flat maps; and a GIF bounds crash fix | batinium 1ec8297 (v0.3.0) | M | port into our runtime, each with its switch back (PS2RECOMP_PATCHES.md) | done 2026-11-23 (PERFORMANCE.md 37) |
+| 39 | VIF1 chain walked on its own thread (`PS2X_CHAIN_ASYNC`) | batinium 1ec8297 | L | - | skipped: their own walk is synchronous whenever RSL observers are on (ours always are), and it needs game-specific waits where the model heap frees / moves memory (their lcs_dma_sync.cpp) |
+| 40 | Chain images: texture pixel REFs interned by the chain walker, passed to the GS by reference | batinium 1ec8297 | L | - | open: needs the write watch and our RSL recordings' bounds (GitHub issue 115) re-checked; see PERFORMANCE.md 37 for whether VCS spends the time it saves |
+
 ## Later (set aside 2026-11-19, the user's choice: maybe later)
 
 Taken out of the working order; each keeps its number and can come back to it.

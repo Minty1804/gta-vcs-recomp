@@ -99,6 +99,10 @@ private:
     std::array<uint16_t, 512> m_clut{};
     mutable uint64_t m_clutHashCache = 0;   // [gta-recomp] ClutHash of m_clut, valid unless m_clutHashDirty
     mutable bool m_clutHashDirty = true;
+    // [gta-recomp] ClutHash per 32-byte chunk (batinium's gta-stories-recompiled): only the chunks a load wrote are
+    // hashed again. PS2X_CLUT_CHUNKS=0 hashes all 32 every time (same hash, the old cost).
+    mutable uint64_t m_clutChunkHash[32]{};
+    mutable uint32_t m_clutDirtyChunks = ~0u;
     std::array<uint32_t, 2> m_clutCbp{};
     GSMem::TexturePageCache m_texturePageCache;
 

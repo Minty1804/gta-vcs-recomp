@@ -419,6 +419,9 @@ is listed here (the full list of candidates, done or not: [docs/FORK_IMPORTS.md]
   compressed after [willzmkv](https://github.com/willzmkv)'s (dejot) commits 37c9194 and 5f1b1c2.
 - **Distant lights**: the light table of Project2DFX's VCS version for PCSX2, from ThirteenAG's
   [WidescreenFixesPack](https://github.com/ThirteenAG/WidescreenFixesPack) (MIT).
+- **Runtime speed-ups** (VIF1 unpacking, the GS stage's queue and lock, CLUT hashing, upload bookkeeping) and a GS
+  crash fix: [batinium](https://github.com/batinium), from
+  [gta-stories-recompiled](https://github.com/batinium/gta-stories-recompiled) (commit 1ec8297).
 
 ## License
 
