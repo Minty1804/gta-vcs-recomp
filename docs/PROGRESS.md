@@ -1312,6 +1312,8 @@ Python scripts still usable on their own. docs/LAUNCHER.md has the whole of it; 
 | `VCS_DRIVEBY_RATE=0\|1` | Game > Combat > Drive-by fire rate for this run: 0 as on the PS2, 1 the gun's own rate (the menu shows it read-only) |
 | `VCS_DRIVEBY_HOOKS=0` | the NPC drive-by's fire rate left alone: a shot every frame, as the original game (the setting then does nothing; game/vcs_driveby.h) |
 | `VCS_PED_DISTANCE=100..200` | World > Draw distance > Pedestrian distance for this run (percent of the game's spawn / removal distances; game-internals.md 12d) |
+| `VCS_MODS=1` / `VCS_TEST_MODS=1` | a test run loads the mods in `modloader/` (`VCS_MODS` fixes the switch; `VCS_TEST_MODS` leaves the switches to the `setting` command); `VCS_MODLOADER_DIR=<dir>` another folder, the only one a test run writes to (docs/MODS.md) |
+| `VCS_MOD_FILES=0` | the mods' game files (IMG entries, GXT, SCM, converted .dff / .txd) not served; their textures still are |
 | `PS2X_HW_PACK_GPU_MB=<MB>` | GPU memory kept for texture pack images after the game's texture goes (35 % of the card's memory, 512 - 4096; 1536 when the backend doesn't say; 0: every texture made again uploads its image again; PERFORMANCE.md 33) |
 | `PS2X_HW_BLOCK_TEXTURES=0` | Texture packs' block-compressed DDS decoded to RGBA as before 2026-11-19 instead of going to the GPU as stored (the reference; game-internals.md 7b) |
 | `VCS_TEXPACK_VERIFY=1` | Every pack DDS also decoded and its texels checked against the alpha bounds that chose RGBA or as stored (`[texpack] verify` lines; texpack_check --real) |

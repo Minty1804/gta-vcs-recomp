@@ -23,6 +23,7 @@ namespace platform
 #include <cmath>
 #include <atomic>
 #include <chrono>
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -785,6 +786,30 @@ namespace platform
     bool windowFocused()
     {
         return g_window && !g_hiddenWindow && (SDL_GetWindowFlags(g_window) & SDL_WINDOW_INPUT_FOCUS) != 0;
+    }
+
+    // [Minty1804 fork] after willzmkv's (dejot): a file:// URL through SDL_OpenURL (Explorer, Finder, the desktop's file
+    // manager); bytes other than unreserved ones and the path's / and : percent-encoded (spaces, non-ASCII folder names)
+    bool openFolder(const std::string &utf8Path)
+    {
+        std::string url = utf8Path.rfind('/', 0) == 0 ? "file://" : "file:///"; // /home/... or D:/...
+        static const char *hex = "0123456789ABCDEF";
+        for (const char c : utf8Path)
+        {
+            const unsigned char u = static_cast<unsigned char>(c == '\\' ? '/' : c);
+            if (std::isalnum(u) || u == '/' || u == ':' || u == '-' || u == '_' || u == '.' || u == '~')
+                url += static_cast<char>(u);
+            else
+            {
+                url += '%';
+                url += hex[u >> 4];
+                url += hex[u & 15u];
+            }
+        }
+        if (SDL_OpenURL(url.c_str()))
+            return true;
+        std::fprintf(stderr, "[platform] could not open %s: %s\n", utf8Path.c_str(), SDL_GetError());
+        return false;
     }
 
     bool keyDown(int key) { return key >= 0 && key < KEY_COUNT && g_keys[key].load(std::memory_order_relaxed); }

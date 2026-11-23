@@ -40,6 +40,8 @@
 #include "game/vcs_memory.h"
 #include "game/vcs_world_hd.h"
 #include "game/vcs_texture_pack.h"
+#include "mods/modloader.h"
+#include "mods/rwconv.h"
 #include "platform/platform.h"
 #include "render/presenter.h"
 #include "rhi/rhi.h"
@@ -817,6 +819,7 @@ namespace
             {"Keyboard", {"On foot", "Fighting (unarmed, Target held)", "Vehicle (cars, bikes, boats)",
                           "Aircraft (helicopters, planes)", "All situations", "Mouse", "Menus and pause", "Shortcuts"}},
             {"Gamepad", {}},
+            {"Mods", {"Mod loader", "Installed mods", "Folder"}}, // [Minty1804 fork] willzmkv's mod loader (mods/modloader.h)
             {"Advanced", {"Diagnostics", "Reset"}},
         });
         vcs::input::registerSettings(); // the Keyboard & mouse and Gamepad pages (game/vcs_input.h)
@@ -826,6 +829,7 @@ namespace
         vcs::memory::registerSettings();   // World > Memory: Streaming memory (game/vcs_memory.h)
         vcs::lodlights::registerSettings(); // World > Details: distant lights (game/vcs_lod_lights.h)
         vcs::texpack::registerSettings(); // Graphics > Texture packs (game/vcs_texture_pack.h)
+        vcs::mods::registerSettings(exeDirectory()); // the Mods page: modloader/ (mods/modloader.h; willzmkv's)
         vcs::fog::registerSettings();     // Graphics > Fog: the game's fog distance / start (game/vcs_fog.h; willzmkv's)
         vcs::driveby::registerSettings(); // Game > Combat: drive-by fire rate (game/vcs_driveby.h)
         vcs::headshots::registerSettings(); // Game > Combat: headshots always kill (game/vcs_headshots.h)
@@ -955,6 +959,8 @@ namespace
 
 int main(int argc, char *argv[])
 {
+    if (const int code = vcs::rwconv::commandLine(argc, argv); code >= 0) // --rwconv-dff / --rwconv-txd: no game
+        return code;
     vcs::installCrashHandlers();
     try
     {
@@ -1038,6 +1044,7 @@ int main(int argc, char *argv[])
                                         ps2control::setGameInputBlocked(ui::settingsMenuBlocksInput() || ui::trainerMenuBlocksInput());
                                         vcs::input::onHostFrame(ui::settingsMenuOpen() || ui::trainerMenuBlocksInput());
                                         vcs::volume::onHostFrame();
+                                        vcs::mods::onHostFrame(); // mod switches, live (mods/modloader.h)
                                         vcs::prompts::onHostFrame();
                                         // [Minty1804 fork] aiming from the driver's seat (ChrisM-Pek): a small circle
                                         // where the shots go, at the aim's height in the game's picture

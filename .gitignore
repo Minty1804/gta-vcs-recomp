@@ -34,3 +34,7 @@ __pycache__/
 /VCSLauncher
 /VCSLauncher.app
 /VCSLauncher.old
+
+# mods (src/mods/modloader.cpp): the player's own, never committed - only the folder's README
+/modloader/*
+!/modloader/README.md

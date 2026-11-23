@@ -460,6 +460,10 @@ is listed here (the full list of candidates, done or not: [docs/FORK_IMPORTS.md]
   (dejot), from their fork (commit 2d22363), re-done on our detailed city.
 - **Texture-pack cache sized by the card**: after [willzmkv](https://github.com/willzmkv)'s (dejot) commit 91b4e40, on
   our GPU cache of pack images.
+- **Mod loader** (mod folders with Mod Loader's modloader.ini, game files from mods, PC Vice City car mods and VC / SA
+  weapon mods converted while the game loads): [willzmkv](https://github.com/willzmkv) (dejot), from their fork (commits
+  a8a8587, cc86fcc, 9091a8e, 96edbbe, eed27a2, 69d3d21, afb87df, 6e5f8d9, d177a70, b6693b6 and later), fitted to our
+  texture packs.
 - **This README's layout** (centred header, badges, feature tables side by side, collapsed sections): after
   [willzmkv](https://github.com/willzmkv)'s (dejot) README for their fork.
 

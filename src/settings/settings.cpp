@@ -75,6 +75,8 @@ namespace settings
                 const std::string key = trim(t.substr(0, eq));
                 if (g_overridden.count(key))
                     continue; // the environment's value is for this run only
+                if (auto spec = g_index.find(key); spec != g_index.end() && !g_specs[spec->second].saved)
+                    continue; // [Minty1804 fork] lives elsewhere: an old line stays as it was
                 if (auto it = g_values.find(key); it != g_values.end() && g_index.count(key))
                 {
                     line = key + "=" + std::to_string(it->second);
@@ -89,7 +91,7 @@ namespace settings
             for (const Spec &s : g_specs)
             {
                 const int v = g_values[s.key];
-                if (!written[s.key] && !g_overridden.count(s.key) && (v != s.defaultValue || g_aliased.count(s.key)))
+                if (s.saved && !written[s.key] && !g_overridden.count(s.key) && (v != s.defaultValue || g_aliased.count(s.key)))
                     lines.push_back(s.key + "=" + std::to_string(v));
             }
             for (const auto &[key, text] : g_state)
@@ -116,7 +118,7 @@ namespace settings
         g_index[spec.key] = g_specs.size();
         {
             std::lock_guard<std::mutex> lock(g_mutex);
-            g_values[spec.key] = spec.defaultValue;
+            g_values[spec.key] = !spec.saved && spec.read ? spec.read() : spec.defaultValue;
         }
         g_specs.push_back(std::move(spec));
     }
@@ -230,7 +232,11 @@ namespace settings
         const std::string iniName = ini.string();
         for (const Spec &s : g_specs)
         {
-            if (auto it = found.find(s.key); it != found.end())
+            if (!s.saved)
+            {
+                // [Minty1804 fork] its value lives elsewhere (read at add)
+            }
+            else if (auto it = found.find(s.key); it != found.end())
                 take(s, it->second, iniName.c_str());
             else if (auto old = found.find(s.alias); !s.alias.empty() && old != found.end())
             {

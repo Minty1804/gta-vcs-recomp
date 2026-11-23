@@ -9,6 +9,8 @@
 // Here they are replaced: reads are queued for a host thread that copies from the disc image into EE RAM; a poll
 // says busy until the copy is done. The game never touches a buffer before its poll says done, as with the IOP.
 #include "game/vcs_stream.h"
+#include "debug/rig.h"
+#include "mods/rwconv.h"
 
 #include "ps2_runtime.h"
 #include "ps2_runtime_macros.h"
@@ -17,11 +19,19 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <condition_variable>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <deque>
+#include <filesystem>
+#include <fstream>
+#include <functional>
+#include <map>
+#include <set>
+#include <unordered_map>
 #include <mutex>
 #include <thread>
 #include "runtime/ps2_host_std.h"
@@ -61,6 +71,450 @@ namespace vcs
             return *r;
         }
 
+        // ---- game files from mods (setStreamFiles) ----------------------------------------------------------------
+        // The tables (docs/game-internals.md 9d): the disc's file table at 0x5038A8 ({name ptr, 0, LSN, bytes}, count
+        // at 0x486E8C), the streaming info *(*(0x489FF8) + 200) (0x18 a resource: +0x10 offset and +0x14 size in
+        // sectors inside GTA3PS2.IMG, 0xFFFFFFFF = none), the model infos *(0x486518) (+0x8: ~CRC32 of the upper-case name).
+        constexpr uint32_t kFileTable = 0x5038A8u, kFileCount = 0x486E8Cu, kStreaming = 0x489FF8u, kModelInfos = 0x486518u;
+        constexpr uint32_t kResources = 8482u; // streaming info entries (measured; the array ends there)
+        // The TXD store's pool *(0x489ECC) {items, flags, size, ...}: 0x1C an item {texture list, refs, name[20]}; slot i is
+        // streaming entry *(*(0x489FF8) + 8) + i (7534 + i on this disc; docs/game-internals.md 9d)
+        constexpr uint32_t kTxdPool = 0x489ECCu, kTxdItem = 0x1Cu;
+
+        struct Overlay
+        {
+            uint32_t lsn, sectors;
+            std::vector<uint8_t> data; // the mod's file (the rest of the entry's sectors read as zeros)
+            uint32_t index = 0xFFFFFFFFu; // its GTA3PS2.IMG entry (none: a loose disc file)
+        };
+
+        // Mods switched while the game runs (the player's report, 2026-11-13: a mod switched off stayed in the game,
+        // even after loading the save): an entry already in memory keeps the bytes it was read with - Vic's model above
+        // all, which the game never drops. Each resolve compares what every entry is served (the mod's bytes, or the
+        // disc's) with the last one; an entry whose bytes changed is "dirty" until the game reads it again. Where the
+        // game dresses the player (FUN_00214900: an outfit change, a save's load, UNDRESS_CHAR) its request of the model
+        // first has the game remove the dirty model and its dirty, unused texture dictionary (CStreaming::RemoveModel,
+        // FUN_003C8618), so the request reads them anew; switching a mod that holds the player's model or dictionary
+        // dresses him again in his outfit at once (UNDRESS_CHAR, on foot only).
+        std::mutex g_resolveMutex;                          // resolveFiles: the stream thread, or the game thread's dressing
+        std::unordered_map<uint32_t, uint64_t> g_served;     // entry -> a hash of its mod bytes (absent: the disc's)
+        bool g_servedOnce = false; // the first resolve (before the game's first read) marks nothing dirty
+        std::mutex g_dirtyMutex;
+        std::set<uint32_t> g_dirty;
+
+        uint64_t fnv(const std::vector<uint8_t> &data)
+        {
+            uint64_t h = 0xCBF29CE484222325ull;
+            for (const uint8_t b : data)
+                h = (h ^ b) * 0x100000001B3ull;
+            return h ^ data.size();
+        }
+        std::mutex g_filesMutex;
+        std::vector<StreamFile> g_files;
+        uint64_t g_filesGeneration = 0, g_resolvedGeneration = 0;
+        std::vector<Overlay> g_overlays;
+
+        // A file larger than the disc's: its record (streaming info, or the disc's file table) is pointed at sectors past
+        // the end of the disc (kVirtualLsn on), where only the mod's bytes are served, so the game allocates and reads the
+        // mod's size and the entry touches no neighbour. The game reads GTA3PS2.IMG as an open file (FUN_00220EC8: the
+        // open-file records at 0x5058A8, 0x14 bytes {?, LSN, bytes, position, ?}) whose position is held to its size, so the
+        // archive's size is raised to reach there too (file table and open records). The game's values come back at the
+        // next resolve. 0x180000 sectors = 3 GB: past this disc (~2.1 GB), and its distance from the archive still fits a
+        // 32-bit byte count.
+        constexpr uint32_t kVirtualLsn = 0x00180000u;
+        constexpr uint32_t kOpenFiles = 0x5058A8u, kOpenFileCount = 64u;
+        struct Patched
+        {
+            uint32_t at, old; // a guest word and the game's value
+        };
+        std::vector<Patched> g_patched;
+
+        void wr32(uint8_t *rdram, uint32_t addr, uint32_t v) { std::memcpy(rdram + (addr & (PS2_RAM_MASK & ~3u)), &v, 4); }
+
+        uint32_t rd32(const uint8_t *rdram, uint32_t addr)
+        {
+            uint32_t v;
+            std::memcpy(&v, rdram + (addr & (PS2_RAM_MASK & ~3u)), 4);
+            return v;
+        }
+
+        // CKeyGen's key: CRC32 of the upper-case name without the final inversion
+        uint32_t keyOf(const std::string &name)
+        {
+            static uint32_t table[256] = {};
+            if (!table[1])
+                for (uint32_t i = 0; i < 256; ++i)
+                {
+                    uint32_t c = i;
+                    for (int k = 0; k < 8; ++k)
+                        c = (c & 1u) ? 0xEDB88320u ^ (c >> 1) : c >> 1;
+                    table[i] = c;
+                }
+            uint32_t c = 0xFFFFFFFFu;
+            for (const char ch : name)
+                c = table[(c ^ static_cast<uint8_t>(std::toupper(static_cast<unsigned char>(ch)))) & 0xFFu] ^ (c >> 8);
+            return c;
+        }
+
+        std::vector<uint8_t> readWhole(const std::string &path)
+        {
+            std::ifstream in(std::filesystem::u8path(path), std::ios::binary);
+            return in ? std::vector<uint8_t>(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()) : std::vector<uint8_t>();
+        }
+
+        // A PC file converted (src/mods/rwconv.h) - kept while the files (and the entry it goes onto) stay the same.
+        struct Converted
+        {
+            std::string stamp;
+            std::vector<uint8_t> data;
+        };
+        std::map<std::string, Converted> g_converted;
+        std::mutex g_convertedMutex; // conversions run on several threads at once (resolveFiles)
+
+        std::string stampOf(const std::string &path)
+        {
+            std::error_code ec;
+            const auto p = std::filesystem::u8path(path);
+            const auto size = std::filesystem::file_size(p, ec);
+            const auto time = std::filesystem::last_write_time(p, ec).time_since_epoch().count();
+            return path + "|" + std::to_string(size) + "|" + std::to_string(static_cast<long long>(time));
+        }
+
+        // The bytes a mod's file gives its entry: the file itself, or a PC file converted (a .dff onto the disc's own
+        // entry, read from `templateLsn`). Empty when it cannot be used.
+        // `weapon`: a weapon's name - its model moves to VCS's place in the hand, its dictionary's texture of that name
+        // (the HUD icon) stays VCS's (rwconv.h).
+        std::vector<uint8_t> entryBytes(const StreamFile &f, uint32_t index, uint32_t templateLsn, uint32_t templateSectors,
+                                        const std::string &weapon)
+        {
+            if (f.format == StreamFile::Format::Vcs)
+                return readWhole(f.path);
+            const std::string stamp = stampOf(f.path) + "|" + (f.companion.empty() ? "" : stampOf(f.companion)) + "|" + std::to_string(index);
+            {
+                std::lock_guard<std::mutex> lock(g_convertedMutex);
+                const auto cached = g_converted.find(f.path);
+                if (cached != g_converted.end() && cached->second.stamp == stamp)
+                    return cached->second.data;
+            }
+            const auto start = std::chrono::steady_clock::now();
+            std::vector<uint8_t> out;
+            std::string report;
+            bool ok = false;
+            // the disc's own entry: the model the .dff goes onto, or the dictionary whose other textures the .txd keeps
+            std::vector<uint8_t> templ(size_t(templateSectors) * 2048u);
+            IPS2DiscImage *disc = ps2_disc::image();
+            if (!disc || !disc->readBytes(uint64_t(templateLsn) * 2048u, static_cast<uint32_t>(templ.size()), templ.data()))
+                report = "the disc's entry could not be read";
+            else if (f.format == StreamFile::Format::PcTxd)
+                ok = rwconv::txdToXtx(readWhole(f.path), 128, &templ, out, report, weapon);
+            else
+            {
+                const std::vector<uint8_t> txd = f.companion.empty() ? std::vector<uint8_t>() : readWhole(f.companion);
+                ok = rwconv::dffToMdl(readWhole(f.path), templ, f.companion.empty() ? nullptr : &txd, out, report, weapon);
+            }
+            std::fprintf(stderr, "[mods] %s: %s converted%s in %.0f ms: %s\n", f.mod.c_str(), f.path.c_str(), ok ? "" : " - FAILED, not used",
+                         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count(), report.c_str());
+            if (!ok)
+                out.clear();
+            std::lock_guard<std::mutex> lock(g_convertedMutex);
+            g_converted[f.path] = {stamp, out};
+            return out;
+        }
+
+        // Stream thread, before a read, when the list changed: each file to its entry's sectors (the game's tables are
+        // read once they exist). False while the game has not built them yet.
+        bool resolveFiles(uint8_t *rdram)
+        {
+            const uint32_t streamingOwner = rd32(rdram, kStreaming), modelInfos = rd32(rdram, kModelInfos);
+            const uint32_t count = rd32(rdram, kFileCount);
+            if (!streamingOwner || !modelInfos || !count || count > 4096u)
+                return false;
+            for (auto p = g_patched.rbegin(); p != g_patched.rend(); ++p) // the game's own records first
+                wr32(rdram, p->at, p->old);
+            g_patched.clear();
+            auto patch = [&](uint32_t at, uint32_t value) {
+                g_patched.push_back({at, rd32(rdram, at)});
+                wr32(rdram, at, value);
+            };
+            uint32_t virtualLsn = kVirtualLsn;
+            uint32_t imgLsn = 0, imgSectors = 0;
+            for (uint32_t i = 0; i < count && !imgLsn; ++i)
+            {
+                const uint32_t entry = kFileTable + i * 16u, name = rd32(rdram, entry);
+                char text[48] = {};
+                std::memcpy(text, rdram + (name & PS2_RAM_MASK), sizeof(text) - 1);
+                if (std::strstr(text, "GTA3PS2.IMG"))
+                {
+                    imgLsn = rd32(rdram, entry + 8u);
+                    imgSectors = (rd32(rdram, entry + 12u) + 2047u) / 2048u;
+                }
+            }
+            const uint32_t streaming = rd32(rdram, streamingOwner + 200u);
+            if (!imgLsn || !streaming)
+                return false;
+            std::vector<StreamFile> files;
+            {
+                std::lock_guard<std::mutex> lock(g_filesMutex);
+                files = g_files;
+                g_resolvedGeneration = g_filesGeneration;
+            }
+            std::stable_sort(files.begin(), files.end(), [](const StreamFile &a, const StreamFile &b) { return a.priority > b.priority; });
+            std::vector<Overlay> overlays;
+            // PC files are converted for vehicles and weapons (the model info's type +0x10: 6, 4; FORK.md T9, T11). Other
+            // models' resources are laid out otherwise (converted as a car one drew nothing): those names' .dff and .txd are
+            // left out. A weapon's model moves to VCS's place in the hand; its dictionary holds its HUD icon, named like it:
+            // VCS's icon stays (`weapon`).
+            std::vector<std::string> notVehicles, weapons;
+            for (const StreamFile &f : files)
+                if (f.format != StreamFile::Format::Vcs && std::find(notVehicles.begin(), notVehicles.end(), f.name) == notVehicles.end() &&
+                    std::find(weapons.begin(), weapons.end(), f.name) == weapons.end())
+                {
+                    const uint32_t key = keyOf(f.name);
+                    for (uint32_t i = 0; i < kResources; ++i)
+                    {
+                        const uint32_t info = rd32(rdram, modelInfos + i * 4u);
+                        if (info >= 0x100000u && info < PS2_RAM_SIZE && rd32(rdram, info + 8u) == key)
+                        {
+                            const uint8_t type = rdram[(info + 0x10u) & PS2_RAM_MASK];
+                            if (type == 4u)
+                                weapons.push_back(f.name);
+                            else if (type != 6u)
+                            {
+                                notVehicles.push_back(f.name);
+                                std::fprintf(stderr, "[mods] %s: %s - \"%s\" is no vehicle or weapon in VCS (model type %u): PC "
+                                                     "models of those are not supported yet; its .dff and .txd not used\n",
+                                             f.mod.c_str(), f.path.c_str(), f.name.c_str(), type);
+                            }
+                            break;
+                        }
+                    }
+                }
+            // a file's archive entry: "#<index>", a texture dictionary by the TXD store's names, a model by its key
+            auto indexOf = [&](const StreamFile &f) {
+                uint32_t index = kResources;
+                if (!f.name.empty() && f.name[0] == '#')
+                    index = static_cast<uint32_t>(std::strtoul(f.name.c_str() + 1, nullptr, 10));
+                else if (f.textures || f.format == StreamFile::Format::PcTxd)
+                {
+                    const uint32_t pool = rd32(rdram, kTxdPool), base = rd32(rdram, streamingOwner + 8u);
+                    const uint32_t items = pool ? rd32(rdram, pool) : 0u, size = pool ? rd32(rdram, pool + 8u) : 0u;
+                    for (uint32_t i = 0; items && i < size && i < 4096u && index == kResources; ++i)
+                    {
+                        char text[21] = {};
+                        std::memcpy(text, rdram + ((items + i * kTxdItem + 8u) & PS2_RAM_MASK), 20);
+                        const std::string txd = text;
+                        if (txd.size() == f.name.size() &&
+                            std::equal(txd.begin(), txd.end(), f.name.begin(), [](char a, char b) { return std::tolower(static_cast<unsigned char>(a)) == std::tolower(static_cast<unsigned char>(b)); }))
+                            index = base + i;
+                    }
+                }
+                else
+                {
+                    const uint32_t key = keyOf(f.name);
+                    for (uint32_t i = 0; i < kResources && index == kResources; ++i)
+                    {
+                        const uint32_t info = rd32(rdram, modelInfos + i * 4u);
+                        if (info >= 0x100000u && info < PS2_RAM_SIZE && rd32(rdram, info + 8u) == key)
+                            index = i;
+                    }
+                }
+                return index;
+            };
+            // PC files are converted first, on every core at once (a car mod's 160 files took 4 s on this thread alone,
+            // while the game waited for its first read): the loop below then finds them in g_converted. The same entries
+            // as the loop takes - by priority, an entry once - from the records as the game has them (none patched yet).
+            {
+                std::vector<std::function<void()>> jobs;
+                std::vector<uint32_t> claimed;
+                for (const StreamFile &f : files)
+                {
+                    if (f.name.find('.') != std::string::npos ||
+                        (f.format != StreamFile::Format::Vcs && std::find(notVehicles.begin(), notVehicles.end(), f.name) != notVehicles.end()))
+                        continue;
+                    const uint32_t index = indexOf(f);
+                    if (index >= kResources || std::find(claimed.begin(), claimed.end(), index) != claimed.end())
+                        continue;
+                    claimed.push_back(index);
+                    const uint32_t offset = rd32(rdram, streaming + index * 0x18u + 0x10u), sectors = rd32(rdram, streaming + index * 0x18u + 0x14u);
+                    if (f.format == StreamFile::Format::Vcs || offset == 0xFFFFFFFFu || !sectors || offset + sectors > imgSectors)
+                        continue;
+                    const std::string weapon = std::find(weapons.begin(), weapons.end(), f.name) != weapons.end() ? f.name : std::string();
+                    jobs.push_back([&f, index, lsn = imgLsn + offset, sectors, weapon] { entryBytes(f, index, lsn, sectors, weapon); });
+                }
+                if (!jobs.empty())
+                {
+                    const auto start = std::chrono::steady_clock::now();
+                    const unsigned threads = std::max(1u, std::min<unsigned>(std::thread::hardware_concurrency(), static_cast<unsigned>(jobs.size())));
+                    std::atomic<size_t> next{0};
+                    std::vector<std::thread> pool;
+                    for (unsigned k = 0; k < threads; ++k)
+                        pool.emplace_back([&] {
+                            for (size_t i; (i = next.fetch_add(1)) < jobs.size();)
+                                jobs[i]();
+                        });
+                    for (std::thread &t : pool)
+                        t.join();
+                    std::fprintf(stderr, "[mods] %zu PC file(s) ready on %u thread(s) in %.0f ms\n", jobs.size(), threads,
+                                 std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count());
+                }
+            }
+            std::vector<uint32_t> taken;
+            bool imgMoved = false;
+            for (const StreamFile &f : files)
+            {
+                if (f.format != StreamFile::Format::Vcs && std::find(notVehicles.begin(), notVehicles.end(), f.name) != notVehicles.end())
+                    continue;
+                if (f.name.find('.') != std::string::npos) // a loose file (MAIN.SCM, AMERICAN.GXT): the disc file of that name
+                {
+                    uint32_t lsn = 0, bytes = 0, record = 0;
+                    for (uint32_t i = 0; i < count && !lsn; ++i)
+                    {
+                        const uint32_t entry = kFileTable + i * 16u;
+                        char text[64] = {};
+                        std::memcpy(text, rdram + (rd32(rdram, entry) & PS2_RAM_MASK), sizeof(text) - 1);
+                        std::string disc = text;
+                        disc = disc.substr(disc.find_last_of('\\') + 1);
+                        disc = disc.substr(0, disc.find(';'));
+                        if (disc.size() == f.name.size() &&
+                            std::equal(disc.begin(), disc.end(), f.name.begin(), [](char a, char b) { return std::toupper(static_cast<unsigned char>(a)) == std::toupper(static_cast<unsigned char>(b)); }))
+                        {
+                            lsn = rd32(rdram, entry + 8u);
+                            bytes = rd32(rdram, entry + 12u);
+                            record = entry + 8u;
+                        }
+                    }
+                    if (!lsn || std::find_if(overlays.begin(), overlays.end(), [&](const Overlay &o) { return o.lsn == lsn; }) != overlays.end())
+                    {
+                        if (!lsn)
+                            std::fprintf(stderr, "[mods] %s: %s is no file on the disc; not used\n", f.mod.c_str(), f.path.c_str());
+                        continue;
+                    }
+                    std::ifstream in(f.path, std::ios::binary | std::ios::ate);
+                    const auto size = in ? static_cast<uint64_t>(in.tellg()) : 0u;
+                    if (!size)
+                        continue;
+                    if (size > bytes) // larger: the file table's record moved past the disc
+                    {
+                        lsn = virtualLsn;
+                        bytes = static_cast<uint32_t>(size);
+                        virtualLsn += (bytes + 2047u) / 2048u;
+                        patch(record, lsn);
+                        patch(record + 4u, bytes);
+                    }
+                    Overlay o{lsn, (bytes + 2047u) / 2048u, std::vector<uint8_t>(static_cast<size_t>(size))};
+                    in.seekg(0);
+                    in.read(reinterpret_cast<char *>(o.data.data()), static_cast<std::streamsize>(size));
+                    std::fprintf(stderr, "[mods] %s: %s -> disc file %s (LSN %u, %u bytes)\n", f.mod.c_str(), f.path.c_str(), f.name.c_str(),
+                                 lsn, bytes);
+                    overlays.push_back(std::move(o));
+                    continue;
+                }
+                const uint32_t index = indexOf(f);
+                const uint32_t at = streaming + index * 0x18u;
+                const uint32_t offset = index < kResources ? rd32(rdram, at + 0x10u) : 0xFFFFFFFFu;
+                const uint32_t sectors = index < kResources ? rd32(rdram, at + 0x14u) : 0u;
+                if (offset == 0xFFFFFFFFu || !sectors || offset + sectors > imgSectors)
+                {
+                    if (f.format == StreamFile::Format::Vcs)
+                        std::fprintf(stderr, "[mods] %s: %s is no entry of GTA3PS2.IMG; not used\n", f.mod.c_str(), f.path.c_str());
+                    else if (f.name == "wheels") // VC's models/generic/wheels.dff: VCS's wheel models are resident (GAME.DTZ)
+                        std::fprintf(stderr, "[mods] %s: %s - VCS keeps its wheels in memory from the start, not in GTA3PS2.IMG: "
+                                             "not supported yet (FORK.md T10); not used\n", f.mod.c_str(), f.path.c_str());
+                    else
+                        std::fprintf(stderr, "[mods] %s: %s - VCS has no vehicle or weapon \"%s\" (rename the files as the one it "
+                                             "should replace); not used\n", f.mod.c_str(), f.path.c_str(), f.name.c_str());
+                    continue;
+                }
+                if (std::find(taken.begin(), taken.end(), index) != taken.end())
+                    continue; // a mod with a higher priority has it
+                const bool weapon = std::find(weapons.begin(), weapons.end(), f.name) != weapons.end();
+                std::vector<uint8_t> bytes = entryBytes(f, index, imgLsn + offset, sectors, weapon ? f.name : std::string());
+                const auto size = static_cast<uint64_t>(bytes.size());
+                if (!size)
+                    continue;
+                uint32_t first = imgLsn + offset, span = sectors;
+                if (size > uint64_t(sectors) * 2048u) // larger: the streaming record moved past the disc (offset and size)
+                {
+                    span = static_cast<uint32_t>((size + 2047u) / 2048u);
+                    first = virtualLsn;
+                    virtualLsn += span;
+                    patch(at + 0x10u, first - imgLsn);
+                    patch(at + 0x14u, span);
+                    imgMoved = true;
+                }
+                Overlay o{first, span, std::move(bytes), index};
+                taken.push_back(index);
+                std::fprintf(stderr, "[mods] %s: %s -> GTA3PS2.IMG entry %u (LSN %u, %u sectors%s)\n", f.mod.c_str(), f.path.c_str(),
+                             index, o.lsn, o.sectors, o.sectors > sectors ? ", larger than the disc's: moved" : "");
+                overlays.push_back(std::move(o));
+            }
+            if (imgMoved) // the archive reaches the moved entries: its size in the file table and in its open records
+            {
+                const uint32_t bytes = (virtualLsn - imgLsn) * 2048u;
+                for (uint32_t i = 0; i < count; ++i)
+                    if (rd32(rdram, kFileTable + i * 16u + 8u) == imgLsn)
+                        patch(kFileTable + i * 16u + 12u, bytes);
+                for (uint32_t i = 0; i < kOpenFileCount; ++i)
+                    if (rd32(rdram, kOpenFiles + i * 0x14u + 4u) == imgLsn)
+                        patch(kOpenFiles + i * 0x14u + 8u, bytes);
+            }
+            {
+                std::unordered_map<uint32_t, uint64_t> served;
+                for (const Overlay &o : overlays)
+                    if (o.index != 0xFFFFFFFFu)
+                        served[o.index] = fnv(o.data);
+                std::lock_guard<std::mutex> lock(g_dirtyMutex);
+                for (const auto &[index, hash] : g_servedOnce ? served : decltype(served)())
+                    if (const auto old = g_served.find(index); old == g_served.end() || old->second != hash)
+                        g_dirty.insert(index);
+                for (const auto &[index, hash] : g_served)
+                    if (!served.count(index))
+                        g_dirty.insert(index);
+                g_served = std::move(served);
+                g_servedOnce = true;
+            }
+            std::lock_guard<std::mutex> lock(g_filesMutex);
+            g_overlays = std::move(overlays);
+            return true;
+        }
+
+        // the list's changes taken in, on whichever thread gets there first
+        void resolveNow(uint8_t *rdram)
+        {
+            std::lock_guard<std::mutex> resolving(g_resolveMutex);
+            bool resolve;
+            {
+                std::lock_guard<std::mutex> lock(g_filesMutex);
+                resolve = g_resolvedGeneration != g_filesGeneration;
+            }
+            if (resolve)
+                resolveFiles(rdram);
+        }
+
+        // the mods' bytes over a disc read that covers their entries (whole or in part)
+        void overlay(uint32_t lsn, uint32_t bytes, uint8_t *dest)
+        {
+            std::lock_guard<std::mutex> lock(g_filesMutex);
+            if (g_overlays.empty())
+                return;
+            const uint64_t start = uint64_t(lsn) * 2048u, end = start + bytes;
+            for (const Overlay &o : g_overlays)
+            {
+                const uint64_t from = std::max<uint64_t>(start, uint64_t(o.lsn) * 2048u);
+                const uint64_t to = std::min<uint64_t>(end, (uint64_t(o.lsn) + o.sectors) * 2048u);
+                if (from < to)
+                {
+                    const uint64_t inEntry = from - uint64_t(o.lsn) * 2048u;
+                    const uint64_t span = to - from;
+                    const uint64_t copyBytes = inEntry < o.data.size() ? std::min(span, o.data.size() - inEntry) : 0u;
+                    if (copyBytes > 0)
+                        std::memcpy(dest + (from - start), o.data.data() + inEntry, static_cast<size_t>(copyBytes));
+                    if (span > copyBytes)
+                        std::memset(dest + (from - start) + copyBytes, 0, static_cast<size_t>(span - copyBytes));
+                }
+            }
+        }
+
         void run()
         {
             Reader &r = reader();
@@ -77,8 +531,19 @@ namespace vcs
                 IPS2DiscImage *disc = ps2_disc::image();
                 const uint32_t dest = request.dest & PS2_RAM_MASK;
                 const uint32_t bytes = std::min<uint32_t>(request.bytes, PS2_RAM_SIZE - dest);
-                if (!disc || !disc->readBytes(static_cast<uint64_t>(request.lsn) * 2048u, bytes, r.rdram + dest))
+                if (request.lsn >= kVirtualLsn) // a mod's larger file: nothing of the disc there
+                {
+                    static int logged = 0;
+                    if (logged++ < 8)
+                        std::fprintf(stderr, "[stream] read of a mod's moved file: LSN %u, %u bytes, channel %u\n", request.lsn, bytes,
+                                     request.channel);
+                }
+                if (request.lsn >= kVirtualLsn)
+                    std::memset(r.rdram + dest, 0, bytes);
+                else if (!disc || !disc->readBytes(static_cast<uint64_t>(request.lsn) * 2048u, bytes, r.rdram + dest))
                     std::fprintf(stderr, "[stream] read of %u bytes at LSN 0x%x failed\n", bytes, request.lsn);
+                resolveNow(r.rdram);
+                overlay(request.lsn, bytes, r.rdram + dest);
                 r.reads.fetch_add(1, std::memory_order_relaxed);
                 r.bytes.fetch_add(bytes, std::memory_order_relaxed);
                 r.nanoseconds.fetch_add(static_cast<uint64_t>(
@@ -152,6 +617,123 @@ namespace vcs
             SET_GPR_U64(ctx, 2, 0);
             ctx->pc = GPR_U32(ctx, 31);
         }
+
+        // FUN_003CB900(model, flags, ?) = CStreaming::RequestModel; its call in FUN_00214900 (dressing the player)
+        // returns to 0x2149A4. Before the original (DECISIONS.md, hooks): a dirty model / dictionary of the request,
+        // loaded, is removed first by a tail call of the game's RemoveModel (FUN_003C8618(streaming, entry)) that returns
+        // here (0x3CB900); the request's own arguments come back then, and the original runs.
+        constexpr uint32_t kRequestModel = 0x003CB900u, kDressRequestReturn = 0x002149A4u, kRemoveModel = 0x003C8618u;
+        constexpr uint32_t kModelTxd = 0x1Eu; // a model info's texture dictionary slot (s16; -1 none)
+        PS2Runtime::RecompiledFunction g_requestModel = nullptr;
+        struct Saved
+        {
+            bool on = false;
+            uint32_t a0, a1, a2, a3, ra, sp;
+        } g_saved;
+
+        PS2_GUEST_CC void requestModel(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            if (g_saved.on && GPR_U32(ctx, 31) == kRequestModel && GPR_U32(ctx, 29) == g_saved.sp) // back from a removal of ours
+            {
+                SET_GPR_U32(ctx, 4, g_saved.a0);
+                SET_GPR_U32(ctx, 5, g_saved.a1);
+                SET_GPR_U32(ctx, 6, g_saved.a2);
+                SET_GPR_U32(ctx, 7, g_saved.a3);
+                SET_GPR_U32(ctx, 31, g_saved.ra);
+            }
+            g_saved.on = false; // (any other entry: a removal of ours that never came back is forgotten)
+            if (GPR_U32(ctx, 31) == kDressRequestReturn)
+            {
+                resolveNow(rdram);
+                const uint32_t streaming = rd32(rdram, kStreaming), model = GPR_U32(ctx, 4);
+                const uint32_t infos = rd32(rdram, kModelInfos), txdBase = streaming ? rd32(rdram, streaming + 8u) : 0u;
+                const uint32_t records = streaming ? rd32(rdram, streaming + 200u) : 0u;
+                auto loaded = [&](uint32_t entry) { return records && rdram[(records + entry * 0x18u + 0xCu) & PS2_RAM_MASK] == 1; };
+                uint32_t remove = 0xFFFFFFFFu;
+                {
+                    std::lock_guard<std::mutex> lock(g_dirtyMutex);
+                    if (model < kResources && g_dirty.count(model) && loaded(model))
+                        remove = model;
+                    else if (model < kResources && infos)
+                    {
+                        // its dictionary, once no loaded model holds it (refs, the TXD store's item +4)
+                        const uint32_t info = rd32(rdram, infos + model * 4u);
+                        int16_t slot = -1;
+                        if (info >= 0x100000u && info < PS2_RAM_SIZE)
+                            std::memcpy(&slot, rdram + ((info + kModelTxd) & PS2_RAM_MASK), 2);
+                        const uint32_t pool = rd32(rdram, kTxdPool), items = pool ? rd32(rdram, pool) : 0u;
+                        // (the model's removal drops a dictionary no other model holds: then it is read anew already)
+                        if (slot >= 0 && items && g_dirty.count(txdBase + uint32_t(slot)))
+                        {
+                            if (!loaded(txdBase + uint32_t(slot)))
+                                g_dirty.erase(txdBase + uint32_t(slot));
+                            else if (rd32(rdram, items + uint32_t(slot) * kTxdItem + 4u) == 0)
+                                remove = txdBase + uint32_t(slot);
+                        }
+                    }
+                    if (remove != 0xFFFFFFFFu)
+                        g_dirty.erase(remove);
+                    else
+                        g_dirty.erase(model); // (read anew by this request, or not loaded: clean either way)
+                }
+                if (remove != 0xFFFFFFFFu)
+                {
+                    std::fprintf(stderr, "[mods] entry %u changed by a mod: removed for the player's model to be read again\n", remove);
+                    g_saved = {true, GPR_U32(ctx, 4), GPR_U32(ctx, 5), GPR_U32(ctx, 6), GPR_U32(ctx, 7), GPR_U32(ctx, 31), GPR_U32(ctx, 29)};
+                    SET_GPR_U32(ctx, 4, streaming);
+                    SET_GPR_U32(ctx, 5, remove);
+                    SET_GPR_U32(ctx, 31, kRequestModel);
+                    ctx->pc = kRemoveModel;
+                    return;
+                }
+            }
+            g_requestModel(rdram, ctx, runtime);
+        }
+
+        // UNDRESS_CHAR (020F) the player into his outfit (0x487400, STORE_PLAYER_OUTFIT's): FUN_00214900 and the request
+        // above. On foot only (a mission's or a shop's own dressing works so); else at the next dressing / load.
+        constexpr uint32_t kPlayerPed = 0x004E4910u, kOutfit = 0x00487400u;
+        void redressPlayer()
+        {
+            rig::runOnGameThread([](uint8_t *rdram, R5900Context *, PS2Runtime *) {
+                resolveNow(rdram);
+                const uint32_t ped = rd32(rdram, kPlayerPed), infos = rd32(rdram, kModelInfos), streaming = rd32(rdram, kStreaming);
+                if (!ped || !infos || !streaming || rd32(rdram, ped + 0x480u) != 0)
+                    return;
+                uint16_t model;
+                std::memcpy(&model, rdram + ((ped + 0x56u) & PS2_RAM_MASK), 2);
+                const uint32_t info = model < kResources ? rd32(rdram, infos + model * 4u) : 0u;
+                int16_t slot = -1;
+                if (info >= 0x100000u && info < PS2_RAM_SIZE)
+                    std::memcpy(&slot, rdram + ((info + kModelTxd) & PS2_RAM_MASK), 2);
+                {
+                    std::lock_guard<std::mutex> lock(g_dirtyMutex);
+                    if (!g_dirty.count(model) && !(slot >= 0 && g_dirty.count(rd32(rdram, streaming + 8u) + uint32_t(slot))))
+                        return;
+                }
+                char outfit[9] = {};
+                std::memcpy(outfit, rdram + kOutfit, 8);
+                if (!outfit[0])
+                    return;
+                std::vector<uint8_t> code = {0x0F, 0x02, 0xCF, 0xA5, 0x0A}; // UNDRESS_CHAR $PLAYER "<outfit>"
+                code.insert(code.end(), outfit, outfit + std::strlen(outfit) + 1);
+                code.push_back(0x23); // TERMINATE_THIS_SCRIPT (0x0023)
+                code.push_back(0x00);
+                const uint32_t script = rig::startCodeScript(rdram, code.data(), code.size(), "mods");
+                std::fprintf(stderr, "[mods] the player's model or textures changed: dressed again in \"%s\"%s\n", outfit,
+                             script ? "" : " - no script slot free (at the next dressing)");
+            });
+        }
+    }
+
+    void setStreamFiles(std::vector<StreamFile> files)
+    {
+        {
+            std::lock_guard<std::mutex> lock(g_filesMutex);
+            g_files = std::move(files);
+            ++g_filesGeneration; // resolved at the next read - also an empty list: the game's records put back
+        }
+        redressPlayer(); // (a mod with the player's model or textures: in the game at once)
     }
 
     bool installStreamHooks(PS2Runtime &runtime)
@@ -163,6 +745,8 @@ namespace vcs
             return false;
         }
         runtime.replaceFunction(kRead, &streamRead);
+        if ((g_requestModel = runtime.lookupFunction(kRequestModel)))
+            runtime.replaceFunction(kRequestModel, &requestModel);
         runtime.replaceFunction(kPoll, &streamPoll);
         runtime.replaceFunction(kFn5, &streamFn5);
         return true;

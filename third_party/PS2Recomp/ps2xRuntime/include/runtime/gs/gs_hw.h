@@ -253,6 +253,9 @@ public:
 };
 // Any thread, before the game starts (the pack outlives the renderer); nullptr = off.
 void gsHwSetTexturePack(GSHwTexturePack *pack);
+// [gta-recomp] Any thread: the pack's index changed (a mod switched): at the GS stage's next frame every texture is
+// made again and looked up anew, and the kept GPU textures of pack images are dropped.
+void gsHwTexturePackChanged();
 // Replaced textures made so far and the textures hashed (the check, diagnostics).
 void gsHwTexturePackStats(uint64_t &hashed, uint64_t &replaced);
 

@@ -417,14 +417,13 @@ namespace vcs::texpack
         class Pack final : public GSHwTexturePack
         {
         public:
-            void open(const fs::path &root, bool replace, bool dump)
+            void open(const fs::path &root, bool replace, bool dump, std::vector<Source> mods)
             {
                 m_root = root;
                 m_dumpDir = root / "dumps";
                 if (const char *e = std::getenv("VCS_TEXPACK_CACHE_MB"); e && *e)
                     m_cacheLimit = static_cast<size_t>(std::strtoull(e, nullptr, 10)) << 20;
-                if (replace)
-                    index(root / "replacements");
+                m_replace = replace;
                 if (dump)
                 {
                     std::error_code ec;
@@ -446,8 +445,8 @@ namespace vcs::texpack
                                      utf8(m_dumpDir).c_str(), m_dumped.size());
                     }
                 }
-                m_wants = !m_entries.empty() || m_dumping;
-                for (int i = 0; i < 2 && !m_entries.empty(); ++i)
+                setSources(std::move(mods)); // the folder's own pack (replacements/) and the mods' so far
+                for (int i = 0; i < 2; ++i)
                     m_loaders.emplace_back([this] { loaderLoop(); });
                 if (m_dumping)
                     m_writer = std::thread([this] { writerLoop(); });
@@ -467,7 +466,7 @@ namespace vcs::texpack
                     m_writer.join();
             }
 
-            bool wantsTextures() const override { return m_wants; }
+            bool wantsTextures() const override { return m_wants.load(std::memory_order_acquire); }
             bool dumping() const override { return m_dumping; }
 
             uint64_t lookup(const GSHwTextureInfo &info, std::shared_ptr<const GSHwReplacement> &ready) override
@@ -542,13 +541,15 @@ namespace vcs::texpack
                 std::snprintf(text, sizeof(text),
                               "ok indexed=%zu hashed=%llu/%llu replaced=%llu loaded=%llu failed=%llu dumped=%llu cache_mb=%zu "
                               "load_ms_avg=%.1f blocks=%llu cache_kb=%zu",
-                              m_entries.size(), (unsigned long long)m_hashed.load(), (unsigned long long)hashed,
+                              m_indexed, (unsigned long long)m_hashed.load(), (unsigned long long)hashed,
                               (unsigned long long)replaced,
                               (unsigned long long)m_loaded, (unsigned long long)m_failed, (unsigned long long)m_written.load(),
                               m_cacheBytes >> 20, m_loaded ? m_loadUs / 1000.0 / double(m_loaded) : 0.0,
                               (unsigned long long)m_blockLoaded, m_cacheBytes >> 10);
                 return text;
             }
+
+            void setReplace(bool on) { m_replace = on; }
 
         private:
             struct Entry
@@ -565,50 +566,110 @@ namespace vcs::texpack
                 std::vector<uint32_t> pixels;
             };
 
-            void index(const fs::path &dir)
+            // [Minty1804 fork] The pack's index from every source, highest priority first (the folder's own
+            // replacements/ at 50, then the mods' - src/mods/modloader.cpp, after willzmkv's (dejot) Mod Loader): a
+            // texture two sources have comes from the higher one, the first found within one. Entries are never removed
+            // (a handle is an entry's index): a file seen before keeps its entry and its decoded image. Main thread; the
+            // directories are read outside the lock, the new index swapped in under it.
+        public:
+            void setSources(std::vector<Source> mods)
             {
-                std::error_code ec;
-                if (!fs::is_directory(dir, ec))
+                std::vector<Source> sources;
+                if (m_replace)
                 {
-                    std::fprintf(stderr, "[texpack] no texture pack (%s holds none)\n", utf8(dir).c_str());
-                    return;
+                    sources.push_back({m_root / "replacements", 50, "textures/" + std::string(kSerial), false});
+                    for (Source &m : mods)
+                        sources.push_back(std::move(m));
                 }
-                size_t dds = 0, region = 0, other = 0, dupes = 0;
-                for (auto it = fs::recursive_directory_iterator(dir, fs::directory_options::skip_permission_denied, ec);
-                     !ec && it != fs::recursive_directory_iterator(); it.increment(ec))
+                std::stable_sort(sources.begin(), sources.end(), [](const Source &a, const Source &b) { return a.priority > b.priority; });
+                struct Found
                 {
-                    if (!it->is_regular_file(ec))
-                        continue;
-                    const std::string name = utf8(it->path().filename());
-                    Key k;
-                    const bool isDds = endsWith(name, ".dds");
-                    if (!isDds && !endsWith(name, ".png"))
-                        continue;
-                    else if (parseName(name, k))
+                    Key key;
+                    std::string path;
+                    bool dds;
+                };
+                std::vector<Found> found;
+                std::vector<std::string> lines;
+                for (const Source &src : sources)
+                {
+                    std::error_code ec;
+                    if (!fs::is_directory(src.dir, ec))
                     {
-                        if (m_byKey.count(k))
+                        lines.push_back("[texpack] no texture pack (" + utf8(src.dir) + " holds none)");
+                        continue;
+                    }
+                    size_t files = 0, dds = 0, region = 0, other = 0;
+                    for (auto it = fs::recursive_directory_iterator(src.dir, fs::directory_options::skip_permission_denied, ec);
+                         !ec && it != fs::recursive_directory_iterator(); it.increment(ec))
+                    {
+                        if (src.mod && it->is_directory(ec) && it->path().filename() == "dumps")
                         {
-                            ++dupes; // the first found wins
+                            it.disable_recursion_pending(); // a mod's own dumps are not its textures
                             continue;
                         }
-                        m_byKey.emplace(k, m_entries.size());
-                        m_entries.push_back({utf8(it->path())});
-                        m_entries.back().dds = isDds;
-                        dds += isDds;
+                        if (!it->is_regular_file(ec))
+                            continue;
+                        const std::string name = utf8(it->path().filename());
+                        Key k;
+                        const bool isDds = endsWith(name, ".dds");
+                        if (!isDds && !endsWith(name, ".png"))
+                            continue;
+                        if (parseName(name, k))
+                        {
+                            found.push_back({k, utf8(it->path()), isDds});
+                            ++files;
+                            dds += isDds;
+                        }
+                        else if (name.find("-r") != std::string::npos || name.find("-mip") != std::string::npos)
+                            ++region;
+                        else
+                            ++other;
                     }
-                    else if (name.find("-r") != std::string::npos || name.find("-mip") != std::string::npos)
-                        ++region;
-                    else
-                        ++other;
+                    char line[640];
+                    std::snprintf(line, sizeof(line), "[texpack] %zu replacement textures in %s (%zu DDS; %s, priority %d; skipped: %zu region / mip level names, %zu other)",
+                                  files, utf8(src.dir).c_str(), dds, src.name.c_str(), src.priority, region, other);
+                    lines.push_back(line);
                 }
-                std::fprintf(stderr, "[texpack] %zu replacement textures in %s (%zu DDS)", m_entries.size(),
-                             utf8(dir).c_str(), dds);
-                if (region || other || dupes)
-                    std::fprintf(stderr, " (skipped: %zu region / mip level names, %zu other, %zu duplicates)", region,
-                                 other, dupes);
-                std::fprintf(stderr, "\n");
+                size_t dupes = 0, kept = 0, indexed = 0;
+                {
+                    std::lock_guard<std::mutex> lock(m_mutex);
+                    std::unordered_map<Key, size_t, KeyHash> byKey;
+                    for (const Found &f : found)
+                    {
+                        if (byKey.count(f.key))
+                        {
+                            ++dupes; // a higher source (or the first found) wins
+                            continue;
+                        }
+                        auto known = m_byPath.find(f.path);
+                        size_t index;
+                        if (known != m_byPath.end())
+                        {
+                            index = known->second;
+                            ++kept;
+                        }
+                        else
+                        {
+                            index = m_entries.size();
+                            m_entries.push_back({f.path});
+                            m_entries.back().dds = f.dds;
+                            m_byPath.emplace(f.path, index);
+                        }
+                        byKey.emplace(f.key, index);
+                    }
+                    m_byKey.swap(byKey);
+                    indexed = m_indexed = m_byKey.size();
+                    m_wants.store(!m_byKey.empty() || m_dumping, std::memory_order_release);
+                }
+                for (const std::string &l : lines)
+                    std::fprintf(stderr, "%s\n", l.c_str());
+                std::fprintf(stderr, "[texpack] index: %zu textures from %zu source(s) (%zu found in a higher one, %zu kept)\n",
+                             indexed, sources.size(), dupes, kept);
+                if (m_generation++)
+                    gsHwTexturePackChanged(); // (not at start: nothing made yet)
             }
 
+        private:
             void loaderLoop()
             {
                 for (;;)
@@ -743,7 +804,11 @@ namespace vcs::texpack
             }
 
             fs::path m_root, m_dumpDir;
-            bool m_wants = false, m_dumping = false;
+            bool m_dumping = false, m_replace = false;
+            std::atomic<bool> m_wants{false};
+            std::unordered_map<std::string, size_t> m_byPath; // [Minty1804 fork] a file's entry, kept across indexes
+            size_t m_indexed = 0;
+            uint64_t m_generation = 0;
             std::mutex m_mutex;
             std::condition_variable m_cv, m_writeCv;
             bool m_stop = false;
@@ -760,6 +825,16 @@ namespace vcs::texpack
         };
 
         Pack *g_pack = nullptr; // lives until the process ends (the renderer holds it)
+        std::vector<Source> g_modSources; // [Minty1804 fork] the mod loader's (main thread)
+    }
+
+    bool enabled() { return g_enabled.load(); }
+
+    void setModSources(std::vector<Source> sources)
+    {
+        g_modSources = sources;
+        if (g_pack)
+            g_pack->setSources(std::move(sources));
     }
 
     void registerSettings()
@@ -770,13 +845,19 @@ namespace vcs::texpack
         s.section = "Texture packs";
         s.label = "Texture packs";
         s.help = "High-resolution textures made for the PS2 game under PCSX2: put the pack's folder into "
-                 "textures/SLUS-21590/replacements next to vcs.exe. PNG or DDS files. With no pack "
-                 "there it changes nothing.";
+                 "textures/SLUS-21590/replacements next to vcs.exe, or into a mod's folder (Mods). PNG or DDS files. "
+                 "With no pack there it changes nothing. Off: the game's own textures, at once.";
         s.type = settings::Type::Toggle;
         s.defaultValue = 1;
-        s.apply = settings::Apply::Restart;
         s.env = "VCS_TEXPACK";
-        s.onChange = [](int v) { g_enabled.store(v != 0); };
+        s.onChange = [](int v) {
+            g_enabled.store(v != 0);
+            if (g_pack) // [Minty1804 fork] switched while the game runs: the index again, every texture made again
+            {
+                g_pack->setReplace(v != 0);
+                g_pack->setSources(g_modSources);
+            }
+        };
         settings::add(s);
 
         s = {};
@@ -797,16 +878,14 @@ namespace vcs::texpack
     void install(PS2Runtime &, const fs::path &gameFolder)
     {
         const bool replace = g_enabled.load(), dump = g_dumpSetting.load();
-        if (replace || dump)
-        {
-            const char *dir = std::getenv("VCS_TEXTURE_DIR");
-            const fs::path root = dir && *dir ? fs::u8path(dir) : gameFolder / "textures" / kSerial;
-            g_pack = new Pack();
-            g_pack->open(root, replace, dump);
-            if (g_pack->wantsTextures())
-                gsHwSetTexturePack(g_pack);
-        }
-        else
+        // [Minty1804 fork] the pack is made when off too: Texture packs and the mods switch while the game runs (with
+        // nothing to replace or dump, wantsTextures() is false and the renderer hashes nothing - the original)
+        const char *dir = std::getenv("VCS_TEXTURE_DIR");
+        const fs::path root = dir && *dir ? fs::u8path(dir) : gameFolder / "textures" / kSerial;
+        g_pack = new Pack();
+        g_pack->open(root, replace, dump, g_modSources);
+        gsHwSetTexturePack(g_pack);
+        if (!replace && !dump)
             std::fprintf(stderr, "[texpack] texture packs off\n");
 
         // texpack -> ok indexed hashed replaced loaded failed dumped cache_mb (since the start)

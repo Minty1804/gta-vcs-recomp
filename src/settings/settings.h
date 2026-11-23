@@ -69,6 +69,9 @@ namespace settings
         // Key: a second binding of the same action, drawn in this row beside the first (its own Spec, `hidden`).
         std::string partner;
         bool hidden = false; // no row of its own (a partner); still saved, reset with its page
+        // [Minty1804 fork] false: not in vcs.ini - the value lives elsewhere (a mod's priority in modloader.ini), `read`
+        // gives it at add() and refresh(); the environment still overrides it.
+        bool saved = true;
         // Action: the button's text, and whether it asks for a second click first.
         std::string button;
         bool confirm = false;

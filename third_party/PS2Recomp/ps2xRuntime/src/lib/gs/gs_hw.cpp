@@ -118,6 +118,7 @@ namespace
     std::atomic<GSHwTexturePack *> g_texturePack{nullptr};                   // [gta-recomp] gsHwSetTexturePack
     std::atomic<uint64_t> g_packHashed{0}, g_packReplaced{0};
     std::atomic<bool> g_blockCompression{false}; // [gta-recomp] gsHwBlockCompression
+    std::atomic<uint64_t> g_packGeneration{0};   // [gta-recomp] gsHwTexturePackChanged
     std::atomic<uint64_t> g_videoMemory{0};      // [gta-recomp] the device's memory: the packs' GPU cache (keepPackGpu)
 }
 
@@ -188,6 +189,11 @@ namespace
 void gsHwSetTexturePack(GSHwTexturePack *pack)
 {
     g_texturePack.store(pack, std::memory_order_release);
+}
+
+void gsHwTexturePackChanged()
+{
+    g_packGeneration.fetch_add(1u, std::memory_order_acq_rel);
 }
 
 void gsHwTexturePackStats(uint64_t &hashed, uint64_t &replaced)
@@ -5557,6 +5563,7 @@ namespace
             ps2perf::add(ps2perf::Counter::Vertices, f.vertices.size() + f.nativeVertices);
             pollPackMaking(f);  // [gta-recomp] texture packs: swaps made on the helper threads since
             pollTexturePack(f); // [gta-recomp] texture packs: images loaded since
+            flushForPackChange(f); // [gta-recomp] gsHwTexturePackChanged: every texture made again (a mod switched)
             ps2perf::add(ps2perf::Counter::TexUploads, f.textures.size());
             ++m_frameIndex;
             shrinkTargets(); // [gta-recomp]
@@ -6513,6 +6520,38 @@ namespace
 
         // [gta-recomp] Texture packs: the images that finished loading replace their textures from the next frame on (a
         // TexCreate for the same key); a texture evicted meanwhile is left alone (made again, it asks again)
+        // [gta-recomp] The pack's index changed (gsHwTexturePackChanged: a mod or the packs switched in F2): every texture
+        // goes, so each is made again from VRAM and looked up in the new index - a texture of the game's that had no
+        // replacement may have one now, a replaced one may have none. The kept GPU textures of pack images go too (their
+        // handles may name another file now). Swaps still loading are dropped (pollTexturePack keeps only textures in
+        // m_texLru, pollPackMaking likewise).
+        void flushForPackChange(Frame &f)
+        {
+            const uint64_t generation = g_packGeneration.load(std::memory_order_acquire);
+            if (generation == m_packGenerationSeen)
+                return;
+            m_packGenerationSeen = generation;
+            const size_t count = m_texLru.size();
+            for (const auto &[key, frame] : m_texLru)
+            {
+                f.cmds.push_back({CmdType::TexDelete, static_cast<uint32_t>(f.texDeletes.size())});
+                f.texDeletes.push_back(key);
+            }
+            m_texLru.clear();
+            m_texPeak.clear();
+            ++m_texStateVersion;
+            ++m_texEvictions;
+            {
+                std::vector<std::shared_ptr<rhi::Texture>> dropped; // released after the lock
+                std::lock_guard<std::mutex> lock(g_packGpuMutex);
+                for (auto &[handle, kept] : g_packGpu)
+                    dropped.push_back(std::move(kept.tex));
+                g_packGpu.clear();
+                g_packGpuBytes = 0;
+            }
+            std::fprintf(stderr, "[textures] pack changed: %zu textures made again\n", count);
+        }
+
         void pollTexturePack(Frame &f)
         {
             if (m_packPending.empty())
@@ -7066,6 +7105,7 @@ namespace
             uint64_t handle, texKey;
         };
         std::vector<PackPending> m_packPending;
+        uint64_t m_packGenerationSeen = 0; // [gta-recomp] flushForPackChange
         std::vector<TexCreate> m_packMaking; // [gta-recomp] pack swaps being made (pollPackMaking)
         std::vector<uint8_t> m_packData;
         uint32_t m_packClut[256] = {};
