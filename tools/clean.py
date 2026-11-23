@@ -8,7 +8,8 @@
 Kept always (PROTECTED): the game at the top of build/ (vcs.exe, its DLLs, vcs.pdb, vcs.ini), the builds (release,
 tools, analyzer, iop_tests), the downloaded CMake / Ninja (build-tools), the ELF / VU1 extracts, analysis dumps,
 the rig's card copies (build/rig/saves), the regression baseline, the reference scenes capture
-(build/scenes/reference), the PGO profile and the cached compiler environment. Outside build/ nothing is touched:
+(build/scenes/reference), the PGO profile, the cached compiler environment, the launcher's settings and state, the last
+build's logs and the distant lights' light table. Outside build/ nothing is touched:
 not the disc images, mc0 / mc1, generated/ or ghidra/. New test folders under build/ need no entry here - they are
 test output unless protected.
 """
@@ -26,6 +27,10 @@ PROTECTED = [
     "release", "tools", "build-tools", "analyzer", "iop_tests", "elf", "vu1", "analysis",
     "rig/saves", "regress/baseline", "scenes/reference", "pgo/vcs.profdata", "msvc_env.json",
     "textures",  # the player's texture packs and dumps next to vcs.exe (game/vcs_texture_pack.cpp)
+    # the launcher's settings and state, and what it compares the build with (build.py, build_dir.py, doctor.py)
+    "launcher.ini", "launcher_state.json", "build_info.json", "vcs_fresh.toml",
+    "build.log", "configure.log",  # the last build's output: the README's Problems and report.py point to them
+    "project2dfx",  # the distant lights' downloaded light table (vcs_lod_lights.cpp)
 ]
 
 
