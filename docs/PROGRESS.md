@@ -1303,6 +1303,8 @@ Python scripts still usable on their own. docs/LAUNCHER.md has the whole of it; 
 | `VCS_MENU_NATIVE=0` | menus drawn into the PS2 frame buffer instead of the native layer |
 | `VCS_MENU_MOUSE=0` | the game's pause menu without the mouse (Enter / Escape as Cross / Triangle stay; game/vcs_frontend.h) |
 | `VCS_PROMPTS=0..4` | Game > Button prompts for this run: 0 Original, 1 Automatic, 2 PlayStation, 3 Xbox, 4 Keyboard & mouse (the menu shows it read-only) |
+| `VCS_PROMPT_STYLE=0\|1` | Button prompts' icons: 0 Kenney's, 1 the classic ones drawn here |
+| `VCS_SUBTITLE_FONT=0\|1` | Game > Subtitles: 0 the game's letters, 1 Oswald (and `VCS_SUBTITLE_SIZE`, `_OUTLINE`, `_SHADOW`, `_BACKGROUND`, `_COLOUR` for its options) |
 | `VCS_PROMPTS_HOOKS=0` | none of the button prompts' hooks (the setting then does nothing; game/vcs_prompts.h) |
 | `VCS_PROMPTS_DUMP=<file.png>` | each glyph atlas made, written over grey (to look at the glyphs) |
 | `VCS_TRAFFIC=100..300`, `VCS_PEDS=100..300`, `VCS_DRAW_DISTANCE=100..300` | World for this run (percent; the menu shows them read-only) |

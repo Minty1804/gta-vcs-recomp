@@ -85,7 +85,16 @@ def main():
             "VEHB": "{R1@vehicle}",
         }
         got = {a: g.cmd("prompts expand " + a) for a in expected}
-        ok("expand", all(got[a] == e for a, e in expected.items()), got)
+
+        def same(text, want):
+            # a translated disc: the controls from its English or French text, joined in the language shown ("ou",
+            # "und"...), the French order where it differs ("R2 + L2")
+            words = text.split(" ")
+            joins = {"ou": "or", "oder": "or", "o": "or", "e": "and", "et": "and", "und": "and", "y": "and"}
+            text = " ".join(joins.get(w, w) for w in words)
+            return text == want or sorted(text.split(" ")) == sorted(want.split(" "))
+        ok("expand", all(same(got[a], e) for a, e in expected.items()), got)
+
 
         # contexts: the keys each glyph shows are the ones that work where the player is (keyboard set)
         g.cmd("setting enhance.prompts 4")
@@ -131,9 +140,9 @@ def main():
         g.cmd("setting enhance.prompts 3")
         frames(10)
 
-        # sets: Xbox (from the start), PlayStation, Keyboard & mouse
+        # sets: Xbox (from the start), PlayStation, Nintendo Switch, Keyboard & mouse
         sets_ok, detail = True, {}
-        for value, name in ((3, "xbox"), (2, "ps"), (4, "keyboard")):
+        for value, name in ((3, "xbox"), (2, "ps"), (5, "switch"), (4, "keyboard")):
             g.cmd("setting enhance.prompts %d" % value)
             frames(10)
             help_text("CLOTHA")
@@ -186,8 +195,9 @@ def main():
         gamectl.send("press Escape", port=g.port)
         time.sleep(1.5)
 
-        # original
+        # original (the game's font too: Oswald's letters in the help box are glyph draws of their own)
         g.cmd("setting enhance.prompts 0")
+        g.cmd("setting enhance.subtitle_font 0")
         frames(10)
         help_text("CLOTHA")
         frames(30)

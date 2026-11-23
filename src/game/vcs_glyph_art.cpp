@@ -3,17 +3,37 @@
 #include "game/vcs_glyph_art.h"
 
 #include "platform/platform.h"
+#define STB_IMAGE_STATIC // [Minty1804 fork] this file's own copy, PNG only (willzmkv's had it from texture_replacements.cpp)
+#define STB_IMAGE_IMPLEMENTATION
+#define STBI_ONLY_PNG
+#include "../../third_party/stb/stb_image.h"
+#define STBTT_STATIC // (this file's own copy: Dear ImGui keeps another)
+#define STB_TRUETYPE_IMPLEMENTATION
+#include "../../third_party/stb/stb_truetype.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
 #include <map>
+#include <mutex>
 #include <sstream>
 #include <vector>
 
 namespace vcs::glyphart
 {
+    struct EmbeddedIcon // (the table tools/kenney_prompts.py writes; CMake builds it in)
+    {
+        const char *name;
+        const unsigned char *data;
+        size_t size;
+    };
+    extern const EmbeddedIcon kPromptIcons[];
+    extern const size_t kPromptIconCount;
+    extern const unsigned char *const kSubtitleFont; // Oswald SemiBold 4.103 (OFL), assets/fonts/oswald
+    extern const size_t kSubtitleFontSize;
+
     namespace
     {
         struct Rgb
@@ -280,6 +300,12 @@ namespace vcs::glyphart
                 return 1.0f;
             disc(c, 0.5f);
             constexpr float sw = 0.042f;
+            if (family == "switch")
+            {
+                const char *letter = button == "south" ? "B" : button == "east" ? "A" : button == "west" ? "Y" : "X";
+                drawTextCentred(c, letter, 0.5f, 0.5f, 0.42f, kWhite);
+                return 1.0f;
+            }
             if (family == "xbox")
             {
                 const char *letter = button == "south" ? "A" : button == "east" ? "B" : button == "west" ? "X" : "Y";
@@ -353,7 +379,7 @@ namespace vcs::glyphart
             if (click)
             {
                 c->fill(0.15f, 0.15f, 0.85f, 0.85f, kInner, 1.0f, [&](float x, float y) { return sdCircle(x, y, 0.5f, 0.5f, 0.31f); });
-                drawTextCentred(c, xbox ? (left ? "LS" : "RS") : (left ? "L3" : "R3"), 0.5f, 0.5f, 0.22f, kWhite);
+                drawTextCentred(c, xbox || family == "switch" ? (left ? "LS" : "RS") : (left ? "L3" : "R3"), 0.5f, 0.5f, 0.22f, kWhite);
                 return 1.0f;
             }
             c->fill(0.15f, 0.15f, 0.85f, 0.85f, kGrey, 1.0f,
@@ -368,6 +394,19 @@ namespace vcs::glyphart
                 drawArrow(c, 0.5f - d, 0.5f, 2, s, kWhite);
             if (dirs & 8)
                 drawArrow(c, 0.5f + d, 0.5f, 3, s, kWhite);
+            return 1.0f;
+        }
+
+        // the Switch's - (back) and + (start): the sign in a disc
+        float switchSign(Canvas *c, bool plus)
+        {
+            if (!c)
+                return 1.0f;
+            disc(c, 0.5f);
+            c->fill(0.2f, 0.2f, 0.8f, 0.8f, kWhite, 1.0f, [&](float x, float y) {
+                const float h = sdSegment(x, y, 0.36f, 0.5f, 0.64f, 0.5f);
+                return (plus ? std::min(h, sdSegment(x, y, 0.5f, 0.36f, 0.5f, 0.64f)) : h) - 0.04f;
+            });
             return 1.0f;
         }
 
@@ -541,9 +580,308 @@ namespace vcs::glyphart
             return 1.2f;
         }
 
+        // ---- the subtitles' font (Oswald, OFL; embedded by tools/kenney_prompts.py) ----
+        // A letter's box is kSubtitleCell of the game's font units high (its "Game" font's letters are 23: the box grows
+        // down from the line's top); the em is kEm of the box, the baseline kBaseline down - Oswald SemiBold's Latin-1
+        // reaches 1.071 em above the baseline (an accented capital) and 0.268 em below: 1.34 em, in 95 % of the box.
+        constexpr float kEm = 0.71f, kBaseline = 0.785f;
+        // A font unit across is kUnitWide of one down on the screen: the 2D pass's units are 480 x 272 of the 640 x 448
+        // picture (1.333 and 1.647 pixels: game/vcs_prompts.cpp kUnitsPerAspect, which keeps the button glyphs round).
+        // Advances are in units across, the letters drawn square on the screen.
+        constexpr float kUnitWide = (640.0f / 480.0f) / (448.0f / 272.0f);
+        std::atomic<int> g_subOutline{50}; // setSubtitleOutline: 0..100 % of kMaxOutline
+
+        struct SubFont
+        {
+            stbtt_fontinfo info{};
+            bool ok = false;
+            float unit = 0.0f; // the em's scale for one pixel (font units -> em)
+        };
+        const SubFont &subFont()
+        {
+            static const SubFont font = [] {
+                SubFont f;
+                if (kSubtitleFont && kSubtitleFontSize && stbtt_InitFont(&f.info, kSubtitleFont, stbtt_GetFontOffsetForIndex(kSubtitleFont, 0)))
+                {
+                    f.ok = true;
+                    f.unit = stbtt_ScaleForMappingEmToPixels(&f.info, 1.0f);
+                }
+                return f;
+            }();
+            return font;
+        }
+
+        // "sub:<char>": the letter, white, with its outline in black, kSubtitleMargin units of room each side
+        float subtitleLetter(const std::string &rest, Canvas *c)
+        {
+            const SubFont &f = subFont();
+            const int ch = std::atoi(rest.c_str());
+            const int adv = subtitleAdvance(static_cast<uint16_t>(ch), kSubtitleGrid);
+            if (!f.ok || adv < 0)
+                return -1.0f;
+            // the cell as the screen shows it: units across x kUnitWide over units down
+            const float width = static_cast<float>(adv + 2 * kSubtitleMargin * kSubtitleGrid) * kUnitWide / (kSubtitleCell * kSubtitleGrid);
+            if (!c)
+                return width;
+            const int glyph = stbtt_FindGlyphIndex(&f.info, ch);
+            const float h = static_cast<float>(c->h), perUnit = h / kSubtitleCell;
+            const float outline = g_subOutline.load(std::memory_order_relaxed) / 100.0f * 0.09f * h; // pixels
+            const int pad = static_cast<int>(std::ceil(outline)) + 2;
+            const float onEdge = 180.0f, perPixel = onEdge / pad;
+            int gw = 0, gh = 0, xoff = 0, yoff = 0;
+            unsigned char *sdf = stbtt_GetGlyphSDF(&f.info, stbtt_ScaleForMappingEmToPixels(&f.info, kEm * h), glyph, pad,
+                                                   static_cast<unsigned char>(onEdge), perPixel, &gw, &gh, &xoff, &yoff);
+            if (!sdf)
+                return width; // (a space)
+            const float penX = kSubtitleMargin * perUnit * kUnitWide, baseY = kBaseline * h;
+            for (int y = 0; y < gh; ++y)
+                for (int x = 0; x < gw; ++x)
+                {
+                    const int px = static_cast<int>(penX) + xoff + x, py = static_cast<int>(baseY) + yoff + y;
+                    if (px < 0 || py < 0 || px >= c->w || py >= c->h)
+                        continue;
+                    const float inside = (sdf[y * gw + x] - onEdge) / perPixel; // pixels inside the outline of the letter
+                    const float fill = std::clamp(inside + 0.5f, 0.0f, 1.0f);
+                    const float ring = outline > 0.0f ? std::clamp(inside + outline + 0.5f, 0.0f, 1.0f) : fill;
+                    float *p = &c->px[(static_cast<size_t>(py) * c->w + px) * 4];
+                    const float a = std::max(fill, ring); // white over the black ring (premultiplied: the white's share)
+                    p[0] = p[1] = p[2] = fill;
+                    p[3] = a;
+                }
+            stbtt_FreeSDF(sdf, nullptr);
+            return width;
+        }
+
+        // ---- Kenney's Input Prompts (CC0; assets/prompts/kenney, embedded by tools/kenney_prompts.py) ----
+        std::atomic<int> g_style{0}; // setStyle: 0 Kenney's icons, 1 drawn here
+
+        struct Icon
+        {
+            int w = 0, h = 0;
+            std::vector<float> px;  // premultiplied RGBA, 0..1
+            int x0 = 0, y0 = 0, x1 = 0, y1 = 0; // the drawn part (Kenney's icons sit in a transparent margin)
+            float aspect() const { return (x1 - x0) * (1.0f - 2.0f * kIconMargin) / std::max(1, y1 - y0); }
+            // of the glyph's height, above and below: 0.11 makes Kenney's keycaps and buttons as tall as the ones drawn
+            // here (0.07 left them a size larger than the Classic set - the player, 2026-11-18)
+            static constexpr float kIconMargin = 0.11f;
+        };
+        const Icon *icon(const std::string &name)
+        {
+            static std::mutex mutex;
+            static std::map<std::string, Icon> cache;
+            std::lock_guard<std::mutex> lock(mutex);
+            if (const auto it = cache.find(name); it != cache.end())
+                return it->second.w ? &it->second : nullptr;
+            Icon &out = cache[name];
+            for (size_t i = 0; i < kPromptIconCount; ++i)
+                if (name == kPromptIcons[i].name)
+                {
+                    int w = 0, h = 0, n = 0;
+                    if (unsigned char *rgba = stbi_load_from_memory(kPromptIcons[i].data, static_cast<int>(kPromptIcons[i].size), &w, &h, &n, 4))
+                    {
+                        out.w = w;
+                        out.h = h;
+                        out.px.resize(static_cast<size_t>(w) * h * 4);
+                        for (size_t p = 0; p < static_cast<size_t>(w) * h; ++p)
+                        {
+                            const float a = rgba[p * 4 + 3] / 255.0f;
+                            for (int k = 0; k < 3; ++k)
+                                out.px[p * 4 + k] = rgba[p * 4 + k] / 255.0f * a;
+                            out.px[p * 4 + 3] = a;
+                        }
+                        stbi_image_free(rgba);
+                        out.x0 = w;
+                        out.y0 = h;
+                        for (int y = 0; y < h; ++y)
+                            for (int x = 0; x < w; ++x)
+                                if (out.px[(static_cast<size_t>(y) * w + x) * 4 + 3] > 0.02f)
+                                {
+                                    out.x0 = std::min(out.x0, x);
+                                    out.y0 = std::min(out.y0, y);
+                                    out.x1 = std::max(out.x1, x + 1);
+                                    out.y1 = std::max(out.y1, y + 1);
+                                }
+                        if (out.x1 <= out.x0)
+                            out = {};
+                    }
+                    break;
+                }
+            return out.w ? &out : nullptr;
+        }
+
+        // the icon's drawn part over [x, x + aspect] x [margin, 1 - margin] (units of the glyph's height), each pixel the
+        // average of the icon's under it
+        void blit(Canvas *c, float x, const Icon &ic)
+        {
+            const float s = static_cast<float>(c->h), m = Icon::kIconMargin;
+            const int ix0 = std::max(0, static_cast<int>(std::floor(x * s))), ix1 = std::min(c->w, static_cast<int>(std::ceil((x + ic.aspect()) * s)));
+            const float k = (ic.y1 - ic.y0) / ((1.0f - 2.0f * m) * s); // icon pixels per glyph pixel
+            for (int y = 0; y < c->h; ++y)
+                for (int px = ix0; px < ix1; ++px)
+                {
+                    const float sx0 = ic.x0 + (px - x * s) * k, sx1 = sx0 + k, sy0 = ic.y0 + (y - m * s) * k, sy1 = sy0 + k;
+                    float acc[4] = {}, wsum = 0.0f;
+                    for (int sy = std::max(ic.y0, static_cast<int>(std::floor(sy0))); sy < std::min(ic.y1, static_cast<int>(std::ceil(sy1))); ++sy)
+                        for (int sx = std::max(ic.x0, static_cast<int>(std::floor(sx0))); sx < std::min(ic.x1, static_cast<int>(std::ceil(sx1))); ++sx)
+                        {
+                            const float wgt = (std::min(sx1, sx + 1.0f) - std::max(sx0, static_cast<float>(sx))) *
+                                              (std::min(sy1, sy + 1.0f) - std::max(sy0, static_cast<float>(sy)));
+                            if (wgt <= 0.0f)
+                                continue;
+                            const float *q = &ic.px[(static_cast<size_t>(sy) * ic.w + sx) * 4];
+                            for (int k = 0; k < 4; ++k)
+                                acc[k] += q[k] * wgt;
+                            wsum += wgt;
+                        }
+                    if (wsum <= 0.0f)
+                        continue;
+                    const float area = k * k; // (pixels past the icon's edge count as transparent)
+                    float *p = &c->px[(static_cast<size_t>(y) * c->w + px) * 4];
+                    const float a = acc[3] / area;
+                    for (int q = 0; q < 4; ++q)
+                        p[q] = acc[q] / area + p[q] * (1.0f - a);
+                }
+        }
+
+        // the icon for a pad control (spec's family and button), "" for none
+        std::string kenneyPad(const std::string &family, const std::string &button)
+        {
+            const bool ps = family == "ps", xbox = family == "xbox";
+            const std::string pre = ps ? "playstation" : xbox ? "xbox" : "switch";
+            auto pick = [&](const char *p, const char *x, const char *s) { return std::string(ps ? p : xbox ? x : s); };
+            if (button == "south") return pick("playstation_button_color_cross", "xbox_button_color_a", "switch_button_b");
+            if (button == "east") return pick("playstation_button_color_circle", "xbox_button_color_b", "switch_button_a");
+            if (button == "west") return pick("playstation_button_color_square", "xbox_button_color_x", "switch_button_y");
+            if (button == "north") return pick("playstation_button_color_triangle", "xbox_button_color_y", "switch_button_x");
+            if (button == "back") return pick("playstation5_button_create", "xbox_button_view", "switch_button_minus");
+            if (button == "start") return pick("playstation5_button_options", "xbox_button_menu", "switch_button_plus");
+            if (button == "lb") return pick("playstation_trigger_l1", "xbox_lb", "switch_button_l");
+            if (button == "rb") return pick("playstation_trigger_r1", "xbox_rb", "switch_button_r");
+            if (button == "lt") return pick("playstation_trigger_l2", "xbox_lt", "switch_button_zl");
+            if (button == "rt") return pick("playstation_trigger_r2", "xbox_rt", "switch_button_zr");
+            if (button == "ls") return pick("playstation_button_l3", "xbox_stick_l_press", "switch_stick_l_press");
+            if (button == "rs") return pick("playstation_button_r3", "xbox_stick_r_press", "switch_stick_r_press");
+            auto dir = [](const std::string &suffix) {
+                return suffix == "_u" ? "_up" : suffix == "_d" ? "_down" : suffix == "_l" ? "_left" : suffix == "_r" ? "_right"
+                     : suffix == "_ud" ? "_vertical" : suffix == "_lr" ? "_horizontal" : "";
+            };
+            if (button.rfind("dpad", 0) == 0) return pre + "_dpad" + dir(button.substr(4));
+            if (button.rfind("lstick", 0) == 0) return pre + "_stick_l" + dir(button.substr(6));
+            if (button.rfind("rstick", 0) == 0) return pre + "_stick_r" + dir(button.substr(6));
+            return "";
+        }
+
+        std::string kenneyKey(int key)
+        {
+            using namespace platform;
+            if (key >= KEY_A && key <= KEY_Z)
+                return std::string("keyboard_") + static_cast<char>(std::tolower(key));
+            if (key >= KEY_ZERO && key <= KEY_NINE)
+                return std::string("keyboard_") + static_cast<char>(key);
+            if (key >= KEY_F1 && key <= KEY_F12)
+                return "keyboard_f" + std::to_string(key - KEY_F1 + 1);
+            switch (key)
+            {
+            case KEY_SPACE: return "keyboard_space";
+            case KEY_ENTER: return "keyboard_enter";
+            case KEY_KP_ENTER: return "keyboard_numpad_enter";
+            case KEY_KP_ADD: return "keyboard_numpad_plus";
+            case KEY_KP_MULTIPLY: return "keyboard_asterisk";
+            case KEY_TAB: return "keyboard_tab";
+            case KEY_BACKSPACE: return "keyboard_backspace";
+            case KEY_ESCAPE: return "keyboard_escape";
+            case KEY_LEFT_SHIFT: case KEY_RIGHT_SHIFT: return "keyboard_shift";
+            case KEY_LEFT_CONTROL: case KEY_RIGHT_CONTROL: return "keyboard_ctrl";
+            case KEY_LEFT_ALT: case KEY_RIGHT_ALT: return "keyboard_alt";
+            case KEY_UP: return "keyboard_arrow_up";
+            case KEY_DOWN: return "keyboard_arrow_down";
+            case KEY_LEFT: return "keyboard_arrow_left";
+            case KEY_RIGHT: return "keyboard_arrow_right";
+            case KEY_PAGE_UP: return "keyboard_page_up";
+            case KEY_PAGE_DOWN: return "keyboard_page_down";
+            case KEY_HOME: return "keyboard_home";
+            case KEY_END: return "keyboard_end";
+            case KEY_INSERT: return "keyboard_insert";
+            case KEY_DELETE: return "keyboard_delete";
+            case KEY_CAPS_LOCK: return "keyboard_capslock";
+            case KEY_COMMA: return "keyboard_comma";
+            case KEY_PERIOD: return "keyboard_period";
+            case KEY_MINUS: return "keyboard_minus";
+            case KEY_EQUAL: return "keyboard_equals";
+            case KEY_SLASH: return "keyboard_slash_forward";
+            case KEY_BACKSLASH: return "keyboard_slash_back";
+            case KEY_SEMICOLON: return "keyboard_semicolon";
+            case KEY_APOSTROPHE: return "keyboard_apostrophe";
+            case KEY_LEFT_BRACKET: return "keyboard_bracket_open";
+            case KEY_RIGHT_BRACKET: return "keyboard_bracket_close";
+            case KEY_GRAVE: return "keyboard_tilde";
+            case KEY_MOUSE_LEFT: return "mouse_left";
+            case KEY_MOUSE_RIGHT: return "mouse_right";
+            case KEY_MOUSE_MIDDLE: return "mouse_scroll";
+            case KEY_MOUSE_X1: return "mouse_side_back";
+            case KEY_MOUSE_X2: return "mouse_side_forward";
+            case KEY_WHEEL_UP: return "mouse_scroll_up";
+            case KEY_WHEEL_DOWN: return "mouse_scroll_down";
+            default: return "";
+            }
+        }
+
+        // The glyph from Kenney's icons when the style asks for them and they are all there: its width, or < 0 (drawn
+        // here instead). A row of keys keeps the drawn keycap for a key without an icon (the keypad's digits).
+        float kenney(const std::string &spec, Canvas *c)
+        {
+            if (g_style.load(std::memory_order_relaxed) != 0 || !kPromptIconCount)
+                return -1.0f;
+            const size_t a = spec.find(':');
+            const std::string kind = spec.substr(0, a), rest = a == std::string::npos ? "" : spec.substr(a + 1);
+            if (kind == "mouse")
+            {
+                const Icon *ic = icon("mouse_move");
+                if (ic && c)
+                    blit(c, 0.0f, *ic);
+                return ic ? ic->aspect() : -1.0f;
+            }
+            if (kind == "pad")
+            {
+                const size_t b = rest.find(':');
+                const Icon *ic = icon(kenneyPad(rest.substr(0, b), b == std::string::npos ? "" : rest.substr(b + 1)));
+                if (ic && c)
+                    blit(c, 0.0f, *ic);
+                return ic ? ic->aspect() : -1.0f;
+            }
+            if (kind != "keys")
+                return -1.0f;
+            std::vector<int> codes;
+            std::stringstream ss(rest);
+            std::string item;
+            while (std::getline(ss, item, ','))
+                codes.push_back(std::atoi(item.c_str()));
+            if (codes.empty())
+                return -1.0f;
+            float x = 0.0f;
+            for (size_t i = 0; i < codes.size(); ++i)
+            {
+                if (i)
+                    x += 0.1f;
+                if (const Icon *ic = icon(kenneyKey(codes[i])))
+                {
+                    if (c)
+                        blit(c, x, *ic);
+                    x += ic->aspect();
+                }
+                else
+                    x += codes[i] >= platform::KEY_MOUSE_LEFT ? mouseElement(c, x, codes[i]) : keycap(c, x, codes[i]);
+            }
+            return x;
+        }
+
         // the glyph named by spec: drawn into c when given; its width either way
         float compose(const std::string &spec, Canvas *c)
         {
+            if (spec.rfind("sub:", 0) == 0)
+                return std::max(subtitleLetter(spec.substr(4), c), 0.05f);
+            if (const float w = kenney(spec, c); w > 0.0f)
+                return w;
             const size_t a = spec.find(':');
             const std::string kind = spec.substr(0, a);
             const std::string rest = a == std::string::npos ? "" : spec.substr(a + 1);
@@ -555,17 +893,19 @@ namespace vcs::glyphart
                 return keys(c, "0");
             const size_t b = rest.find(':');
             const std::string family = rest.substr(0, b), button = b == std::string::npos ? "" : rest.substr(b + 1);
-            const bool xbox = family == "xbox";
+            const bool xbox = family == "xbox", nintendo = family == "switch";
             if (button == "south" || button == "east" || button == "west" || button == "north")
                 return faceButton(c, family, button);
             if (button == "back")
-                return xbox ? xboxView(c, false) : pill(c, "SELECT", 0.24f, 1.4f, false);
+                return xbox ? xboxView(c, false) : nintendo ? switchSign(c, false) : pill(c, "SELECT", 0.24f, 1.4f, false);
             if (button == "start")
-                return xbox ? xboxView(c, true) : pill(c, "START", 0.24f, 1.4f, false);
+                return xbox ? xboxView(c, true) : nintendo ? switchSign(c, true) : pill(c, "START", 0.24f, 1.4f, false);
             if (button == "lb" || button == "rb")
-                return pill(c, xbox ? (button == "lb" ? "LB" : "RB") : (button == "lb" ? "L1" : "R1"), 0.3f, 1.3f, false);
+                return pill(c, xbox ? (button == "lb" ? "LB" : "RB") : nintendo ? (button == "lb" ? "L" : "R") : (button == "lb" ? "L1" : "R1"),
+                            0.3f, 1.3f, false);
             if (button == "lt" || button == "rt")
-                return pill(c, xbox ? (button == "lt" ? "LT" : "RT") : (button == "lt" ? "L2" : "R2"), 0.3f, 1.2f, true);
+                return pill(c, xbox ? (button == "lt" ? "LT" : "RT") : nintendo ? (button == "lt" ? "ZL" : "ZR") : (button == "lt" ? "L2" : "R2"),
+                            0.3f, 1.2f, true);
             if (button == "ls" || button == "rs")
                 return stick(c, family, button == "ls", 0, true);
             auto dirs = [](const std::string &suffix) {
@@ -582,6 +922,20 @@ namespace vcs::glyphart
     }
 
     float width(const std::string &spec) { return compose(spec, nullptr); }
+
+    void setStyle(int style) { g_style.store(style, std::memory_order_relaxed); }
+    void setSubtitleOutline(int percent) { g_subOutline.store(std::clamp(percent, 0, 100), std::memory_order_relaxed); }
+    int subtitleOutline() { return g_subOutline.load(std::memory_order_relaxed); }
+    int subtitleAdvance(uint16_t ch, int grid)
+    {
+        const SubFont &f = subFont();
+        if (!f.ok || (ch != ' ' && !stbtt_FindGlyphIndex(&f.info, ch)))
+            return -1;
+        int advance = 0, lsb = 0;
+        stbtt_GetCodepointHMetrics(&f.info, ch, &advance, &lsb);
+        return std::max(1, static_cast<int>(std::lround(advance * f.unit * kEm * kSubtitleCell * grid / kUnitWide)));
+    }
+    int style() { return g_style.load(std::memory_order_relaxed); }
 
     void render(const std::string &spec, int w, int h, uint32_t *dst, int stride)
     {

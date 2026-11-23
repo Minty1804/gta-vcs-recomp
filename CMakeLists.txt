@@ -82,6 +82,26 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/generated/vu1/vu1_compiled.cpp")
     list(APPEND VCS_SOURCES "${CMAKE_SOURCE_DIR}/generated/vu1/vu1_compiled.cpp")
 endif()
 
+# Kenney's Input Prompts (assets/prompts/kenney, CC0) for the button prompts and Oswald (assets/fonts/oswald, OFL) for
+# the subtitles, embedded in the game: made again when an icon, the font or the tool changes (tools/kenney_prompts.py);
+# without Python an empty table (the prompts' classic drawing, the game's own letters). From willzmkv's fork.
+if(VCS_HAVE_GENERATED)
+    find_package(Python3 COMPONENTS Interpreter) # (tools/build.py passes its own)
+    set(_vcs_prompt_icons_cpp "${CMAKE_BINARY_DIR}/generated_assets/prompt_icons.cpp")
+    file(GLOB _vcs_prompt_icons CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/assets/prompts/kenney/*.png"
+                                                    "${CMAKE_SOURCE_DIR}/assets/fonts/oswald/*.ttf")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/tools/kenney_prompts.py" ${_vcs_prompt_icons})
+    if(Python3_FOUND)
+        execute_process(COMMAND "${Python3_EXECUTABLE}" -I "${CMAKE_SOURCE_DIR}/tools/kenney_prompts.py" embed "${_vcs_prompt_icons_cpp}"
+                        OUTPUT_VARIABLE _vcs_icons_out ERROR_VARIABLE _vcs_icons_out)
+        message(STATUS "${_vcs_icons_out}")
+    endif()
+    if(NOT EXISTS "${_vcs_prompt_icons_cpp}")
+        file(WRITE "${_vcs_prompt_icons_cpp}" "#include <cstddef>\nnamespace vcs::glyphart\n{\n    struct EmbeddedIcon\n    {\n        const char *name;\n        const unsigned char *data;\n        size_t size;\n    };\n    extern const EmbeddedIcon kPromptIcons[] = {{nullptr, nullptr, 0}};\n    extern const size_t kPromptIconCount = 0;\n    extern const unsigned char *const kSubtitleFont = nullptr;\n    extern const size_t kSubtitleFontSize = 0;\n}\n")
+    endif()
+    list(APPEND VCS_SOURCES "${_vcs_prompt_icons_cpp}")
+endif()
+
 set(PS2X_RUNNER_SOURCE_DIR "${VCS_GENERATED_DIR}" CACHE PATH "" FORCE)
 set(PS2X_RUNNER_EXTRA_SOURCES "${VCS_SOURCES}" CACHE STRING "" FORCE)
 set(PS2X_RUNNER_MAIN "${CMAKE_SOURCE_DIR}/src/main.cpp" CACHE FILEPATH "" FORCE)

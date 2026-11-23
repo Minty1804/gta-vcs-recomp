@@ -814,7 +814,7 @@ namespace
             {"Display", {"Screen", "Cutscenes", "Frame rate", "Presets"}},
             {"Graphics", {"Image quality", "Effects", "Fog", "Texture packs", "Renderer"}},
             {"World", {"Draw distance", "Traffic and people", "Details", "Memory"}},
-            {"Game", {"Combat", "Map and saving", "Button prompts", "Start-up", "Window"}},
+            {"Game", {"Combat", "Map and saving", "Button prompts", "Subtitles", "Start-up", "Window"}},
             {"Audio", {"Volume", "Output"}},
             {"Keyboard", {"On foot", "Fighting (unarmed, Target held)", "Vehicle (cars, bikes, boats)",
                           "Aircraft (helicopters, planes)", "All situations", "Mouse", "Menus and pause", "Shortcuts"}},

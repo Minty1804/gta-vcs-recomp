@@ -35,6 +35,7 @@ and docs refer to them). "Size": S hours, M a day or so, L several days, XL a pr
 | 13 | Mods | Game files from mods: GTA3PS2.IMG entries, GXT, MAIN.SCM, larger than the disc's | willzmkv 96edbbe, eed27a2, 69d3d21 | 2026-11-23 with row 11: vcs_stream.cpp's served files (an entry larger than the disc's moved past its end), the player's model dressed again when its entry changes; `VCS_MOD_FILES=0` none; tools/img.py, gxt.py, gamefiles_check.py |
 | 15 | Mods | PC Vice City car mods (.dff + .txd converted to VCS's models while the game loads) | willzmkv T9 (afb87df, 6e5f8d9, d177a70...) | 2026-11-23 with row 11: src/mods/rwconv.cpp and the tools (dff2mdl, txd2xtx, rwinfo, mdlinfo, carmod_check, carmod_verify, rwconv_check). Their checks need PC mod files, none here: not run in this fork. The converters' self-tests pass here: dff2mdl 4926 / 4926 of the disc's vehicle meshes encoded byte for byte, txd2xtx, rwinfo, gxt |
 | 16 | Mods | PC weapon mods (VC and SA): onto VCS's weapons, placed where VCS holds them, VCS's HUD icon kept | willzmkv T11 (b6693b6 and later) | 2026-11-23 with row 15 (rwconv.cpp's weapon path, weaponfit.py, weaponmod_check.py; needs a weapon mod: not run here). spartaque12's Immersive Weapons (VCS-mods) is another implementation, not taken |
+| 25 | Subtitles | Subtitles and help boxes in Oswald SemiBold (OFL) with size, outline, shadow, background and colour options; Kenney's Input Prompts (CC0) as the button icons | willzmkv 6e14daa, d85fc1e, 27a4a9c | 2026-11-23: taken at their main onto our button prompts (vcs_prompts.cpp / vcs_glyph_art.cpp; Switch buttons too): the game's text code lays Oswald's letters out through a fifth font style, the glyph hook knows them by their texture coordinates (`GSHwGlyphFn` uv) and draws them from an SDF atlas; Subtitle background in the renderer (`subtitleBoxes`). Font and icons embedded by tools/kenney_prompts.py, stb_truetype / stb_image (third_party/stb). Game > Subtitles > Original by default. game-internals 6n, PS2RECOMP_PATCHES |
 
 ## Open or skipped
 
@@ -57,7 +58,6 @@ Taken out of the working order; each keeps its number and can come back to it.
 | 12 | Dump as DDS (for pack makers) | willzmkv 5f1b1c2 | S |
 | 17 | DualSense: lightbar, adaptive triggers (a feel per gun), a gun's kick, voices on its speaker | TomRous PR #96, willzmkv 946e1a9, 6d476bf, 40a9d4b, 7c196e2 (the trigger feel follows Drive / Shoot with the triggers) | M |
 | 18 | Gamepad: L1 / R1 look sideways while driving, aim assist, D-pad look behind, "GTA V buttons" | willzmkv 3a13a3b, 6d476bf, aebe5fb (the trigger schemes keep the keyboard's and the wheel's bits) | M |
-| 25 | Subtitles in Oswald (OFL) with size, shadow, background and colour options | willzmkv 6e14daa, d85fc1e, 27a4a9c | M |
 | 28 | First person on foot and in vehicles, viewmodel while aiming, reloads in view | spartaque12 (VCS-mods) | L |
 | 29 | Death ragdolls (Jolt Physics) | spartaque12 (VCS-mods) | XL |
 | 30 | Vegetation wind sway | spartaque12 (VCS-mods) | M |

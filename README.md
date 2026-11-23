@@ -464,6 +464,11 @@ is listed here (the full list of candidates, done or not: [docs/FORK_IMPORTS.md]
   weapon mods converted while the game loads): [willzmkv](https://github.com/willzmkv) (dejot), from their fork (commits
   a8a8587, cc86fcc, 9091a8e, 96edbbe, eed27a2, 69d3d21, afb87df, 6e5f8d9, d177a70, b6693b6 and later), fitted to our
   texture packs.
+- **Oswald subtitles and Kenney's button icons**: [willzmkv](https://github.com/willzmkv) (dejot), from their fork
+  (commits 6e14daa, d85fc1e, 27a4a9c); the font [Oswald](https://github.com/googlefonts/OswaldFont) by The Oswald Project Authors (SIL
+  Open Font License 1.1, assets/fonts/oswald/OFL.txt); [Kenney](https://kenney.nl)'s Input Prompts (CC0,
+  assets/prompts/kenney/License.txt); [stb_truetype and stb_image](https://github.com/nothings/stb) by Sean Barrett (MIT
+  / public domain).
 - **This README's layout** (centred header, badges, feature tables side by side, collapsed sections): after
   [willzmkv](https://github.com/willzmkv)'s (dejot) README for their fork.
 

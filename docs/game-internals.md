@@ -1850,6 +1850,27 @@ btn_triangle_psp, btn_square_psp, btn_up_psp, btn_down_psp, btn_left_psp, btn_ri
 - **The drop shadow** (`FUN_003f3d88` renders twice, the shadow first with t3 = 1) draws button glyphs in white too, the
   same as the text's own pass (`FUN_00261be8` gives them colour 255,255,255 with the text's alpha).
 
+**Oswald subtitles and Kenney's icons** (2026-11-23, willzmkv's 6e14daa, d85fc1e, 27a4a9c; FORK_IMPORTS row 25):
+- **The subtitles** (CHud's message: FUN_0031CA80 when the message's +0x21C flag is 1, FUN_003219E0 when it is 0 - the
+  same text, each with a widescreen branch) and the help box (FUN_00321CF8, SetFontStyle(1) at 0x322048 / 0x322050) are
+  drawn with the "Game" font, style 1. With Game > Subtitles > Oswald the font list (*0x48A1D8, four fonts) is copied to
+  guest scratch 0x64000 with a fifth, style 4: a copy of "Game" at 0x64040 whose letter table (0x64100, 7 halfwords a
+  letter) holds Oswald's advances, room for the outline either side and texture coordinates on a row no letter of the
+  font has (v 253, u 2 x the letter); SetFontStyle (0x3F4000) called from inside those three functions turns 1 into 4.
+  The game's own text code then lays the lines out (centring, wrapping, colours) and the renderer's glyph hook knows an
+  Oswald letter by its texture coordinates (`GSHwGlyphFn`'s `uv`: the letters touch, so where they lie is not enough)
+  and draws it from the atlas's `sub:<char>` cell (a signed distance field from stb_truetype, so sharp at any size and
+  outlined) in the text's colour (`GSHwGlyphHit::tint`). The copy's measures are 4x the font's at 1/4 the scale: each
+  advance rounded to a quarter unit (whole units left gaps: "volt ar"). Oswald is taller and reaches lower than the
+  game's letters, so in the help box it is drawn at 0.74 of the subtitles' size and the box's line height at 0.84.
+- **The box behind a line** (Subtitle background): the letters' extent is known only as they come, so the renderer
+  gathers each frame's lines and draws their boxes under the next frame's first letter, with its state and layer
+  (`GSHwGlyphHit::box`, `subtitleBoxes` in gs_hw.cpp; a new line's box shows one frame late).
+- **Kenney's Input Prompts** (CC0, assets/prompts/kenney) are the button glyphs' icons by default (Game > Button prompts >
+  Icon style; Classic: the ones drawn in vcs_glyph_art.cpp); Switch's buttons come with them. Both the icons and the font
+  are embedded at configure time by `tools/kenney_prompts.py embed` (a C++ table; with no Python an empty one: the
+  classic drawing, the game's own letters).
+
 ### 6o. Draw distance: the LOD scale and the two far planes (2026-11-07, World)
 
 Found reading the generated code's disassembly for the far plane's setters and readers and the camera update's LOD
