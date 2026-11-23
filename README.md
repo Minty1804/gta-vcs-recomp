@@ -469,6 +469,8 @@ is listed here (the full list of candidates, done or not: [docs/FORK_IMPORTS.md]
   Open Font License 1.1, assets/fonts/oswald/OFL.txt); [Kenney](https://kenney.nl)'s Input Prompts (CC0,
   assets/prompts/kenney/License.txt); [stb_truetype and stb_image](https://github.com/nothings/stb) by Sean Barrett (MIT
   / public domain).
+- **F2 menu and F5 trainer in the launcher's look**: [willzmkv](https://github.com/willzmkv) (dejot), from their fork
+  (commit 8a37ad6), merged onto our menu's layout.
 - **This README's layout** (centred header, badges, feature tables side by side, collapsed sections): after
   [willzmkv](https://github.com/willzmkv)'s (dejot) README for their fork.
 

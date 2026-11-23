@@ -2034,3 +2034,14 @@ turn off, leaving them always on.
   conflicting only where we really changed something. Dated entries (this file, PROGRESS history) keep the paths they
   had at the time.
 
+## 2026-11-23 - The F2 menu and F5 trainer in the launcher's look (the user's request)
+
+- **What**: willzmkv's (dejot) 8a37ad6: `src/ui/ui_theme.*` (the launcher's Vice City palette, rounded toggles, sliders
+  and cycle rows, chevrons, Inter or the system's UI font in two weights) used by `settings_menu.cpp` and
+  `trainer_menu.cpp`. Their commit rewrote settings_menu.cpp from a version before our `settings::setLayout` re-layout
+  (pages and sections by what a setting does, 2026-11-23), so it was merged onto ours by hand, not cherry-picked: their
+  drawing, our pages, sections and keys. ImGui's own font stays font 0, so F3's panel keeps its compact look.
+- **Not an option**: it is this port's own menu, not the game's, so "authentic by default" does not apply (as the
+  launcher's look did not need one).
+- **Fonts**: Inter when installed, else Segoe UI (Windows), Cantarell / Noto / Ubuntu / DejaVu (Linux), and - added here,
+  theirs had no macOS branch - Arial from macOS's Supplemental fonts. None is shipped: none of them may be.
