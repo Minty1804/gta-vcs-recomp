@@ -661,6 +661,27 @@ dropped on uploads (lazy render-target patching).
       draws flames, fireball, smoke and the ground's shadows as before; reference scenes with / without the shader depth:
       statics 0.00-0.02, moving ones only timing. `PS2X_HW_SHADER_DEPTH=1` brings it back (DECISIONS.md 2026-11-04,
       game-internals.md 6l).
+- [ ] **`tools/pc_scheme_check.py`: 6 checks fail, the same on the build from before 2026-11-23** (found 2026-11-23
+      while checking the button prompts' change; not caused by it - the old `vcs_input.cpp` / `vcs_prompts.cpp` built
+      and run gave the same 6, results in `build/pc_scheme/20261123-155334` (new) and `20261123-155547` (old); not
+      investigated yet). Both runs started from the `user` card copy (this machine has no `fortbaxter` one), with the
+      test's own settings:
+      1. *In an aircraft: on-foot and car-only keys do nothing* - Shift gives Cross (0x4000) in the Maverick. Shift is
+         Sprint on foot (Cross) and the horn in a car (L3); no Aircraft action has it, so it should give nothing. W / S
+         etc. gave the Aircraft buttons in the same run, so the situation was the aircraft's.
+      2. *Gamepad in an aircraft: still in it* - after the gamepad's buttons (X, B, RB, LB, LT, RT, RS, Back, A) Vic is in
+         ped state 0x3A, not 0x37 (driving): out of, or leaving, the helicopter, though Y (Triangle) was not pressed.
+      3. *Gamepad in an aircraft: the left stick's click given to Climb is Cross* - `pad.pc_air_up 6` set, LS still gives
+         L3 (0x0002), not Cross.
+      4. *Gamepad in a car: A does nothing (Accelerate moved to RT)* - A still gives Cross after `pad.pc_accelerate 21`
+         (the setting replied 21 on foot).
+      5. *Gamepad in a car: RT given to Accelerate is Cross (and still Look right)* - RT gives only R2 (0x0200).
+      6. *Escape and P open the pause menu* - `menustate` says `open=0` 1.5 s after each key was held.
+      3 to 5 look like one fault: a gamepad action rebound by the `setting` command does not reach the pad read in a
+      vehicle (on foot the defaults are all the check sees). 2 may follow from 1 / the button map in the aircraft. The
+      first things to look at: whether `rebuild()` runs for `pad.*` set through the control channel, the `alias` of the
+      split rows (pc_air_up takes pc_accelerate's), and the gamepad by action in readPad; for 6, the pause through
+      injected keys in a hidden run (`press escape` works later in the same check) and the card the run started from.
 - [x] Saves lost when saving (players' reports after 0.1.0: "crashed and destroyed my savegame", "deletes the save
       file when I save at Phil's safehouse") - **fixed 2026-11-01** in the card layer (game-internals.md 10f). The slot
       file is named after the last mission; "Kill Phil: Part 2" made NTFS put the save in a stream of an empty
@@ -944,7 +965,7 @@ dropped on uploads (lazy render-target patching).
   (DECISIONS.md 2026-11-23, CONTROLS.md); W / A / S / D are the left stick in menus and shops. prompts_check: 6 checks
   (contexts added, with the sub-missions' help drawn in a car), 0 failed; pc_scheme_check's held-controls check passes
   (it failed on the old build); its 6 other failures (aircraft, gamepad in a car, the pause keys) fail the same on the
-  old build - not looked into yet.
+  old build - not looked into yet (Phase 5, the open item on pc_scheme_check).
 - **Traffic / pedestrian density and draw distance** (2026-11-07, the user's request; DECISIONS.md, game-internals.md
   6o / 12d, `src/game/vcs_world_detail.cpp`): Enhancements > World - **Traffic density**, **Pedestrian density**,
   **Draw distance**, 100% (the original) to 300%. Density scales the spawners' own constants (the scripts' multipliers
