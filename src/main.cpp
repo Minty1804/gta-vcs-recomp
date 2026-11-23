@@ -40,6 +40,7 @@
 #include "game/vcs_memory.h"
 #include "game/vcs_world_hd.h"
 #include "game/vcs_texture_pack.h"
+#include "game/vcs_presets.h"
 #include "mods/modloader.h"
 #include "mods/rwconv.h"
 #include "platform/platform.h"
@@ -441,6 +442,7 @@ namespace
         s.button = "Apply";
         s.onChange = [](int) { applyPreset("Balanced", kBalanced); };
         settings::add(s);
+        vcs::presets::registerSettings(); // For this PC, Low ... Ultra (game/vcs_presets.h; after willzmkv's)
 
         s = {};
         s.key = "display.window";
@@ -981,6 +983,17 @@ int main(int argc, char *argv[])
             // (toolchain.test_window; before 2026-11-19 the tests used the PS2 layout's keys, which players rarely set)
             if (const char *d = std::getenv("VCS_DEFAULT_CONTROLS"); d && d[0] == '1')
                 settings::defaultControls();
+        }
+        // a first start: the graphics preset this PC runs (game/vcs_presets.h); in a test run only when asked
+        // (VCS_AUTO_PRESET=1: the check of it - the file is kept there, so nothing is written)
+        if (const char *ap = std::getenv("VCS_AUTO_PRESET"); !settings::keepingFile() || (ap && ap[0] == '1'))
+        {
+            std::error_code ec; // a save on the card: a player who has played (with every default) keeps them
+            const fs::path card = dataDirectory() / "mc0";
+            bool saves = false;
+            for (fs::directory_iterator it(card, ec), end; !ec && it != end && !saves; it.increment(ec))
+                saves = it->is_directory(ec);
+            vcs::presets::firstStart(saves);
         }
         settings::applyAll();
         restoreWindowPlacement();

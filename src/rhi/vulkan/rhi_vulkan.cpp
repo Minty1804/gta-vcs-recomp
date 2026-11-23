@@ -500,6 +500,11 @@ namespace rhi
                 g.vendorId = p.vendorID;
                 g.deviceId = p.deviceID;
                 g.integrated = p.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU;
+                VkPhysicalDeviceMemoryProperties memory{}; // [Minty1804 fork] rhi::Gpu::memory: the largest device-local heap
+                vkGetPhysicalDeviceMemoryProperties(devices[o.second], &memory);
+                for (uint32_t h = 0; h < memory.memoryHeapCount; ++h)
+                    if (memory.memoryHeaps[h].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT)
+                        g.memory = std::max<uint64_t>(g.memory, memory.memoryHeaps[h].size);
                 gpus.push_back(g);
                 index.push_back(o.second);
             }

@@ -256,6 +256,8 @@ namespace settings
 
     void keepFile() { g_keepFile = true; }
 
+    bool keepingFile() { return g_keepFile; }
+
     void defaultControls()
     {
         std::lock_guard<std::mutex> lock(g_mutex);
@@ -283,6 +285,34 @@ namespace settings
             std::lock_guard<std::mutex> lock(g_mutex);
             for (const auto &[key, text] : values)
                 g_state[key] = text;
+        }
+        save();
+    }
+
+    bool fileHoldsOnly(std::initializer_list<const char *> keys)
+    {
+        std::lock_guard<std::mutex> lock(g_mutex);
+        for (const auto &[key, text] : g_loaded)
+            if (std::none_of(keys.begin(), keys.end(), [&](const char *k) { return key == k; }))
+                return false;
+        return true;
+    }
+
+    void startWith(const std::vector<std::pair<std::string, int>> &values)
+    {
+        {
+            std::lock_guard<std::mutex> lock(g_mutex);
+            for (const auto &[key, v] : values)
+            {
+                auto it = g_index.find(key);
+                if (it == g_index.end() || g_overridden.count(key) || !valid(g_specs[it->second], v))
+                {
+                    std::fprintf(stderr, "[settings] start value %s=%d skipped\n", key.c_str(), v);
+                    continue;
+                }
+                g_values[key] = v;
+                g_startValues[key] = v;
+            }
         }
         save();
     }

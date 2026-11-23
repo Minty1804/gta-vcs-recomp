@@ -159,6 +159,7 @@ namespace rhi
                 card.gpu.vendorId = d.VendorId;
                 card.gpu.deviceId = d.DeviceId;
                 card.gpu.integrated = dxcoreFlag(d.AdapterLuid, kDXCoreIsIntegrated) == 1;
+                card.gpu.memory = d.DedicatedVideoMemory; // [Minty1804 fork] rhi::Gpu::memory
                 cards.push_back(std::move(card));
             }
             std::vector<Gpu> gpus;

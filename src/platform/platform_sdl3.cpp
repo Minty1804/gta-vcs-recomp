@@ -788,6 +788,10 @@ namespace platform
         return g_window && !g_hiddenWindow && (SDL_GetWindowFlags(g_window) & SDL_WINDOW_INPUT_FOCUS) != 0;
     }
 
+    int systemMemoryMb() { return SDL_GetSystemRAM(); }
+    int logicalProcessors() { return SDL_GetNumLogicalCPUCores(); }
+    bool cpuHasAvx2() { return SDL_HasAVX2(); }
+
     // [Minty1804 fork] after willzmkv's (dejot): a file:// URL through SDL_OpenURL (Explorer, Finder, the desktop's file
     // manager); bytes other than unreserved ones and the path's / and : percent-encoded (spaces, non-ASCII folder names)
     bool openFolder(const std::string &utf8Path)

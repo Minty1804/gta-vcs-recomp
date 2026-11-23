@@ -9,6 +9,7 @@
 
 #include <filesystem>
 #include <functional>
+#include <initializer_list>
 #include <string>
 #include <utility>
 #include <vector>
@@ -99,6 +100,7 @@ namespace settings
 
     void load(const std::filesystem::path &ini);
     void keepFile(); // after load: changes last for this run only, vcs.ini is never rewritten (hidden test runs)
+    bool keepingFile(); // [Minty1804 fork] keepFile() was called (a test run)
     // [Minty1804 fork] after load, for test runs (VCS_DEFAULT_CONTROLS=1, toolchain.test_window): every key binding and
     // the gamepad's action buttons (pad.pc_*) at their defaults, whatever the player's vcs.ini says - the checks press
     // the default keys. The player's other settings (free aim, the display) stay as loaded.
@@ -110,4 +112,12 @@ namespace settings
     // placement (window.*). Main thread, after load().
     std::string state(const std::string &key); // "" when absent
     void setState(const std::vector<std::pair<std::string, std::string>> &values); // one rewrite of vcs.ini
+    // [Minty1804 fork] Whether every line the last load() found in vcs.ini has one of these keys (none at all: true) -
+    // a first start's file holds at most the iso= the build or the launcher wrote (game/vcs_presets.h). vcs.ini keeps
+    // only values that differ from the default, so "none of the graphics settings" would also be a player who kept
+    // them all and set something else.
+    bool fileHoldsOnly(std::initializer_list<const char *> keys);
+    // [Minty1804 fork] After load(), before applyAll(): these values as if vcs.ini had held them - Restart settings
+    // included, which then need no restart (the first start's preset). Invalid ones are skipped; one rewrite of vcs.ini.
+    void startWith(const std::vector<std::pair<std::string, int>> &values);
 }

@@ -196,6 +196,11 @@ namespace platform
     // [Minty1804 fork] Shows a folder in the system's file manager (Explorer; Finder; the desktop's default on Linux).
     // `utf8Path`: absolute.
     bool openFolder(const std::string &utf8Path);
+    // [Minty1804 fork] What the PC has (SDL's CPU info; any thread, before init too): the first start's graphics preset
+    // (game/vcs_presets.h). Physical memory in MB, logical processors, whether the processor has AVX2.
+    int systemMemoryMb();
+    int logicalProcessors();
+    bool cpuHasAvx2();
 
     // Input (any thread; snapshot from the last pumpEvents).
     bool keyDown(int key);

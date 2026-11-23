@@ -2068,3 +2068,27 @@ turn off, leaving them always on.
   `PS2X_PIPELINE_CACHE=0` turns it off. Measured: a cold first pipeline burst 21 pipelines in 160.8 ms (a 188 ms frame);
   from the library 21 in 3.4 ms. On this AMD driver its own disk cache already made a second run cheap (4.2 ms); the
   library makes it so whatever the driver keeps.
+
+## 2026-11-23 - Graphics presets by the PC's hardware, in the game (the user's request)
+
+- **What**: Display > Presets gets **For this PC**, **Low**, **Medium**, **High** and **Ultra** (beside Authentic and
+  Balanced), and a first start picks the preset this PC runs with room to spare (`src/game/vcs_presets.cpp`). After
+  willzmkv's (dejot) launcher presets and first-install pick (283bb56, 9c01e8f): their tiers as they are - the lowest of
+  what the card (integrated or under 3 GB: Low, under 6 GB: Medium, else High), the processor (12 threads with AVX2: High,
+  8: Medium, 4: Low) and the memory (under 3.5 / 7 / 15 GB) allow, never Ultra.
+- **Why in the game, not the launcher**: our launcher has no game settings page (theirs is a 1000-line one), and vcs.exe
+  knows its own settings' ranges and the card it will draw with (Graphics > Graphics card's choice; `rhi::Gpu::memory`
+  from each backend's list). The pick happens after vcs.ini is read and before anything applies it
+  (`settings::startWith`), so resolution, anti-aliasing and streaming memory need no restart; started from the launcher or
+  not, it is the same.
+- **The values** are ours: their presets are launcher sliders on other scales, so each is mapped to this fork's settings
+  (resolution, MSAA, filtering, the detailed city's radius, streaming memory, draw / car / pedestrian distance, traffic and
+  pedestrian density). Fog is left alone (the player's choice of 2026-11-19), and so are the display's shape and
+  timing (aspect, frame rate): a preset sets only the cost of a frame.
+- **First start**: only a new install - vcs.ini holding nothing but the `iso=` the build or the launcher wrote, no
+  earlier pick (`presets.first_start`) and no save on the memory card. vcs.ini keeps only values that differ from the
+  default, so "none of the presets' settings" (the first rule) would also have caught a player who kept the graphics
+  defaults and set their controls, or one who has played with every default: they keep what they have (`kept`).
+  Only in the player's window (a test run never, unless
+  `VCS_AUTO_PRESET=1`, the check); `VCS_AUTO_PRESET=0` turns it off. This departs from "authentic by default" for a new
+  install only, as the user asked for the feature; Display > Presets > Authentic puts the original back.

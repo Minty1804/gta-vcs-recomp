@@ -269,6 +269,9 @@ namespace rhi
         uint32_t vendorId = 0;   // PCI
         uint32_t deviceId = 0;
         bool integrated = false; // the CPU's chip (D3D11: DXCore's IsIntegrated, Windows 10 2004+; Vulkan: the device type)
+        // [Minty1804 fork] its own memory in bytes, 0 when unknown (D3D11: DXGI's dedicated video memory; Vulkan: the
+        // largest device-local heap; Metal: recommendedMaxWorkingSetSize) - the first start's preset (game/vcs_presets.h)
+        uint64_t memory = 0;
         int id = 0;              // > 0
     };
     int gpuId(uint32_t vendorId, uint32_t deviceId, int ordinal); // ordinal: 0, or n for the n+1th identical card

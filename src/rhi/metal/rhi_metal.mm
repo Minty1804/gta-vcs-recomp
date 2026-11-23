@@ -1342,6 +1342,7 @@ namespace rhi
                 const uint64_t r = [d registryID];
                 g.deviceId = static_cast<uint32_t>(r ^ (r >> 32));
                 g.integrated = [d hasUnifiedMemory];
+                g.memory = [d recommendedMaxWorkingSetSize]; // [Minty1804 fork] rhi::Gpu::memory
                 gpus.push_back(g);
             }
         }
