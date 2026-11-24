@@ -176,6 +176,28 @@ The settings menu (F2) is laid out by what a setting does: **Display**, **Graphi
 
 </td>
 </tr>
+<tr>
+<td width="50%" valign="top">
+
+### Mods
+
+- **A mod loader** as PC GTA's: a folder per mod in `modloader/`, Mod Loader's own `modloader.ini`, each mod switched
+  and prioritised in F2 while the game runs.
+- Textures, game files (models, texts, the main script) and **PC Vice City car mods and VC / SA weapon mods**,
+  converted to VCS's formats while the game loads ([docs/MODS.md](docs/MODS.md)).
+
+</td>
+<td width="50%" valign="top">
+
+### Menus, subtitles and set-up
+
+- **Presets for your PC** (Low to Ultra); a new install starts with the one it runs with room to spare.
+- **Direct3D 12** beside Direct3D 11, its shaders kept compiled between runs.
+- **Subtitles and help boxes in Oswald**, sharp at any resolution; Kenney's icons for the button prompts.
+- The F2 menu and the F5 trainer in the launcher's look.
+
+</td>
+</tr>
 </table>
 
 <details>
@@ -192,6 +214,8 @@ The settings menu (F2) is laid out by what a setting does: **Display**, **Graphi
 | **Exposure** | The game's brightness as it is | *Graphics > Image quality > Exposure*, 50-200% (100%, the original): shadows open up, white stays white, the HUD keeps its colours |
 | **Sky at dusk** | The sky's gradient shows colour bands | Broken up by a fine dither (always on) |
 | **Trails** | The blurred trails / colour pass at the PS2's resolution | *Graphics > Effects > Sharp trails*: drawn at full resolution, without the blur (off by default) |
+| **Graphics API** | Direct3D 11 (Vulkan on Linux) | *Graphics > Graphics API*: **D3D12** too, less processor time per draw; its compiled pipelines kept between runs, so a place seen before has no compile hitch (D3D11 by default) |
+| **Presets** | Authentic, Balanced | *Display > Presets*: **For this PC**, **Low**, **Medium**, **High**, **Ultra**, from your card, processor and memory; a new install starts with For this PC's pick (your own settings are never changed) |
 
 **Texture packs.** Put the pack's `SLUS-21590` folder into a `textures` folder next to the game, so the images end up
 in `build\textures\SLUS-21590\replacements\` (sub-folders are fine): PCSX2's own layout and names, so packs need no
@@ -223,7 +247,7 @@ PCSX2's region (`-r<w>x<h>-`) and mip-level (`-mip<n>`) file names (skipped and 
 |---|---|---|
 | **Keyboard scheme** | A key per PS2 button (Shift for Cross, Q for L1...) | The PC games' scheme: an action per key by situation (W walks on foot and accelerates in a car, Shift sprints / honks), Vice City's default keys, every key rebindable |
 | **Controls menu** | Keys and buttons set by PS2 button | By action, as in San Andreas, for keyboard and gamepad: *On foot*, *Fighting*, *Vehicle*, *Aircraft* (helicopters and planes have their own: climb, turn, bank), *All situations*, *Mouse*, *Menus and pause*, *Shortcuts* |
-| **Button prompts** | Always the PS2's buttons | *Game > Button prompts*: the glyphs of the device you use, and the key of the action that works there (shops: W / A / S / D, Space buys) (Original by default) |
+| **Button prompts** | Always the PS2's buttons | *Game > Button prompts*: the glyphs of the device you use, and the key of the action that works there (shops: W / A / S / D, Space buys) (Original by default); **Icon style**: Kenney's Input Prompts or the classic drawn ones |
 | **Reload key** | None: the gun reloads when the clip runs out | **R** reloads with the game's animation, in a vehicle too (at once, even during a drive-by). Gamepad: no button by default |
 | **Getting out of a car** | Exit while rolling only brakes; with the gas held you never get out | One press of F: the car brakes to a stop first. *Keyboard > Vehicle > Tap to exit a vehicle* (off: as on the PS2) |
 | **Walk on a diagonal** | *Walk* + two direction keys left Vic standing | He walks diagonally (always on) |
@@ -247,6 +271,7 @@ PCSX2's region (`-r<w>x<h>-`) and mip-level (`-mip<n>`) file names (skipped and 
 |---|---|---|
 | **Cutscenes in widescreen** | People the scene keeps off screen stand waiting at the edges; the sky dark grey while a scene fades in | *Display > Cutscenes > Cutscene framing*: the PS2's framing by default (PS2 / Wide); the sky fades in with the scene (always on) |
 | **GPS route** | Only the blip to follow | *Game > Map and saving*: a line along the roads to the mission's target, and a red one to your own target on the pause map, on the radar and the map; avoids water, picks the right level where roads cross over (Off / In a vehicle / Always; off by default) - [docs/mods/GPS_ROUTE.md](docs/mods/GPS_ROUTE.md) |
+| **Subtitles** | The game's letters | *Game > Subtitles*: **Oswald** for the subtitles, mission text and help boxes - sharp at any resolution, with size, outline, shadow, a box behind each line and white text as options (Original by default) |
 | **Quick save** | Saving only at a safehouse | *Game > Map and saving*: **F12** (*Keyboard > Shortcuts*) opens the game's Save menu anywhere outside a mission; loading puts you back there, in your car or next to it, with your wanted level; optionally the menu comes up after each mission passed (off by default) - [docs/mods/QUICKSAVE.md](docs/mods/QUICKSAVE.md) |
 
 ### Performance and fixes (always on)
@@ -258,7 +283,16 @@ PCSX2's region (`-r<w>x<h>-`) and mip-level (`-mip<n>`) file names (skipped and 
   fix from the LCS port.
 - The HUD: 2D drawn after the HUD no longer drops it (the flicker in the rain), HUD glyphs keep their corners, no money
   digit thrown to the side for a frame.
-- Texture packs: no stutter when an HD image comes back into view (each keeps its GPU texture).
+- Texture packs: no stutter when an HD image comes back into view (each keeps its GPU texture, in a cache sized by the
+  card's memory).
+- The detailed city: Downtown's construction building keeps its blue glass.
+
+### Mods
+
+| | Upstream | This fork |
+|---|---|---|
+| **Mod loader** | None | `modloader/` next to the game, one folder per mod, PC GTA's Mod Loader `modloader.ini` (priorities, ignores); *Mods* in F2: Load mods, a switch and a priority per mod, applied while the game runs (on by default; with no mods it does nothing) |
+| **What a mod can hold** | - | PCSX2-named textures (as a texture pack); VCS's own files by name (`admiral.mdl`, `ENGLISH.GXT`, `MAIN.SCM`), any size; PC Vice City cars (`.dff` + `.txd`) and VC / SA weapons, converted while the game loads - [docs/MODS.md](docs/MODS.md) |
 
 </details>
 

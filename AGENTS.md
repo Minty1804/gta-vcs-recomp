@@ -22,6 +22,7 @@ detailed knowledge lives in `docs/`:
 | [docs/LAUNCHER.md](docs/LAUNCHER.md) | The launcher and releases: what a release holds, the player's flow, the tools behind each button, the `@vcs` events, what was checked |
 | [docs/FORK_IMPORTS.md](docs/FORK_IMPORTS.md) | This fork: what other forks have, what was taken from them (done / open / later), with their authors |
 | [docs/mods/](docs/mods) | This fork: the GPS route and the quick save in detail (the game's structures they use, what was checked) |
+| [docs/MODS.md](docs/MODS.md) | This fork: the mod loader (`modloader/`, modloader.ini), game files from mods, PC car and weapon mods converted (willzmkv's) |
 
 **When you learn something about the game, write it into docs/game-internals.md in the same change.**
 Record addresses and how you found them. When something is weird, use judgment, fix or work around it,
@@ -49,9 +50,10 @@ choices).
 |---|---|
 | `src/main.cpp` | Launcher: ISO, settings registration, runtime start |
 | `src/game/` | Game-specific code: overrides / hooks (`vcs_overrides.cpp`), native draw HLE (`vcs_hle_world.cpp`), display (`vcs_display.cpp`), the trainer (`vcs_trainer.cpp`), frame timing (`vcs_framerate.cpp`, per-frame mission meters `vcs_script_timing.cpp`, particles `vcs_particle_timing.cpp`, lightning / clouds / shake / other effects `vcs_effects_timing.cpp`), the player's controls (`vcs_input.cpp`; free aim `vcs_aim.cpp`; the pause menu's keys and mouse `vcs_frontend.cpp`), the game's music / effects levels as settings (`vcs_volume.cpp`), button prompts by device (`vcs_prompts.cpp`, its glyphs `vcs_glyph_art.cpp`), traffic / pedestrian density and draw distance (`vcs_world_detail.cpp`), the NPC drive-by's fire rate (`vcs_driveby.cpp`), texture packs in PCSX2's format (`vcs_texture_pack.cpp`), mission scripts stuck above 30 fps (`vcs_script_fixes.cpp`) |
-| `src/render/`, `src/rhi/`, `src/platform/` | Presenter + shaders (HLSL; DXBC by fxc, SPIR-V by `tools/hlsl_spirv.py`, MSL by `tools/hlsl_msl.py`), the RHI (backends `d3d11/`, `vulkan/`, `metal/`, `null/`; only they see a graphics API), SDL3 platform layer |
+| `src/render/`, `src/rhi/`, `src/platform/` | Presenter + shaders (HLSL; DXBC by fxc, SPIR-V by `tools/hlsl_spirv.py`, MSL by `tools/hlsl_msl.py`), the RHI (backends `d3d11/`, `d3d12/`, `vulkan/`, `metal/`, `null/`; only they see a graphics API), SDL3 platform layer |
 | `src/sound/` | Sony's libsd on the host (the native sound driver in `src/game/vcs_sound.cpp` drives the SPU2 through it) |
-| `src/settings/`, `src/ui/` | Settings registry + vcs.ini, the in-game settings menu (F2), the trainer menu (F5) |
+| `src/settings/`, `src/ui/` | Settings registry + vcs.ini, the in-game settings menu (F2), the trainer menu (F5), their look (`ui_theme`) |
+| `src/mods/` | The mod loader (`modloader.cpp`: modloader/, F2 > Mods) and the PC RenderWare converter (`rwconv.cpp`: .dff / .txd to VCS's .mdl / .xtx) |
 | `src/debug/` | Crash handler, watchdog, sampling profiler, self-test, memory watch, the F3 game-state panel (`game_info.cpp`, also `gamectl.py gameinfo`) |
 | `third_party/PS2Recomp/ps2xRuntime` | The runtime (EE, VIF, VU1, GS HW backend, IOP host, stubs); our changes marked `[gta-recomp]` |
 | `game/vcs/` | Recompiler config, function map, VU1 upload list |
@@ -127,6 +129,12 @@ python tools/driver_aim_check.py [OUT]                       # aiming from the d
                                                               # wheel's weapons in a vehicle, a motorcycle
 python tools/texpack_check.py [OUT] [--real]                # texture packs: DDS as stored vs decoded (memory, picture,
                                                               # every classification checked); --real: a PCSX2 pack too
+python tools/mods_check.py [OUT] --pack DIR                   # the mod loader: modloader.ini made, priorities, switches live
+python tools/gamefiles_check.py [OUT]                         # game files from a mod: a model entry, larger than the disc's, a GXT
+python tools/img.py table|list|extract                        # GTA3PS2.IMG's entries from your disc (build/img; never in git)
+python tools/dff2mdl.py|txd2xtx.py convert ...                # a PC .dff / .txd to VCS's .mdl / .xtx (--self-test: the disc's meshes)
+python tools/carmod_check.py|weaponmod_check.py [OUT]         # a PC car / weapon mod in the game (needs the mod's files)
+python tools/traffic_spawn_check.py [OUT]                     # the car spawner's gates at a raised Car distance (row 42)
 python tools/hud_check.py [OUT] [--control]                   # HUD at the screen edges: radar left, centred text in the middle;
                                                               # the HUD whole in the rain (no layer made stale in its frame);
                                                               # --money: no digit thrown out of the money for a frame
