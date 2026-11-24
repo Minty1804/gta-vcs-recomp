@@ -2092,3 +2092,18 @@ turn off, leaving them always on.
   Only in the player's window (a test run never, unless
   `VCS_AUTO_PRESET=1`, the check); `VCS_AUTO_PRESET=0` turns it off. This departs from "authentic by default" for a new
   install only, as the user asked for the feature; Display > Presets > Authentic puts the original back.
+
+## 2026-11-24 - Checks in proportion, and the player tests what they can (the user's rules)
+
+- **What happened**: the willzmkv imports of 2026-11-23 took ~5 hours of checks. Every check plays the game in real
+  time and they run one after another (two at once slow each other and their numbers stop meaning anything); most of
+  the hours were runs again - checks that did not fit this fork yet, a memory comparison made against a test build that
+  did not see build/'s texture pack, and five runs of a flaky check. The user: not worth it.
+- **Now**: `tools/quickcheck.py` maps the files a change touched to the checks that cover them (its RULES), prints
+  what they cost before anything runs (each check's time as measured here), runs them with `--run` (the cheapest
+  first, `--budget` minutes) and lists apart what the player can try in a minute. The whole suite (`--full`) is for
+  the end of a batch, or when the user asks. For the willzmkv batch it picks 46 minutes of checks.
+- **The player tests what they can**: whatever they can judge in the game in a minute or two is handed to them with
+  what to try; the rig keeps what needs numbers, time or many places (AGENTS.md, Working style).
+- **Would change it**: a check that could run faster than real time (the game's timing is real time: not now), or the
+  user asking for the full suite on every change.

@@ -74,6 +74,8 @@ python tools/build.py --opt none|lto|pgo    # game optimisation, kept until chan
 python tools/bench.py [OUT]                  # game-thread benchmark: fixed city spots + an AI drive (game / worker ms)
 python tools/cruise.py run [OUT] [ENV=VAL]   # stutter rig: the car along a fixed route at 144 km/h, every frame timed;
                                              # hitches with their texture / main-thread / game-thread cause (PERFORMANCE.md 21)
+python tools/quickcheck.py [--run] [--budget MIN]  # the checks a change needs, from the files it touched, with their cost
+                                             # first (--files / --base REF / --since H; --full: the whole suite)
 python tools/clean.py [--apply] [--keep-days 7]   # delete test output in build/ (lists first; builds, saves, baselines kept)
 python tools/build.py --launcher             # the launcher (VCSLauncher(.exe) in the root; no disc, ~20 s the first time)
 python3 tools/build.py --install-deps        # Linux: the missing packages through pkexec (what the launcher's button runs)
@@ -280,3 +282,14 @@ from git (README, "What this fork adds > Getting it"). Upstream's release notes 
 - Measure before and after anything on the hot path (perf lines from `gamectl.py perf`, scenes'
   `perf_*.txt`); keep the numbers in the docs.
 - Keep the regression rig (milestone 1) green; add a check when you fix a bug so it stays fixed.
+- **Checks in proportion** (the user's rule, 2026-11-24, after ~5 hours of checks for one batch of imports): every
+  check plays the game in real time, one after another, so a run costs minutes to an hour. Per change, only what
+  `tools/quickcheck.py` picks for the files touched; the whole suite (`--full`, ~1.5 h) once at the end of a batch, or
+  when the user asks. Say beforehand what a verification will cost when it is more than ~30 minutes. Before believing a
+  FAIL, check the check fits this fork (try it on saved screenshots / logs, not a new run). Before comparing numbers,
+  make sure both builds see the same data (build folder, vcs.ini, texture pack). A flaky result: report it with its
+  numbers and ask before spending another hour on it.
+- **The player tests what they can** (the user's rule, 2026-11-24): what they can see or feel in the game in a minute
+  or two - a menu's look, a prompt, a control, a setting, a mod of theirs, the traffic on a drive - is handed to them
+  with exactly what to try (quickcheck's "for the player" list), not run as a test here. The rig keeps what they
+  can't do by eye: numbers, memory over time, frame times, many places in a row, bit-exact pictures.
