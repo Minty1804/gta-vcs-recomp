@@ -1188,3 +1188,21 @@ Not taken: the asynchronous chain walk (`PS2X_CHAIN_ASYNC`: in their port too th
 RSL observers are on, as ours always are, and it needs game-specific waits where the model heap frees or moves memory)
 and chain images (texture pixel REFs interned and passed by reference: written for LCS's ~5 MB of pixel REFs a frame,
 needs the write watch and our RSL recordings' bounds checked again; FORK_IMPORTS.md item 40).
+
+### 38. willzmkv's features taken (2026-11-23): before and after
+
+The build before (ThinLTO) against the one with rows 25, 35, 36, 41 - 45 and the mod loader (ThinLTO), the player's
+vcs.ini (MSAA 2x, aniso 16x, draw distance 300 %, car distance 200 %, traffic 140 %), 60 fps, hidden runs.
+
+- `bench.py`: 60 fps at every spot either way; game ms Fort Baxter 4.3 -> 3.8, the city spots 2.4 - 3.9 -> 2.4 - 3.6,
+  the AI drive 6.9 -> 7.0 (worker 5.4 -> 5.5, GS 5.4 -> 5.2).
+- `cruise.py run` (139 s): before p99.9 18.8 ms, max 33.0, no hitch. After, three runs: p99.9 20.1 / 21.4 / -, max
+  35.2 / 36.1, 2 hitches each (16 ms lost a minute); with `VCS_CAR_SPAWN_GATES=game` p99.9 30.1, 4 hitches - so not the
+  relaxed spawner. On D3D12: p99.9 17.2, max 35.1, 3 hitches. The hitches are the route's own frames (t 11.6, 63.8,
+  121, 135.6 s), the game thread 26 - 29 ms there before and 29 - 31 ms after: the same frames, 1 - 3 ms longer, now
+  past the hitch line (twice the median and 8 ms over it). Not the mod loader either (`VCS_MODS=0`: p99.9 30.7, 3
+  hitches). Not found yet which change adds them, if one does: the build before was measured once; texture uploads and
+  GS time in those frames are the same.
+- `memcheck.py --minutes 20`, both from `build\` with the texture pack loaded: before 465 -> 1048 MB (6.1 MB a minute
+  over the second half; pack cache 495 MB), after 507 -> 1059 MB (6.0; pack cache 483 MB) - the same. (A test build in
+  another folder found no pack and gave 348 -> 621 MB: not comparable.)
