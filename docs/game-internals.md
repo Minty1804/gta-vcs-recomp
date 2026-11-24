@@ -3840,6 +3840,28 @@ probes in the game (rig, `worlddetail`).
   Their fork also kept the police's spawn ring at the game's distance while wanted (57d661f): there the population
   distance scaled the out-of-view ring (60 / 90 / 70 m), here Car distance only scales GenerationDistMultiplier (the
   in-view spot 110 m x it ahead and the removal), so the police come from where they did on the PS2 already.
+- **The car spawner's two gates** (2026-11-23, with Car distance; found by willzmkv (dejot) in their fork, commit
+  bca7997; FORK_IMPORTS row 42): FUN_00430290 checks a spot with CWorld::FindObjectsInRange (`0x195380`, a leaf: the
+  count it found at 0x1F0($sp), nothing else written) three times, told apart by `$ra`: **clear10** (returns to
+  `0x430BA0`: 10 m round the spot, before a car is built), **clear20A** (`0x43206C`: the built car's bound radius + 20 m,
+  `$f12`, set at 0x432060; only while the player is on foot or stands still, 0x24C($sp)) and the spot check before
+  **not_toward** (`0x4320C4`; at `0x4320F4` the car is thrown away unless the dot of its direction 0x80 / 0x84($sp) and
+  the way to the player 0x90 / 0x94($sp) is negative). 0x80 - 0x94 are written before that call and read only after it,
+  and a spot where the call finds anything is thrown away (0x4320C8) before 0x80 is read - so a hook at the call's start
+  can decide both (AGENTS rule 2), where theirs changed the stack after the call returned. With Car distance above
+  100 % (or Traffic density, for clear20A) vcs_world_detail.cpp takes the 20 m off clear20A's range and, between 160 m
+  and 80 % of the raised distance, turns a car heading away round. `VCS_CAR_SPAWN_GATES=game` keeps both as the game
+  has them; `worlddetail` counts the funnel (spawncalls / spots / built / survived / carspawns) and the relaxed checks
+  (clear20a / towards).
+  Measured (tools/traffic_spawn_check.py, standing in Little Havana -1028, -348.5 at noon, 60 s after 8 s): at 100 %
+  the spawner checks no spot at all (the game's own limit on cars in use already met: 9 cars); at 200 % with the game's
+  gates it built 113 - 145 cars and kept 17 - 20 (86 - 88 % thrown away), with ours built 12 - 29 and kept 12 - 17 (0 -
+  12 thrown away). Both reach the game's limit, 18 - 20 cars here, so the street is not fuller: what changes is the
+  spawner no longer building cars only to delete them. Whether it fills sooner varied by run (cars each second from the
+  teleport, ours against the game's: 11 .. 20 against 10 .. 14 once, 8 .. 13 against 8 .. 12 another time). The car's
+  own heading is not touched: 0x80 / 0x84($sp) are read only for the dot (0x4320CC - 0x4320D4), the car built at $s5
+  keeps the node's direction, so a car kept this way drives away. willzmkv's 98-99 % was on their scaling of the
+  population distance; on this one it is 86 - 88 %.
 - **Ped shadows** (2026-11-17, World > Details > **Character shadows**, `enhance.ped_shadows`, on by default,
   `VCS_PED_SHADOWS=0`): the shadow textures are read at boot by FUN_003896F8 (RwTextureRead 0x346C80) into
   0x489168 (`shad_car`), **0x48916C (`shad_ped`)**, 0x489170 (`shad_heli`), 0x489174 (`shad_bike`), 0x489178

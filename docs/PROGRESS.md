@@ -1320,6 +1320,7 @@ Python scripts still usable on their own. docs/LAUNCHER.md has the whole of it; 
 | `PS2X_HW_BLOCK_TEXTURES=0` | Texture packs' block-compressed DDS decoded to RGBA as before 2026-11-19 instead of going to the GPU as stored (the reference; game-internals.md 7b) |
 | `VCS_TEXPACK_VERIFY=1` | Every pack DDS also decoded and its texels checked against the alpha bounds that chose RGBA or as stored (`[texpack] verify` lines; texpack_check --real) |
 | `VCS_TEXPACK_MAX=<px>` | Texture pack images larger than this many pixels a side are shrunk to their first mip level that fits (memory; no effect on hitches, PERFORMANCE.md 33) |
+| `VCS_CAR_SPAWN_GATES=game` | The car spawner's clear20A / not_toward checks as the game has them at a raised Car distance or Traffic density (default: relaxed; game-internals.md 12d) |
 | `VCS_CAR_DISTANCE=100..200` | World > Draw distance > Car distance for this run (percent of GenerationDistMultiplier while the car spawner and RemoveDistantCars run; game-internals.md 12d) |
 | `VCS_PED_SHADOWS=0\|1` | World > Details > Character shadows for this run (0: no `shad_ped` shadow is stored; game-internals.md 12d) |
 | `VCS_INTERIOR_FAR_VIEW=0` | the original game's 1000 m far plane indoors for this run (the far view from interiors is always on since 2026-11-20; game-internals.md 6o) |

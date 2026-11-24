@@ -345,9 +345,81 @@ namespace vcs::world
             return out;
         }
 
+        // [Minty1804 fork] Traffic at a raised Car distance (after willzmkv's (dejot) bca7997, FORK_IMPORTS row 42). The car
+        // spawner (FUN_00430290) builds a car on a path node, then throws it away unless two checks pass, both through
+        // CWorld::FindObjectsInRange (0x195380, a leaf; the count of what it found at 0x1F0($sp), nothing else written):
+        // - "clear20A" (the call returning to 0x43206C, only while the player is on foot or stands still: 0x24C($sp)):
+        //   nothing within the car's bound radius + 20 m - against the cars queued at the next junction 19-23 m on in the
+        //   same lane it threw most cars away. The 10 m check and the bound-radius one (clear20B) still keep cars apart;
+        //   while driving the game skips it too. Dropped with Car distance or Traffic density above 100 %.
+        // - "not_toward" (0x4320F4, after the call returning to 0x4320C4): the car must drive towards the player (the dot
+        //   of its direction 0x80/0x84($sp) and the way to the player 0x90/0x94($sp) negative). With the node list moved
+        //   ahead by Car distance, most spots past the game's 160 m lie on one-way avenues heading away: willzmkv measured
+        //   97-99 % of the cars built there thrown away. Between 160 m and 80 % of the raised distance (not at the removal
+        //   edge, where a car would go at once) the direction counts as towards.
+        // Both decided here at the call's start, before the original runs (AGENTS.md rule 2) - theirs flipped not_toward
+        // after the call returned, if it had found nothing. The same: 0x80 - 0x94 are written before the call and read
+        // only after it, and a spot the call finds anything at is thrown away before 0x80 is read (0x4320C8).
+        // VCS_CAR_SPAWN_GATES=game keeps both checks as the game has them.
+        constexpr uint32_t kFindObjectsInRange = 0x00195380u;
+        constexpr uint32_t kClear20AReturn = 0x0043206Cu;
+        constexpr uint32_t kClearSpotReturn = 0x004320C4u;
+        constexpr uint32_t kClear10Return = 0x00430BA0u; // clear10: 10 m round the spot, before the car is built
+        PS2Runtime::RecompiledFunction g_origFindObjectsInRange = nullptr;
+        std::atomic<uint64_t> g_stClear20A{0}, g_stTowards{0}; // checks relaxed (worlddetail clear20a= towards=)
+        // the spawner's funnel, whatever VCS_CAR_SPAWN_GATES says (worlddetail spawncalls= spots= built= survived=):
+        // its calls, spots it checked (clear10), cars it built (the clear20A check) and those past clear20A (the
+        // spot check before not_toward); carspawns= is what it kept
+        std::atomic<uint64_t> g_stSpawnCalls{0}, g_stSpots{0}, g_stBuilt{0}, g_stSurvived{0};
+        bool spawnGatesGame()
+        {
+            static const bool game = [] {
+                const char *e = std::getenv("VCS_CAR_SPAWN_GATES");
+                return e && std::strcmp(e, "game") == 0;
+            }();
+            return game;
+        }
+        PS2_GUEST_CC void findObjectsInRange(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            const uint32_t ra = GPR_U32(ctx, 31);
+            if (ra == kClear10Return)
+                g_stSpots.fetch_add(1, std::memory_order_relaxed);
+            else if (ra == kClear20AReturn)
+                g_stBuilt.fetch_add(1, std::memory_order_relaxed);
+            else if (ra == kClearSpotReturn)
+                g_stSurvived.fetch_add(1, std::memory_order_relaxed);
+            if ((ra == kClear20AReturn || ra == kClearSpotReturn) && g_orig.valid && !spawnGatesGame())
+            {
+                const int carDistance = std::clamp(g_carDistance.load(std::memory_order_relaxed), 100, kCarDistanceMax);
+                if (ra == kClear20AReturn && (carDistance > 100 || g_traffic.load(std::memory_order_relaxed) > 100))
+                {
+                    ctx->f[12] = std::max(0.0f, ctx->f[12] - 20.0f); // the range: bound radius + 20 (0x432060)
+                    g_stClear20A.fetch_add(1, std::memory_order_relaxed);
+                }
+                else if (ra == kClearSpotReturn && carDistance > 100 && g_genScaled)
+                {
+                    const uint32_t sp = GPR_U32(ctx, 29);
+                    const float vx = rdf(rdram, sp + 0x80u), vy = rdf(rdram, sp + 0x84u);
+                    const float dx = rdf(rdram, sp + 0x90u), dy = rdf(rdram, sp + 0x94u);
+                    const float dot = vx * dx + vy * dy;
+                    const float dist = std::hypot(dx, dy);
+                    const float base = g_genBase > 0.0f ? g_genBase : 1.0f;
+                    if (dot >= 0.0f && dist > 160.0f * base && dist <= 160.0f * base * (carDistance / 100.0f) * 0.8f)
+                    {
+                        // towards: the direction turned round (or the way itself when the car stands across it)
+                        wrf(rdram, sp + 0x80u, dot > 0.0f ? -vx : -dx);
+                        wrf(rdram, sp + 0x84u, dot > 0.0f ? -vy : -dy);
+                        g_stTowards.fetch_add(1, std::memory_order_relaxed);
+                    }
+                }
+            }
+            g_origFindObjectsInRange(rdram, ctx, runtime);
+        }
+
         // the car spawner (FUN_00430290, six calls a frame): its chance table and its cap from the pools as they are now
         PS2_GUEST_CC void carSpawner(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
+            g_stSpawnCalls.fetch_add(1, std::memory_order_relaxed);
             if (g_carChance)
             {
                 wr32(rdram, kSpawnChance, g_carChance);
@@ -695,6 +767,8 @@ namespace vcs::world
                     runtime.replaceFunction(kRemoveCarsIfPoolFull, &removeCarsIfPoolFull);
                 if ((g_origVisCamera = runtime.lookupFunction(0x0036EBF8u)))
                     runtime.replaceFunction(0x0036EBF8u, &visibilityCamera);
+                if ((g_origFindObjectsInRange = runtime.lookupFunction(kFindObjectsInRange)))
+                    runtime.replaceFunction(kFindObjectsInRange, &findObjectsInRange); // [Minty1804 fork] row 42
             }
             else
             {
@@ -740,7 +814,7 @@ namespace vcs::world
         //   minpedfree minvehfree (since the last query) kept (cars kept in view, total) playerinview packets peak far
         //   carchance pedchance
         ps2control::addCommand("worlddetail", [](const std::string &, ps2control::Reply reply) {
-            char text[640];
+            char text[1200];
             std::snprintf(text, sizeof(text),
                           "ok enabled=%d valid=%d traffic=%d peds=%d draw=%d carcap=%d pedcap=%d/%d lod=%.3f pedfree=%d "
                           "vehfree=%d pedsused=%d vehused=%d minpedfree=%u minvehfree=%u kept=%llu vanished=%llu playerinview=%d "
@@ -754,12 +828,16 @@ namespace vcs::world
             const size_t n = std::strlen(text);
             std::snprintf(text + n, sizeof(text) - n,
                           " peddist=%d peds=%d pedmean=%.1f pedfar=%.1f cardist=%d cars=%d carmean=%.1f carfar=%.1f foliage=%llu "
-                          "shadows=%d shadowsskipped=%llu carspawns=%llu carspawnmean=%.1f",
+                          "shadows=%d shadowsskipped=%llu carspawns=%llu carspawnmean=%.1f clear20a=%llu towards=%llu "
+                          "spawncalls=%llu spots=%llu built=%llu survived=%llu",
                           g_pedDistance.load(), g_stPedCount.load(), g_stPedMean.load(), g_stPedFar.load(), g_carDistance.load(),
                           g_stCarCount.load(), g_stCarMean.load(), g_stCarFar.load(),
                           (unsigned long long)vcs::hleworld::solidFarFoliageRaised(), g_pedShadows.load(),
                           (unsigned long long)g_pedShadowsSkipped.load(), (unsigned long long)g_stSpawnCount.load(),
-                          g_stSpawnCount.load() ? double(g_stSpawnSum.load()) / double(g_stSpawnCount.load()) : 0.0);
+                          g_stSpawnCount.load() ? double(g_stSpawnSum.load()) / double(g_stSpawnCount.load()) : 0.0,
+                          (unsigned long long)g_stClear20A.load(), (unsigned long long)g_stTowards.load(),
+                          (unsigned long long)g_stSpawnCalls.load(), (unsigned long long)g_stSpots.load(),
+                          (unsigned long long)g_stBuilt.load(), (unsigned long long)g_stSurvived.load());
             reply(text);
         });
     }

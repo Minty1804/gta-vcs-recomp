@@ -286,6 +286,8 @@ PCSX2's region (`-r<w>x<h>-`) and mip-level (`-mip<n>`) file names (skipped and 
 - Texture packs: no stutter when an HD image comes back into view (each keeps its GPU texture, in a cache sized by the
   card's memory).
 - The detailed city: Downtown's construction building keeps its blue glass.
+- Traffic at a raised Car distance: the car spawner no longer builds cars only to throw them away (86 - 88 % of them
+  in Little Havana at 200 %).
 
 ### Mods
 
@@ -509,6 +511,8 @@ is listed here (the full list of candidates, done or not: [docs/FORK_IMPORTS.md]
   8c60c8d, d9f73ed); the shader warm-up after their commit 283bb56, re-done as a pipeline cache in the backend.
 - **Graphics presets by the PC's hardware**: after [willzmkv](https://github.com/willzmkv)'s (dejot) launcher presets
   (commits 283bb56, 9c01e8f), their tiers re-done in the game's own menu.
+- **Traffic at a raised Car distance** (the car spawner's two gates relaxed): [willzmkv](https://github.com/willzmkv)
+  (dejot), from their fork (commit bca7997), re-done as a hook before the game's call.
 - **This README's layout** (centred header, badges, feature tables side by side, collapsed sections): after
   [willzmkv](https://github.com/willzmkv)'s (dejot) README for their fork.
 
