@@ -2199,3 +2199,18 @@ bitten, things a unit or more apart keep their order, the GPU time is the same a
 Considered and left: a polygon offset (a depth bias moves the wall and the decal alike, so it cannot pick the later one);
 the cut with rounded vertices (mode 1: stripes where the two planes fall on either side of a unit); the same on GS draws
 (they are not where the world is drawn, and the emulated path stays as it was for comparisons).
+
+## 2026-11-25 - Distant lights: the origin fitted to the camera, the buildings' depth layer
+
+- **The origin is the cell centre nearest to TheCamera minus the VU camera**, not a value read from memory: the game keeps
+  the origin at `0x6FE980` (negated), but a frame is sometimes drawn partly from another cell than the one stored when
+  the chain is kicked (one chain in eight on a drive), and TheCamera + 0x1170, used until now, is left behind for whole
+  stretches. The cell grid is the game's own (`FUN_00241F00`), half a cell is 31 / 54 m, and TheCamera at the kick
+  matches the drawn camera to the centimetre, so the fit cannot pick a wrong cell; when it is more than 30 m off (a cut, a
+  teleport) that frame draws no glows instead of wrong ones. z is taken from `0x6FE980` (0 on the streets).
+- **The buildings' depth layer** (P3.z 524288) instead of the first packet's (524283.8, the farthest of five): the
+  lights belong on the buildings. The pull towards the camera that would stop walls cutting the glows stays off
+  (`VCS_LODLIGHTS_PULL`): the mod draws each light at its own depth, and pulled by its radius (~14 m at 1 km) a lamp
+  would shine through the house in front of it.
+- A fix, not an option: the option itself (Distant lights) stays off by default. `VCS_LODLIGHTS_ORIGIN=cell|old` and
+  `VCS_LODLIGHTS_DEPTH=0` go back for comparing.

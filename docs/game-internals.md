@@ -2526,16 +2526,28 @@ PaletteKeyHash, TextureName) and another VCS port that loads PCSX2 packs (its gs
 Found logging VU1 memory at each world packet's MSCAL 0x30 (`VCS_LODLIGHTS_LOG=2`) next to TheCamera, then scanning
 RDRAM for the difference.
 
-- **The world is drawn in render space, not world space**: world - (ox, oy, 0), the origin read at **`0x6F5640`
-  (TheCamera + 0x1170, x and y floats)**; a copy sometimes sits at `0x520DC8`. It moves on a grid near the camera: x in
-  steps of 12.5, y in steps of 108.25 (-1650 / -322.125, -837.5 / -430.375, 225 / -1188.125 at three spots). Qwords
+- **The world is drawn in render space, not world space**: world - origin, and **the origin is the centre of a map cell**
+  (corrected 2026-11-25; first read as TheCamera + 0x1170 and "a grid near the camera"). `FUN_0023E328(level)` takes
+  the current cell (`level + 0x248`: grid x, y at +8 / +0xC), gets its centre from `FUN_00241F00` - x = (gx + 0.5 -
+  (gy & 1) / 2) x 125 - 2400, y = (gy + 0.5) x 108.25 - 2000, z = (TheCamera z + 16) & ~31, set to 0 when the
+  object at `*0x48F820` has +0x34 = 2 and to -230 in another mode (z was 0 at every street and rooftop spot checked) -
+  and stores it **negated at `0x6FE980`** (x, y, z, w), then calls `FUN_0018ED28` with it; called from the cell swap
+  `FUN_0023D740` (and `0x109368`). `0x6F5640` (TheCamera + 0x1170, x and y) holds a copy that is not always updated: after
+  a teleport it kept -1587.5 / -213.875 while the world was drawn from 37.5 / 219.125 (found by searching a RAM dump for
+  TheCamera minus the VU camera: only `0x6FE980`, `0x520890` and `0x5509C0` held it, negated, and only `0x6FE980` in
+  all four dumps). On a drive, `0x6FE980` read when the game kicks the chain is another cell than the one the chain was
+  drawn from in about one chain in eight (parts of a frame drawn around a cell change), so the distant lights take the
+  cell centre nearest to TheCamera (+0x30, at the kick) minus the VU camera - the two agree to the centimetre on a
+  whole night drive once each chain is matched to its own kick. Qwords
   16-19 (view x projection to clip) map render space; qword 32 is the camera in render space (the point where clip
   x = y = w = 0, solved from 16-19, is exactly qword 32; + the origin = TheCamera + 0x30). The object matrices
   (qwords 0-3) are render space too: their translations are tens to a few hundred metres, scaled by the vertex
   quantisation (row 0 = 16 .. 1024). Floats near the camera keep their precision this way.
 - One world chain uses one view (16-19) and one viewport (12-15) for all its packets; only the viewport's z (P3.z,
   524283.8 .. 524292.1, a layer bias) changes between groups of packets. The first world packet's matrices give the
-  frame's camera.
+  frame's camera. The layers are 524283.8 / 285.8 / 288.0 / 290.1 / 292.1; the first packets (~230) are the farthest
+  layer, most of the buildings (~1200-2200 packets) are 524288.0 (`VCS_LODLIGHTS_LOG=2`, Detailed city 0 to 3 alike).
+  GS z here is about 10430 + 118000 / w: a layer step of ~2 units is ~1.6 m at 300 m and ~17 m at 1 km.
 - Draw order in a frame: sky, clouds, world, particles, the reflection map (fbp 420, fbw 2, reads the frame at 140), peds,
   bloom (downsample fbw 4 from the frame), trails, HUD. Depth is cleared to 0, nearer is larger, GEQUAL.
 - **Project2DFX for VCS** (ThirteenAG's PCSX2 plugin, `GTAVCS.PCSX2F.Project2DFX`, lodl.c / lodl.h; MIT): a table of
@@ -2551,6 +2563,18 @@ RDRAM for the difference.
   frame copy so they bloom like the game's coronas. Off inside interiors (`currArea` `0x489F7C` not 0 / 4). Checked at
   eight night spots: on the lamps, hidden behind buildings, right in 16:9, nothing by day; 20-60 us a frame, no change
   in frame rate (PERFORMANCE.md-style on / off runs at 120-240 fps within noise).
+- **Fixed 2026-11-25 (the player's report: lights appearing and vanishing, lights where there are none)**: the origin
+  was TheCamera + 0x1170 at the game thread's frame, z 0. On the cruise route at night the camera found with it was
+  more than 15 m from TheCamera in 6340 of 8983 frames, whole 5 s windows wrong after a teleport (the lights of a
+  neighbourhood 1.7 km away drawn over this one: glows over the water, green lights in the road), and a frame in
+  eight wrong by a cell or more where it was mostly right. Now the cell centre found as above, from TheCamera read when
+  that chain was kicked (the record looked up newest first and used once: chain buffers are reused, and an older record
+  of the same buffer had given a camera ~10 m behind); 0 frames off on the same drive, none lost (a frame whose
+  TheCamera is more than 30 m from every cell's fit - a cut, a teleport - draws no glows rather than wrong ones). The
+  glows also take the buildings' depth layer (524288) instead of the first packet's (the farthest): a light on a wall
+  was ~4 units behind it. Same at Detailed city 0, 2 and 3; the cruise at 23:00 costs the same (4 hitches, 83 vs 82 ms
+  a minute). `VCS_LODLIGHTS_ORIGIN=cell|old`, `VCS_LODLIGHTS_DEPTH=0` go back for comparing. Not changed: blinking
+  lights switch on and off like the mod's table says (the mod's own fade shares one value across all lights).
 
 ## 8. Data loaded at boot
 

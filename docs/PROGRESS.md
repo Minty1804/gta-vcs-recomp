@@ -1081,6 +1081,12 @@ dropped on uploads (lazy render-target patching).
       clock: the tower read at noon lit at 22:00, read at night dark at noon, off at 6:00 sharp. `VCS_HOUR_PIECES=0` =
       the game's way. **The house at the street's end dropping to low detail**: the game's per-cell detail (the far
       model in cell (11, 13)'s list); Detailed city 1 shows it detailed.
+    - **Distant lights popping and in the wrong places: fixed** (the player's report, 2026-11-25). The render origin the
+      lights were placed with was a copy the game does not always update, read a frame late: on the night cruise the
+      lights' camera was off by more than 15 m in 6340 of 8983 frames (a whole neighbourhood's lights over another after
+      a teleport, a cell off one frame in eight). Now the map cell's centre fitted to TheCamera at each chain's kick: 0
+      frames off, none lost; the glows at the buildings' depth layer. Detailed city 0 / 2 / 3 alike, same cost
+      (game-internals.md 7c).
 
 ## Milestone 9 - Linux (started 2026-10-30)
 
@@ -1403,7 +1409,10 @@ Python scripts still usable on their own. docs/LAUNCHER.md has the whole of it; 
 | `VCS_DISTANT_LIGHTS=0\|1` | World > Details > Distant lights for this run (Project2DFX's far street lights at night; game-internals.md 7c) |
 | `VCS_LODLIGHTS_FILE=<path>` | The light table to read (default `project2dfx/lodl.c` next to vcs.exe, fetched by the build) |
 | `VCS_LODLIGHTS_FARCLIP=m`, `VCS_LODLIGHTS_RADIUS=x`, `VCS_LODLIGHTS_INTENSITY=x` | The lights' range (1000 m), size factor (1.5) and strength (1) |
-| `VCS_LODLIGHTS_LOG=1\|2` | Every 5 s: lights in range / drawn a frame, the cost, the camera and its matrices; 2: the cameras of each world chain |
+| `VCS_LODLIGHTS_LOG=1\|2` | Every 5 s: lights in range / drawn a frame, the cost, the camera and its matrices, how the origin was found (which kick's `0x6FE980` the cell matches, frames left out, TheCamera's distance from the drawn camera); 2: the cameras and depth layers of each world chain |
+| `VCS_LODLIGHTS_ORIGIN=cell\|old` | Distant lights' render origin: `0x6FE980` at the chain's kick, or TheCamera + 0x1170 at the game frame with z 0 (before 2026-11-25: lights in the wrong places); default the cell centre fitted to TheCamera (game-internals.md 7c) |
+| `VCS_LODLIGHTS_DEPTH=0` | Distant lights at the first world packet's depth layer (the farthest; before 2026-11-25) instead of the buildings' |
+| `VCS_LODLIGHTS_PULL=m` | Distant lights' depth taken up to m metres nearer the camera (off; for trying) |
 | `VCS_STREAMING_MB=0\|12\|20\|30` | World > Memory > Streaming memory for this run (0: the PS2's 5.4 MB in the main heap; above: the streaming heap at 0x2000000 with that size, CStreaming's cap of 51 lifted; game-internals.md 9d) |
 | `VCS_HD_RADIUS=0..3` | World > Draw distance > Detailed city distance for this run (0 Original, 1 ~450 m, 2 ~580 m, 3 ~720 m; read at boot for the packet heap, live otherwise; game-internals.md 6t) |
 | `VCS_HD_PROBE=x,y,r`, `VCS_HD_TWINS=1`, `VCS_HD_DUPES=1`, `VCS_HD_OSC=1`, `VCS_HD_LATE=1` | Detailed city analysis: what each list build does with every record near a point; low-detail twins kept; detailed sectors drawn twice; sectors flipping state; detail first drawn close (willzmkv's, game-internals.md 6t) |

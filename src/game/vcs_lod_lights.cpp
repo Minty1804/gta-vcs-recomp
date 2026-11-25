@@ -3,9 +3,10 @@
 // Each VIF1 chain (one frame) the first world packet's VU1 memory gives the frame's camera exactly as the world is drawn
 // with it: qwords 16-19 view x projection from render space to clip space, 12-15 clip space to GS window coordinates
 // (the viewport, Hor+ included), the same two the setup program folds into 24-31 for every model (vcs_hle_world.cpp
-// setupMatrices). Render space is the world moved by an origin on a grid near the camera (TheCamera + 0x1170, x and y;
-// game-internals.md 7c), so the lights are moved by it first. They are projected on the GS stage, in stream order, and
-// handed to the renderer (gsHwSetOverlay), which puts them after the game's coronas, depth-tested against the world.
+// setupMatrices). Render space is the world moved by an origin, the centre of a map cell (game-internals.md 7c): the cell
+// centre nearest to TheCamera's position at the chain's kick minus the camera in render space, so the lights are moved by
+// it first. They are projected on the GS stage, in stream order, and handed to the renderer (gsHwSetOverlay), which puts
+// them after the game's coronas, depth-tested against the world at the buildings' depth layer.
 // Cost: ~20-60 us a frame on the GS stage (a grid of the lights by place, a sine table, no allocation a frame).
 //
 // The rules are Project2DFX's (source/GTAVCS.PCSX2F.Project2DFX/lodl.c, RenderLODLightsBuffered, and its PCSX2 ini):
@@ -14,7 +15,9 @@
 //   3.5 at farclip (x the size factor, x 1.5), and with distance (x 0.0025 d + 0.25, at most x 4);
 // - blinking lights (show mode 1-7) on / off by the game's ms clock; traffic lights (size 0.45) by the minute.
 // VCS_LODLIGHTS_FARCLIP / VCS_LODLIGHTS_RADIUS / VCS_LODLIGHTS_INTENSITY change the 1000 m, the 1.5 and the strength;
-// VCS_LODLIGHTS_LOG=1 prints what was drawn every 5 s (and the camera, to check the projection).
+// VCS_LODLIGHTS_LOG=1 prints what was drawn every 5 s (and the camera, to check the projection), and how the origin was
+// found; =2 the cameras and depth layers of a chain's world packets. VCS_LODLIGHTS_ORIGIN / _DEPTH / _PULL: see onMscal and
+// drawLights.
 #include "game/vcs_lod_lights.h"
 
 #include "ps2_runtime.h"
@@ -44,9 +47,13 @@ namespace vcs::lodlights
         constexpr uint32_t kClockHours = 0x004CD148u; // CClock: hours, minutes (bytes; game-internals.md 20)
         constexpr uint32_t kCurrArea = 0x00489F7Cu;   // CGame::currArea: 0 (and 4) outdoors - the far clip's own test
         constexpr uint32_t kTimeMs = 0x004CD104u;     // CTimer::m_snTimeInMilliseconds (stands still while paused)
-        // TheCamera + 0x1170: x, y the world is drawn relative to (z 0) - VU1 qwords 16-19 and the object matrices
-        // are relative to it, qword 32 is the camera from it; it moves in steps of 12.5 / 108.25 (game-internals.md 7c)
-        constexpr uint32_t kRenderOrigin = 0x006F5640u;
+        // The world is drawn relative to an origin (VU1 qwords 16-19 and the object matrices; qword 32 is the camera
+        // from it): the centre of the current map cell, its z the camera's rounded to 32 m, stored negated at 0x6FE980 by
+        // FUN_0023E328 when the cell changes (game-internals.md 7c). TheCamera + 0x1170 holds a copy that is not always
+        // updated (a teleport leaves it behind), and its z is not there.
+        constexpr uint32_t kCellOrigin = 0x006FE980u;
+        constexpr uint32_t kOldOrigin = 0x006F5640u; // (VCS_LODLIGHTS_LOG: compared)
+        constexpr uint32_t kCameraPos = 0x006F4500u; // TheCamera (0x6F44D0) + 0x30: the camera in the world
         constexpr float kPi = 3.14159265f;
 
         struct Light
@@ -58,7 +65,7 @@ namespace vcs::lodlights
         };
 
         std::atomic<int> g_enabled{0};
-        std::atomic<uint64_t> g_origin{0}; // two floats: the render space's origin x, y
+        std::atomic<uint32_t> g_origin[3]{}; // the origin at the last game frame (floats): a chain not seen queued
         std::atomic<int> g_clock{-1}; // hours * 60 + minutes; -1: not read yet
         std::atomic<uint32_t> g_timeMs{0};
         fs::path g_folder;
@@ -66,6 +73,28 @@ namespace vcs::lodlights
         std::vector<Light> g_lights;
         int g_tableState = 0; // 0 not read, 1 read, -1 missing
         bool g_capturedThisChain = false; // the processing thread's
+        std::atomic<uint8_t *> g_rdram{nullptr};
+
+        // The render origin and the camera as the game kicked each chain (the EE thread, chain queued), found again when
+        // that chain is processed: the game thread runs a frame ahead of the processing, so the origin read at its frame
+        // is the next frame's - a step of 12.5 / 108.25 m off for one frame each time it moves.
+        struct ChainView
+        {
+            const void *key = nullptr;
+            unsigned seq = 0;
+            float origin[3] = {}, oldOrigin[2] = {}, camera[3] = {};
+        };
+        std::mutex g_chainMutex;
+        ChainView g_chainViews[16];
+        unsigned g_chainNext = 0;
+        ChainView g_view;          // the processing thread's: the chain being processed
+        bool g_viewValid = false;
+        struct OriginStats
+        {
+            uint64_t frames = 0, back[6] = {}, oldOff = 0, missing = 0;
+            float maxLag = 0.0f;
+        };
+        OriginStats g_originStats; // the processing thread's (VCS_LODLIGHTS_LOG)
 
         float envFloat(const char *name, float fallback)
         {
@@ -241,7 +270,7 @@ namespace vcs::lodlights
         {
             float v[4][4];    // qwords 16-19: render space -> clip space (view x projection; rows: x, y, z, translation)
             float p[4][4];    // qwords 12-15: clip space -> GS window (the viewport: x 320, y -224, centre 2048, Z range)
-            float origin[2];  // render space = world - (origin x, origin y, 0) (TheCamera + 0x1170)
+            float origin[3];  // render space = world - origin (the current cell's centre: kCellOrigin)
             float pos[3];     // the camera in the world
             float scale[2];   // a metre across the view in clip x / y (x w)
         };
@@ -249,9 +278,9 @@ namespace vcs::lodlights
         // c = x V0 + y V1 + z V2 + V3, then g = c.x P0 + c.y P1 + c.z P2 + c.w P3 (as the VU's MULA / MADDA chains)
         void toView(const Camera &cam, const float w[3], float c[4])
         {
-            const float x = w[0] - cam.origin[0], y = w[1] - cam.origin[1];
+            const float x = w[0] - cam.origin[0], y = w[1] - cam.origin[1], z = w[2] - cam.origin[2];
             for (int k = 0; k < 4; ++k)
-                c[k] = cam.v[0][k] * x + cam.v[1][k] * y + cam.v[2][k] * w[2] + cam.v[3][k];
+                c[k] = cam.v[0][k] * x + cam.v[1][k] * y + cam.v[2][k] * z + cam.v[3][k];
         }
         void toWindow(const Camera &cam, const float c[4], float g[4])
         {
@@ -313,6 +342,7 @@ namespace vcs::lodlights
             static const float farClip = envFloat("VCS_LODLIGHTS_FARCLIP", 1000.0f);
             static const float radiusScale = envFloat("VCS_LODLIGHTS_RADIUS", 1.5f);
             static const float intensity = envFloat("VCS_LODLIGHTS_INTENSITY", 1.0f);
+            static const float pullCap = envFloat("VCS_LODLIGHTS_PULL", 0.0f);
             const int minute = clock % 60;
             // the screen in window coordinates: the viewport's centre (P3) +- its half size (P0.x, P1.y)
             const float hx = std::fabs(cam.p[0][0]) / cam.p[3][3], hy = std::fabs(cam.p[1][1]) / cam.p[3][3];
@@ -344,7 +374,21 @@ namespace vcs::lodlights
                 if (!(g[3] > 0.5f)) // behind the camera / at the near plane
                     return;
                 const float iw = 1.0f / g[3];
-                const float sx = g[0] * iw, sy = g[1] * iw, sz = g[2] * iw;
+                const float sx = g[0] * iw, sy = g[1] * iw;
+                float sz = g[2] * iw;
+                if (pullCap > 0.0f && dist > 1.0f)
+                {
+                    // VCS_LODLIGHTS_PULL=m (off): the glow's depth taken that many metres nearer (at most its radius, half
+                    // the way) - kept for trying; the mod draws each light at its own depth, and the depth layer fix
+                    // (onMscal) was enough in the checks
+                    const float pull = std::min(std::min(radius, pullCap), 0.5f * dist) / dist;
+                    const float wp[3] = {l.x + dx * pull, l.y + dy * pull, l.z + dz * pull};
+                    float cp[4], gp[4];
+                    toView(cam, wp, cp);
+                    toWindow(cam, cp, gp);
+                    if (gp[3] > 0.5f)
+                        sz = gp[2] / gp[3];
+                }
                 // the radius on screen: the view's x / y moved by it; the projection is linear, so the window point moves
                 // by radius x scale x that row of P (its own aspect, Hor+ included) - w barely changes, P0 / P1 have no w
                 const float rx = std::fabs(radius * cam.scale[0] * cam.p[0][0]) * iw;
@@ -400,7 +444,41 @@ namespace vcs::lodlights
         uint32_t g_packetIndex = 0;
         bool g_logChain = false;
 
-        void processing(const void *, bool begin)
+        // The map cell's centre nearest to `world` - `render`, x and y (FUN_00241F00: x = (gx + 0.5 - (gy & 1) / 2) x 125 -
+        // 2400, y = (gy + 0.5) x 108.25 - 2000); z is left to the caller (the game's: 0 in the city - its rule rounds the
+        // camera's height to 32 m only in a mode not seen on the streets)
+        bool snapToCell(const float world[3], const float render[3], float out[2])
+        {
+            const float dx = world[0] - render[0], dy = world[1] - render[1];
+            if (!std::isfinite(dx) || !std::isfinite(dy) || std::fabs(dx) > 1e5f || std::fabs(dy) > 1e5f)
+                return false;
+            const int gy = static_cast<int>(std::lround((dy + 2000.0f) / 108.25f - 0.5f));
+            const float odd = static_cast<float>(gy & 1) * 0.5f;
+            const long gx = std::lround((dx + 2400.0f) / 125.0f - 0.5f + odd);
+            out[0] = (static_cast<float>(gx) + 0.5f - odd) * 125.0f - 2400.0f;
+            out[1] = (static_cast<float>(gy) + 0.5f) * 108.25f - 2000.0f;
+            return true;
+        }
+
+        void queued(const void *key, uint32_t)
+        {
+            uint8_t *ram = g_rdram.load(std::memory_order_relaxed);
+            if (!ram || !g_enabled.load(std::memory_order_relaxed))
+                return;
+            ChainView v;
+            v.key = key;
+            float neg[3];
+            std::memcpy(neg, ram + kCellOrigin, 12);
+            for (int i = 0; i < 3; ++i)
+                v.origin[i] = -neg[i];
+            std::memcpy(v.oldOrigin, ram + kOldOrigin, 8);
+            std::memcpy(v.camera, ram + kCameraPos, 12);
+            std::lock_guard<std::mutex> lock(g_chainMutex);
+            v.seq = g_chainNext;
+            g_chainViews[g_chainNext++ % std::size(g_chainViews)] = v;
+        }
+
+        void processing(const void *key, bool begin)
         {
             static const bool log2 = [] {
                 const char *e = std::getenv("VCS_LODLIGHTS_LOG");
@@ -409,6 +487,23 @@ namespace vcs::lodlights
             if (begin)
             {
                 g_capturedThisChain = false;
+                g_viewValid = false;
+                {
+                    // newest first, and taken once: the chain buffers are reused, so an older entry can hold the same key
+                    std::lock_guard<std::mutex> lock(g_chainMutex);
+                    constexpr unsigned n = static_cast<unsigned>(std::size(g_chainViews));
+                    for (unsigned i = 1; i <= n && i <= g_chainNext; ++i)
+                    {
+                        ChainView &v = g_chainViews[(g_chainNext - i) % n];
+                        if (v.key == key)
+                        {
+                            g_view = v;
+                            g_viewValid = true;
+                            v.key = nullptr;
+                            break;
+                        }
+                    }
+                }
                 g_packetIndex = 0;
                 g_seen.clear();
                 static auto last = std::chrono::steady_clock::now();
@@ -449,11 +544,12 @@ namespace vcs::lodlights
     void install(PS2Runtime &, const fs::path &gameFolder)
     {
         g_folder = gameFolder;
-        ps2chain::addChainObservers(nullptr, &processing);
+        ps2chain::addChainObservers(&queued, &processing);
     }
 
     void onGameFrame(uint8_t *rdram)
     {
+        g_rdram.store(rdram, std::memory_order_relaxed);
         if (!g_enabled.load(std::memory_order_relaxed))
             return;
         const int h = rdram[kClockHours], m = rdram[kClockHours + 1];
@@ -464,9 +560,15 @@ namespace vcs::lodlights
         uint32_t ms = 0;
         std::memcpy(&ms, rdram + kTimeMs, 4);
         g_timeMs.store(ms, std::memory_order_relaxed);
-        uint64_t origin = 0;
-        std::memcpy(&origin, rdram + kRenderOrigin, 8);
-        g_origin.store(origin, std::memory_order_relaxed);
+        for (int i = 0; i < 3; ++i)
+        {
+            float f;
+            std::memcpy(&f, rdram + kCellOrigin + 4u * i, 4);
+            f = -f;
+            uint32_t bits;
+            std::memcpy(&bits, &f, 4);
+            g_origin[i].store(bits, std::memory_order_relaxed);
+        }
     }
 
     void onMscal(uint32_t startPc, const uint8_t *vu)
@@ -497,6 +599,12 @@ namespace vcs::lodlights
         Camera cam;
         std::memcpy(cam.p, vu + 12u * 16u, 64);
         std::memcpy(cam.v, vu + 16u * 16u, 64);
+        // The viewport's z offset is a depth layer: the world is drawn in groups 524283.8 / 285.8 / 288 / 290.1 / 292.1
+        // (VCS_LODLIGHTS_LOG=2), most of the buildings at 524288, and the first packet - this one - is the farthest. The
+        // glows take the buildings' layer, or a light on a wall would sit ~4 units (3 m at 300 m, 36 m at 1 km) behind it.
+        static const bool depthFix = envFloat("VCS_LODLIGHTS_DEPTH", 1.0f) != 0.0f;
+        if (depthFix && std::fabs(cam.p[3][2] - 524288.0f) < 16.0f)
+            cam.p[3][2] = 524288.0f * cam.p[3][3];
         // the camera: the point whose clip x, y and w are 0 (16-19 is view x projection: not orthonormal)
         const float(&m)[4][4] = cam.v;
         const int ks[3] = {0, 1, 3};
@@ -525,12 +633,99 @@ namespace vcs::lodlights
         // view x / y -> clip x / y: the lengths of the matrix's first two columns (a rotation times a scale)
         for (int k = 0; k < 2; ++k)
             cam.scale[k] = std::sqrt(m[0][k] * m[0][k] + m[1][k] * m[1][k] + m[2][k] * m[2][k]);
-        // the camera in the world, and the origin the frame's matrices are relative to
-        const uint64_t o = g_origin.load(std::memory_order_relaxed);
-        std::memcpy(cam.origin, &o, 8);
-        cam.pos[0] += cam.origin[0];
-        cam.pos[1] += cam.origin[1];
+        // The origin this chain's world was drawn from. Always a cell centre, so the one nearest to TheCamera's position
+        // at the kick minus the camera in render space (they agree to the centimetre: VCS_LODLIGHTS_LOG=1); 0x6FE980 at
+        // the kick is another cell in about one chain in eight on a drive, TheCamera + 0x1170 is left behind for whole
+        // stretches (game-internals.md 7c). VCS_LODLIGHTS_ORIGIN=cell: 0x6FE980 at the kick; =old: TheCamera + 0x1170 at
+        // the game frame, z 0 (before 2026-11-25).
+        static const int originMode = [] {
+            const char *e = std::getenv("VCS_LODLIGHTS_ORIGIN");
+            return !e || !*e ? 0 : !std::strcmp(e, "cell") ? 1 : !std::strcmp(e, "old") ? 2 : 0;
+        }();
+        float cellOrigin[3];
+        if (g_viewValid)
+            std::memcpy(cellOrigin, g_view.origin, 12);
+        else
+            for (int i = 0; i < 3; ++i)
+            {
+                const uint32_t bits = g_origin[i].load(std::memory_order_relaxed);
+                std::memcpy(&cellOrigin[i], &bits, 4);
+            }
+        float gridOrigin[3] = {0.0f, 0.0f, cellOrigin[2]};
+        const bool gridOk = g_viewValid && snapToCell(g_view.camera, cam.pos, gridOrigin);
+        // TheCamera far from the drawn camera even from the nearest cell (a teleport, a camera cut between the frame drawn
+        // and its kick): which cell is not known - no glows this frame rather than glows from the wrong cell
+        float lag = 0.0f;
+        if (gridOk)
+        {
+            float e2 = 0.0f;
+            for (int i = 0; i < 3; ++i)
+            {
+                const float e = cam.pos[i] + gridOrigin[i] - g_view.camera[i];
+                e2 += e * e;
+            }
+            lag = std::sqrt(e2);
+        }
+        const bool lost = originMode == 0 && gridOk && lag > 30.0f;
+        if (originMode == 2 && g_viewValid)
+        {
+            cam.origin[0] = g_view.oldOrigin[0];
+            cam.origin[1] = g_view.oldOrigin[1];
+            cam.origin[2] = 0.0f;
+        }
+        else if (originMode == 0 && gridOk)
+            std::memcpy(cam.origin, gridOrigin, 12);
+        else
+            std::memcpy(cam.origin, cellOrigin, 12);
+        if (logOn())
+        {
+            ++g_originStats.frames;
+            if (!gridOk)
+                ++g_originStats.missing;
+            else
+            {
+                // which kick's 0x6FE980 the cell found matches: this chain's (0), the one before (1), ... (none: 4)
+                int back = 4;
+                {
+                    std::lock_guard<std::mutex> lock(g_chainMutex);
+                    constexpr unsigned n = static_cast<unsigned>(std::size(g_chainViews));
+                    for (unsigned k = 0; k < 4 && k <= g_view.seq; ++k)
+                    {
+                        const ChainView &v = g_chainViews[(g_view.seq - k) % n];
+                        if (v.seq == g_view.seq - k && std::fabs(v.origin[0] - gridOrigin[0]) < 0.01f &&
+                            std::fabs(v.origin[1] - gridOrigin[1]) < 0.01f)
+                        {
+                            back = static_cast<int>(k);
+                            break;
+                        }
+                    }
+                }
+                ++g_originStats.back[lost ? 5 : back];
+                g_originStats.oldOff += std::fabs(gridOrigin[0] - g_view.oldOrigin[0]) + std::fabs(gridOrigin[1] - g_view.oldOrigin[1]) > 0.01f;
+                if (!lost)
+                    g_originStats.maxLag = std::max(g_originStats.maxLag, lag);
+            }
+            static auto last = std::chrono::steady_clock::now();
+            const auto now = std::chrono::steady_clock::now();
+            if (now - last >= std::chrono::seconds(5))
+            {
+                last = now;
+                std::fprintf(stderr, "[lodlights] origin %.2f %.2f %.2f: %llu frames; the cell found is 0x6FE980 at this chain's kick "
+                                     "in %llu, 1 / 2 / 3 kicks before %llu / %llu / %llu, none %llu; lost %llu (glows left out); not "
+                                     "TheCamera + 0x1170 in %llu; no chain view %llu; TheCamera up to %.1f m from the drawn camera\n",
+                             cam.origin[0], cam.origin[1], cam.origin[2], (unsigned long long)g_originStats.frames,
+                             (unsigned long long)g_originStats.back[0], (unsigned long long)g_originStats.back[1],
+                             (unsigned long long)g_originStats.back[2], (unsigned long long)g_originStats.back[3],
+                             (unsigned long long)g_originStats.back[4], (unsigned long long)g_originStats.back[5],
+                             (unsigned long long)g_originStats.oldOff, (unsigned long long)g_originStats.missing,
+                             g_originStats.maxLag);
+                g_originStats = {};
+            }
+        }
+        for (int i = 0; i < 3; ++i)
+            cam.pos[i] += cam.origin[i];
         const uint32_t ms = g_timeMs.load(std::memory_order_relaxed);
-        ps2_render_worker::runOnGsStage([cam, clock, ms] { drawLights(cam, clock, ms); });
+        const int shownClock = lost ? 12 * 60 : clock; // (noon: nothing drawn, the overlay emptied)
+        ps2_render_worker::runOnGsStage([cam, shownClock, ms] { drawLights(cam, shownClock, ms); });
     }
 }
