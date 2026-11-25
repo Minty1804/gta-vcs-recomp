@@ -1251,12 +1251,22 @@ UV mapping per primitive fitted from the vertices, u = du/dx * x + offset in tex
   are GS LINE primitives (20 - 40 vertices, ZTST ALWAYS, z 0, additive blend 0221 FIX 128, untextured, colour 25 25 32
   fading to 06 06 08 from the headlight's screen point), drawn after the coronas (which are depth tested, ZTST
   GEQUAL, and hide behind Vic) and before the bloom / trails - so the PS2 draws them over everything as well; the
-  game's Trails byte (0x48653C) does not turn them off. Not from RenderWare's immediate mode: `VCS_TRACE_CALLERS` on
-  Im2D RenderPrimitive / indexed (0x2FBE08 / 0x2FBE68) and Im3D Transform / RenderIndexedPrimitive / RenderLine /
-  RenderPrimitive (0x2FBFA8 / 0x2FC2E8 / 0x2FC0F8 / 0x2FC210) in that scene sees only triangle lists and fans (types
-  3 and 5) and no RenderLine at all: the streaks' packets are built by the game's own code. Ruled out by reading:
-  FUN_0016A048, FUN_001AC1F8, FUN_00227348, FUN_00245768, FUN_0025F260, FUN_002BAFD0. A RAM search for the colours
-  (u32, packed bytes, floats) found nothing (scratchpad / VU1 data likely).
+  game's Trails byte (0x48653C) does not turn them off. **Found 2026-11-24** (the user's report: through walls and
+  Vic): they are the coronas' streaks, **CCoronas::Render** `FUN_0027C418`. The coronas: 56 of 0x90 bytes at
+  `0x00512560` (+0x10 position, +0x20 id, +0x24 the game ms of the last sight test, +0x40..42 colour, +0x43 / +0x44
+  target / current alpha, +0x48 flags: bit 0 the LOS fade CRegisteredCorona::Update `FUN_0027BFF8` does, bit 3 the
+  streak, bit 4 "in sight"; +0x4A x[6] and +0x56 y[6] s16 screen points, +0x62 / +0x68 / +0x6E r / g / b[6], +0x74
+  valid[6] u32). Render shifts the six every frame (0x27C4C8) and records the corona's screen point in slot 0 only while
+  bit 4 is set; bit 4 is a line-of-sight test from the corona to the camera's source (CWorld::GetIsLineOfSightClear
+  `FUN_0018FC88` at 0x27C660: buildings 1, vehicles 1, peds 0, objects 0, dummies 0, see-through ignored), redone only
+  when +0x24 is 2 s old (0x27C5F8). The lines (0x27CD30..0x27CF1C): for each streak corona a segment between two valid
+  points, colour fading with the slot (`FUN_002FBD78`, 2 vertices, prim 2 - which is why the Im2D trace above, on
+  0x2FBE08 / 0x2FBE68, never saw them). So a car's streaks went on through a wall for up to 2 s after it went behind
+  it, and nothing hid them behind Vic. `vcs_corona_streaks.cpp` re-arms the test every 33 ms of game time (a PS2
+  frame) and passes peds (`t0`) to that one call (`$ra` 0x27C668; the sector walk `FUN_001944B8`: a2 buildings, a3
+  vehicles, t0 peds, t1 objects, t2 dummies). `VCS_STREAK_LOS=0` = the game's; `VCS_STREAK_LOG=1` counts them (a night
+  drive through traffic at 575,175: 4 - 9 streak coronas a frame, about half in sight). Objects (lamp posts, fences)
+  stay out, as in the game.
 - A 128x128 sample of the picture (5 x 3.5 texels per pixel, no offset) goes into the corner of FBP 420, plus an
   additive sun / glow sprite (64x64); right after, 3D draws (vehicles, z ~0.001) are textured from that 128x128
   corner - a reflection map refreshed every frame. After the bloom (which overwrites FBP 420) the sample is drawn

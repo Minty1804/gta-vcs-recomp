@@ -1335,6 +1335,8 @@ Python scripts still usable on their own. docs/LAUNCHER.md has the whole of it; 
 | `VCS_HD_DRAW_SYNC=0` | Detailed city: no switch check before the draw (cells a script's switch made stale this frame drawn until the next update), as before 2026-11-24 (game-internals.md 6t) |
 | `VCS_HD_SWEEP_BOUNDS=0` | Detailed city: the geometry table walked to kMaxGid instead of its own length (g_info + 0x12C), as before 2026-11-24 (the DIA_C3 heap corruption at 60 fps; gothamor#207) |
 | `VCS_REMOTE_DRIVE=0` | an RC vehicle driven with the on-foot keys, as before 2026-11-24 (W walks instead of driving it; gothamor#207) |
+| `VCS_STREAK_LOS=0`, `VCS_STREAK_LOG=1` | the headlights' streaks tested for sight every 2 s and with peds left out, as the game has it (they cross walls and Vic); log the streak coronas in sight every 5 s (game-internals.md 6g, "Headlight streaks over the player") |
+| `VCS_FIGHT_BUTTONS=0` | while fighting, an on-foot key with a fighting button (Sprint's Cross, Jump's Square, Enter vehicle's Triangle) still presses it - Shift heavy-attacks once the heavy attack has another key (CONTROLS.md, Fighting) |
 | `VCS_CAR_SPAWN_GATES=game` | The car spawner's clear20A / not_toward checks as the game has them at a raised Car distance or Traffic density (default: relaxed; game-internals.md 12d) |
 | `VCS_CAR_DISTANCE=100..200` | World > Draw distance > Car distance for this run (percent of GenerationDistMultiplier while the car spawner and RemoveDistantCars run; game-internals.md 12d) |
 | `VCS_PED_SHADOWS=0\|1` | World > Details > Character shadows for this run (0: no `shad_ped` shadow is stored; game-internals.md 12d) |

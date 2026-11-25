@@ -60,6 +60,11 @@ Target and they are the on-foot keys again.
 
 Next / previous target (] / [, and Q / E: L2 / R2 change the target while locked on) work as on foot.
 
+While fighting, Cross, Square and Triangle come only from these rows: an on-foot key whose PS2 button is one of them
+(Sprint is Cross, Jump Square, Enter vehicle Triangle) does nothing until Target is let go, whatever the fighting keys
+are bound to - before 2026-11-24, with the heavy attack moved off Space, Shift (Sprint) still heavy-attacked.
+`VCS_FIGHT_BUTTONS=0` = before.
+
 **Vehicle** (cars, bikes, boats - the Skimmer is a boat to the game - and the hovercraft, which drives like one)
 
 | Action | Keys | PS2 |

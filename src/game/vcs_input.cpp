@@ -873,6 +873,23 @@ namespace vcs::input
                 }
             if (fighting)
                 situation |= kInFight;
+            // While fighting, the PS2 buttons the fighting rows press (Cross the heavy attack, Square the block, Triangle
+            // the grab) come only from those rows: an on-foot row with the same button (Sprint is Cross, Jump Square,
+            // Enter vehicle Triangle) would attack, block or grab with its own key - Shift heavy-attacked once the heavy
+            // attack had another key (the user's report, 2026-11-24). As on the PS2, where Cross is the heavy attack there.
+            // VCS_FIGHT_BUTTONS=0: before (only a key bound to a fighting row was held back).
+            static const bool fightButtonsOwn = [] {
+                const char *e = std::getenv("VCS_FIGHT_BUTTONS");
+                return !(e && e[0] == '0');
+            }();
+            uint16_t fightMask = 0;
+            for (size_t i = 0; i < kControlCount; ++i)
+                if (kControls[i].when == kInFight && kControls[i].target == Target::Button)
+                    fightMask = static_cast<uint16_t>(fightMask | kControls[i].mask);
+            auto fightButton = [&](const Control &c) {
+                return fightButtonsOwn && fighting && c.when != kInFight && c.target == Target::Button &&
+                       (c.mask & fightMask) != 0;
+            };
 
             // [Minty1804 fork] the gamepad by action: each action's gamepad button in its situation, the fighting ones
             // winning over the on-foot ones they share (as the keys); in the game's menus the gamepad's buttons are the
@@ -898,7 +915,7 @@ namespace vcs::input
                     {
                         const Control &c = kControls[i];
                         if (!padActionRow(c) || !(c.when & padSituation) || !padDown(i) ||
-                            (fighting && c.when != kInFight && fightPad(m.pad[i])))
+                            (fighting && c.when != kInFight && fightPad(m.pad[i])) || fightButton(c))
                             continue;
                         if (c.target == Target::Reload)
                             reloadHeld = true;
@@ -925,7 +942,7 @@ namespace vcs::input
             for (size_t i = 0; i < kControlCount && !blocked; ++i)
             {
                 const Control &c = kControls[i];
-                if (!(c.when & situation))
+                if (!(c.when & situation) || fightButton(c))
                     continue;
                 auto active = [&](int key) {
                     if (!bound(key, alt))
