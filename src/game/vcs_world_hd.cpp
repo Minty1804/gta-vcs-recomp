@@ -452,6 +452,26 @@ namespace vcs::world_hd
 
         // ---- the geometry table ----
         uint32_t tableEntry(uint32_t gid) { return rd32(g_info) + gid * 0xCu; }
+        // The table's own length (g_info + 0x12C: the count FUN_0023BAF0 / FUN_0023B8E8 walk it by). Walks bounded by
+        // kMaxGid alone ran past the Mainland's shorter table (fewer than 5370 entries) into the data after it: a word
+        // there taken for a packet was freed (0x00521C61, inside the frame's DMA buffer) and the heap corrupted - the
+        // 60 fps freeze after DIA_C3's cutscene (willzmkv, gothamor#207). VCS_HD_SWEEP_BOUNDS=0: kMaxGid, as before.
+        bool tableBounded()
+        {
+            static const bool on = [] {
+                const char *e = std::getenv("VCS_HD_SWEEP_BOUNDS");
+                return !(e && e[0] == '0');
+            }();
+            return on;
+        }
+        uint32_t tableCount()
+        {
+            if (!tableBounded())
+                return kMaxGid;
+            if (!g_ram || !valid(g_info, 0x130u))
+                return 0u;
+            return std::min(rd32(g_info + 0x12Cu), kMaxGid);
+        }
 
         // VCS_HD_PKTDEBUG=1: every cached packet put on the free ring (by the game: its caller; by us: 0xF000000n, the
         // site) and every free from the packet heap, checked: a packet put on twice before it is freed, a packet freed
@@ -568,8 +588,9 @@ namespace vcs::world_hd
                              (unsigned long long)g_frame, why);
             }
             uint32_t holder = 0;
+            const uint32_t count = tableCount();
             if (g_ram && valid(g_info, 4u))
-                for (uint32_t gid = 1, table = rd32(g_info); gid < kMaxGid && !holder; ++gid)
+                for (uint32_t gid = 1, table = rd32(g_info); gid < count && !holder; ++gid)
                     if (valid(table + gid * 0xCu, 0xCu) && rd32(table + gid * 0xCu + 4u) == packet)
                         holder = gid;
             std::lock_guard<std::mutex> lock(g_pendingMutex);
@@ -603,8 +624,8 @@ namespace vcs::world_hd
         {
             if (!g_ram || !valid(g_info, 4u))
                 return;
-            const uint32_t table = rd32(g_info);
-            for (uint32_t gid = 1; gid <= g_maxGid && gid < kMaxGid; ++gid)
+            const uint32_t table = rd32(g_info), count = tableCount();
+            for (uint32_t gid = 1; gid <= g_maxGid && gid < count; ++gid)
             {
                 const uint32_t e = table + gid * 0xCu;
                 if (rd32(e + 4u) == packet)
@@ -673,8 +694,9 @@ namespace vcs::world_hd
                     for (uint32_t j = 0; j < count; ++j)
                     {
                         const uint32_t gid = rd32(pairs + j * 8u);
-                        if (gid < kMaxGid)
-                            g_maxGid = std::max(g_maxGid, gid);
+                        if (gid == 0 || gid >= tableCount())
+                            continue;
+                        g_maxGid = std::max(g_maxGid, gid);
                         g_game.try_emplace(gid, rd32(pairs + j * 8u + 4u));
                         g_gameCopies.insert(uint64_t(gid) << 32 | rd32(pairs + j * 8u + 4u));
                     }
@@ -715,12 +737,20 @@ namespace vcs::world_hd
         }
 
         uint64_t g_reclaimed = 0;
+        uint64_t g_pastTable = 0; // a piece's gids past the table's length, left out (logged: a count too short shows)
 
         // our geometry into the entry when it is empty or stale (the game's current entries are never touched)
         void enter(const Piece &piece, uint32_t owner, Cell &cell)
         {
+            const uint32_t count = tableCount();
             for (const auto &[gid, geometry] : piece.pairs)
             {
+                if (gid == 0 || gid >= count)
+                {
+                    if (gid && ++g_pastTable <= 20u)
+                        std::fprintf(stderr, "[hdworld] gid %u past the table's %u entries: left out\n", gid, count);
+                    continue; // (not this level's table)
+                }
                 g_maxGid = std::max(g_maxGid, gid);
                 cell.geometry[gid] = geometry;
                 const uint32_t e = tableEntry(gid), now = rd32(e);
@@ -809,8 +839,8 @@ namespace vcs::world_hd
         {
             if (g_freed.empty() || !valid(g_info, 4u))
                 return;
-            const uint32_t table = rd32(g_info);
-            for (uint32_t gid = 1; gid <= g_maxGid && gid < kMaxGid; ++gid)
+            const uint32_t table = rd32(g_info), count = tableCount();
+            for (uint32_t gid = 1; gid <= g_maxGid && gid < count; ++gid)
             {
                 const uint32_t e = table + gid * 0xCu, packet = rd32(e + 4u), geometry = rd32(e);
                 for (const auto &[from, to] : g_freed)
@@ -859,11 +889,11 @@ namespace vcs::world_hd
             g_pushed.clear();
             if (!valid(g_info, 4u))
                 return;
-            const uint32_t table = rd32(g_info);
+            const uint32_t table = rd32(g_info), count = tableCount();
             for (bool more = true; more;)
             {
                 more = false;
-                for (uint32_t gid = 1; gid <= g_maxGid && gid < kMaxGid; ++gid)
+                for (uint32_t gid = 1; gid <= g_maxGid && gid < count; ++gid)
                 {
                     const uint32_t e = table + gid * 0xCu, packet = rd32(e + 4u);
                     if (!packet || gone.count(packet) || !inPacketHeap(packet) || !callsInto(packet, gone))
@@ -1463,8 +1493,11 @@ namespace vcs::world_hd
                     return true;
                 return good(gid, now);
             };
+            auto keepLod = [&](uint16_t id) {
+                return g_keepLod.test(id) || std::find(std::begin(kAlwaysKeepLod), std::end(kAlwaysKeepLod), id) != std::end(kAlwaysKeepLod);
+            };
             auto replaced = [&](uint16_t id, uint32_t r, bool fromExtra) {
-                if (g_keepLod.test(id) || std::find(std::begin(kAlwaysKeepLod), std::end(kAlwaysKeepLod), id) != std::end(kAlwaysKeepLod))
+                if (keepLod(id))
                     return false;
                 if (condGids.count(rd16(r + 2u)))
                     return fromExtra && slotCondHd.any(half(rd16(r + 4u)), half(rd16(r + 6u)), half(rd16(r + 0xAu)));
@@ -1641,12 +1674,24 @@ namespace vcs::world_hd
                         const bool isCond = !skipWhy && condGids.count(gid) != 0;
                         const bool skipTwin = !skipWhy && drawMode() >= 3 && id >= kLodIds && !isCond && twin(r);
                         const bool skipDupe = !skipWhy && id < kLodIds && !keepDupes && sameSphere(r, id, gid);
+                        // The cell's own hidden flag (0x8000) holds unless a switch says otherwise or the sector is a
+                        // keepLod one (willzmkv, their issue 90): taking every unswitched record as shown un-hid Fort
+                        // Baxter's low-detail ground (5889 / 5890) over the detailed streets whenever the cells were read
+                        // again (the 07:00 / 20:00 reload, a radius change). VCS_HD_SHOW_HIDDEN_EXTRA=1: as before.
+                        static const bool showHiddenExtra = [] {
+                            const char *e = std::getenv("VCS_HD_SHOW_HIDDEN_EXTRA");
+                            return e && e[0] == '1';
+                        }();
+                        const int sw = skipWhy ? -1 : switched(id);
+                        const bool cellHidden = !skipWhy && !showHiddenExtra && (rd16(r) & 0x8000u) != 0 && !keepLod(id);
+                        const int hide = sw >= 0 ? sw : cellHidden ? 1 : 0;
                         if (probing && probeNear(r))
                             std::fprintf(stderr, "[hdprobe]   cell %d,%d id %5u gid %5u at %.0f,%.0f r %.0f mat 0x%08x flag %u -> %s\n", c->x, c->y, id, gid,
                                          half(rd16(r + 4u)), half(rd16(r + 6u)), half(rd16(r + 0xAu)), rd32(r + 0xCu), rd16(r) >> 15,
                                          skipWhy ? skipWhy : skipTwin ? "SKIPPED (twin)" : skipDupe ? "SKIPPED (dupe)" :
-                                         id >= kLodIds && replaced(id, r, true) ? "coarser, replaced" :
-                                         switched(id) == 1 ? "added, switched off" : switched(id) == 0 ? "added, switched on" : "added");
+                                         sw == 1 ? "added, switched off" : sw == 0 ? "added, switched on" :
+                                         cellHidden ? "hidden by its cell" :
+                                         id >= kLodIds && replaced(id, r, true) ? "coarser, replaced" : "added");
                         if (skipWhy)
                             continue;
                         const float near = std::hypot(half(rd16(r + 4u)) - camX, half(rd16(r + 6u)) - camY); // (its centre)
@@ -1665,6 +1710,14 @@ namespace vcs::world_hd
                         }
                         if (skipDupe)
                             continue; // (the same detailed sector under another id: above)
+                        if (hide == 1) // in the list hidden, as the game has it: taken, no fade, not a detailed sphere
+                        {
+                            taken.set(id);
+                            takenBy[id] = c;
+                            out[k].push_back({id, r, c->cx - scx, c->cy - scy, -zShift, 1});
+                            ++total;
+                            continue;
+                        }
                         const bool glowing = id >= kLodIds && replaced(id, r, true);
                         if (glowing && (!glowNow || isCond))
                         {
@@ -1673,10 +1726,7 @@ namespace vcs::world_hd
                         }
                         taken.set(id);
                         takenBy[id] = c;
-                        int hide = switched(id);
-                        if (hide < 0)
-                            hide = 0;
-                        if (id < kLodIds && hide != 1)
+                        if (id < kLodIds)
                             detailed.emplace(centreKey(r), Sphere{id, gid, half(rd16(r + 0xAu))});
                         out[k].push_back({id, r, c->cx - scx, c->cy - scy, -zShift, hide});
                         g_oscSource[id] = (uint64_t(uint32_t(c->y)) << 32 | uint32_t(c->x)) + 1u;
@@ -1936,6 +1986,8 @@ namespace vcs::world_hd
             {
                 if (g_level)
                     dropAll(false); // another level's data: the table is not what we entered into
+                if (tableBounded())
+                    g_maxGid = 0; // (and its length another)
                 g_level = level;
                 g_info = info;
                 g_levelLoaded = loaded;
@@ -1947,13 +1999,53 @@ namespace vcs::world_hd
             }
             if (loaded != rd32(kLevelId))
                 return false; // the other island's data is about to be read
-            if (!valid(info, 0x300u) || !valid(rd32(info), 0xC000u))
+            const uint32_t count = tableBounded() ? tableCount() : 0x1000u;
+            if (!valid(info, 0x300u) || count == 0u || !valid(rd32(info), count * 0xCu))
                 return false;
+            static uint32_t loggedInfo = 0;
+            if (loggedInfo != info)
+            {
+                loggedInfo = info;
+                std::fprintf(stderr, "[hdworld] level 0x%08x: geometry table of %u entries\n", level, count);
+            }
             const uint32_t handle = rd32(level + 0x278u);
             if (handle >= 64u)
                 return false;
             g_imageBase = uint64_t(rd32(kFileTable + handle * 0x14u + 4u)) * vcs::IsoImage::kSectorSize;
             return g_imageBase != 0;
+        }
+
+        // Cells whose conditional pieces no longer match the switches at level + 0x418..0x4B8 (or, with checkHour, the
+        // clock's windows): dropped, to be read again. From update() and again before the draw (willzmkv, their issue 90),
+        // so a switch a script flips in the frame unloads the stale cells before anything is drawn from them.
+        std::array<uint32_t, 40> g_lastSwitches{};
+        void syncCondCells(bool checkHour)
+        {
+            std::array<uint32_t, 40> now{};
+            std::memcpy(now.data(), g_ram + ((g_level + 0x418u) & PS2_RAM_MASK), sizeof(now));
+            const bool changed = now != g_lastSwitches;
+            if (changed)
+                g_lastSwitches = now;
+            if ((!changed && !checkHour) || g_cells.empty())
+                return;
+            bool dropped = false;
+            for (auto it = g_cells.begin(); it != g_cells.end();)
+            {
+                Cell &c = *it->second;
+                if (condMask(c.list.at, c.list.bytes) != c.condMask)
+                {
+                    forget(c);
+                    it = g_cells.erase(it);
+                    ++g_stats.unloads;
+                    ++g_version;
+                    g_reenter = true;
+                    dropped = true;
+                }
+                else
+                    ++it;
+            }
+            if (dropped)
+                sweepPackets();
         }
 
         void drawDiffFrame();
@@ -2002,13 +2094,6 @@ namespace vcs::world_hd
             // too far now: dropped (and once a second for clock windows, or right away when any switch at level + 0x418 changes,
             // a cell whose conditional pieces switched - read again)
             const double t = seconds();
-            static std::array<uint32_t, 40> lastSwitches{};
-            std::array<uint32_t, 40> curSwitches{};
-            std::memcpy(curSwitches.data(), g_ram + ((g_level + 0x418u) & PS2_RAM_MASK), sizeof(curSwitches));
-            const bool switchesChanged = curSwitches != lastSwitches;
-            if (switchesChanged)
-                lastSwitches = curSwitches;
-            const bool checkConds = switchesChanged || (g_frame % 60u == 30u);
             for (auto it = g_cells.begin(); it != g_cells.end();)
             {
                 Cell &c = *it->second;
@@ -2023,7 +2108,7 @@ namespace vcs::world_hd
                     c.leaving = t;
                     ++g_version;
                 }
-                if ((far && t - c.leaving >= kFadeSeconds) || (checkConds && condMask(c.list.at, c.list.bytes) != c.condMask))
+                if (far && t - c.leaving >= kFadeSeconds)
                 {
                     forget(*it->second);
                     it = g_cells.erase(it);
@@ -2034,6 +2119,7 @@ namespace vcs::world_hd
                 else
                     ++it;
             }
+            syncCondCells(g_frame % 60u == 30u);
             sweepPackets();
             // the nearest wanted one not in yet (one a frame: ~0.2-0.7 MB copied from the mapped disc image)
             const int cy0 = int((camY + 2000.0f) * 0.009237875f);
@@ -2099,10 +2185,20 @@ namespace vcs::world_hd
                 ++g_stats.fallback[why];
                 return;
             }
-            // the game's slots changed since the entries were checked (this frame's chooser started a load into a buffer
-            // whose old entries are now stale): checked again before anything is drawn from them
-            if (slotState() != g_gameState)
+            // a switch a script flipped this frame (its stale cells dropped), or the game's slots changed since the
+            // entries were checked (this frame's chooser started a load into a buffer whose old entries are now stale):
+            // checked again before anything is drawn from them
+            // VCS_HD_DRAW_SYNC=0: only the slots' check here, as before 2026-11-24
+            static const bool drawSync = [] {
+                const char *e = std::getenv("VCS_HD_DRAW_SYNC");
+                return !(e && e[0] == '0');
+            }();
+            if (drawSync)
+                syncCondCells(false);
+            if ((drawSync && g_reenter) || slotState() != g_gameState)
                 reenterAll();
+            if (g_cells.empty())
+                return;
             const uint32_t current = rd32(g_level + 0x248u), previous = rd32(g_level + 0x250u);
             const bool fading = int32_t(rd32(g_level + 0x264u)) >= 1 && valid(previous, 0x40u) && int32_t(rd32(previous + 8u)) >= 1;
             const std::pair<uint32_t, uint32_t> slots[2] = {{current, rd32(g_level + 0x24Cu)},
@@ -2521,8 +2617,8 @@ namespace vcs::world_hd
                 // (FUN_0023BAF0's own loop frees every entry's packet before it clears the table: not a finding)
                 if (g_ram && valid(g_info, 4u) && g_pktLogged < 300 && getRegU32(ctx, 31) != 0x0023BBFCu)
                 {
-                    const uint32_t table = rd32(g_info);
-                    for (uint32_t gid = 1; gid <= g_maxGid && gid < kMaxGid; ++gid)
+                    const uint32_t table = rd32(g_info), count = tableCount();
+                    for (uint32_t gid = 1; gid <= g_maxGid && gid < count; ++gid)
                     {
                         const uint32_t e = table + gid * 0xCu;
                         if (!valid(e, 0xCu) || rd32(e + 4u) != packet)
