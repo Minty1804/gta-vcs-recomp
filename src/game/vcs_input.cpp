@@ -315,6 +315,7 @@ namespace vcs::input
         // ---- The game (game-internals.md 12, 12b) --------------------------------------------------------------------
         constexpr uint32_t kRamMask = PS2_RAM_MASK;
         constexpr uint32_t kPlayerPed = 0x004E4910u;   // CWorld::Players[0].m_pPed
+        constexpr uint32_t kPlayerRemote = kPlayerPed + 4u; // CWorld::Players[0].m_pRemoteVehicle: an RC vehicle driven
         constexpr uint32_t kPedVehicle = 0x480u;       // the vehicle it is in (0 on foot)
         constexpr uint32_t kPedState = 0x8C4u;         // 0x37 driving
         constexpr uint32_t kVehicleRadio = 0x2BAu;     // the vehicle's radio station (u8): 0..8 the stations, 9 off
@@ -372,7 +373,8 @@ namespace vcs::input
 
         struct GameState
         {
-            bool driving = false;
+            bool driving = false;    // in the driver's seat, or driving an RC vehicle (remote)
+            bool remote = false;     // an RC vehicle (DomestoBot, the RC cars): the player stands, the keys drive it
             bool aircraft = false;   // ... a helicopter or a plane (the action layouts' Aircraft actions)
             bool footCamera = false; // the on-foot follow camera, turned by the player (no script camera, controls on)
             bool paused = false;     // the pause menu or the game's own pause
@@ -393,12 +395,23 @@ namespace vcs::input
                 return s;
             const uint32_t ped = rd32(kPlayerPed);
             const uint32_t vehicle = ped ? rd32(ped + kPedVehicle) : 0;
-            s.driving = vehicle && rd32(ped + kPedState) == 0x37;
+            const bool seat = vehicle && rd32(ped + kPedState) == 0x37;
+            // An RC vehicle (willzmkv, gothamor#207): the player is on foot, so the keyboard had the on-foot keys - W
+            // walked instead of driving it. Driving it is the vehicle's situation; the radio, the drive-by and the tap
+            // to get out are not for it. VCS_REMOTE_DRIVE=0: as before.
+            static const bool remoteDrive = [] {
+                const char *e = std::getenv("VCS_REMOTE_DRIVE");
+                return !(e && e[0] == '0');
+            }();
+            const uint32_t remote = ped && remoteDrive && !seat ? rd32(kPlayerRemote) : 0;
+            s.remote = remote != 0;
+            s.driving = seat || s.remote;
             if (s.driving)
             {
+                const uint32_t driven = seat ? vehicle : remote;
                 int16_t model;
-                std::memcpy(&model, g_rdram + ((vehicle + kEntityModel) & kRamMask), 2);
-                const uint32_t type = rd32(vehicle + kVehicleType);
+                std::memcpy(&model, g_rdram + ((driven + kEntityModel) & kRamMask), 2);
+                const uint32_t type = rd32(driven + kVehicleType);
                 s.aircraft = type == kTypeHeli || (type == kTypePlane && model != kModelHovercraft);
             }
             int16_t disabled;
@@ -428,6 +441,7 @@ namespace vcs::input
             bool mouseWheel = true;                        // the wheel changes weapons on foot and zooms scopes
             bool wheelVehicleWeapons = true;               // ... in a vehicle the drive-by weapon (else the radio)
             bool swapSticks = false, invertX = false, invertY = false;
+            bool roundStick = false; // pad.round_stick: the left stick past the game's square dead zone
             float deadzoneLeft = 0.12f, deadzoneRight = 0.12f, cameraScale = 1.0f, trigger = 0.3f;
             float vibration = 1.0f;
             float walk = 0.45f;
@@ -466,6 +480,7 @@ namespace vcs::input
             m.mouseWheel = settings::value("mouse.wheel") != 0;
             m.wheelVehicleWeapons = settings::value("mouse.wheel_vehicle") != 0;
             m.swapSticks = settings::value("pad.swap_sticks") != 0;
+            m.roundStick = settings::value("pad.round_stick") != 0;
             m.invertX = settings::value("pad.invert_x") != 0;
             m.invertY = settings::value("pad.invert_y") != 0;
             m.deadzoneLeft = settings::value("pad.deadzone_left") / 100.0f;
@@ -949,7 +964,7 @@ namespace vcs::input
                 const bool press = keyExit && !t.keyWas, drivePress = keyDrive && !t.driveWas;
                 t.keyWas = keyExit;
                 t.driveWas = keyDrive;
-                if (!m.exitTap || blocked || !game.driving || game.menu || game.paused)
+                if (!m.exitTap || blocked || !game.driving || game.remote || game.menu || game.paused)
                     t.active = false;
                 else if (press)
                 {
@@ -979,10 +994,23 @@ namespace vcs::input
             // (game/vcs_frontend.h): bound() leaves it out then.
             if (!blocked && bound(KEY_ESCAPE, alt))
                 buttons |= kStart;
+            const bool keyLeftX = neg[0] != pos[0], keyLeftY = neg[1] != pos[1];
             float *axes[4] = {&lx, &ly, &rx, &ry};
             for (int a = 0; a < 4; ++a)
                 if (neg[a] != pos[a])
                     *axes[a] = neg[a] ? -1.0f : 1.0f;
+            if (!walk && m.roundStick)
+            {
+                // Left stick without the square dead zone (willzmkv, their issue 93): the game zeroes each axis on its
+                // own while |byte - 128| <= 42 (FUN_002842e8), so a stick held a little off an axis snapped to it and a
+                // shallow diagonal did nothing. Each axis the gamepad gives goes through the inverse of that curve
+                // (rawFor): the game reads the stick's own tilt, past our round dead zone only.
+                auto past = [](float t) { return stickFloat(rawFor(static_cast<int>(std::lround(std::clamp(t, -1.0f, 1.0f) * 127.0f)))); };
+                if (!keyLeftX && lx != 0.0f)
+                    lx = past(lx);
+                if (!keyLeftY && ly != 0.0f)
+                    ly = past(ly);
+            }
             if (walk)
             {
                 // The walk's tilt is set in the game's own units: the size one axis has at Walking speed, split over
@@ -1104,7 +1132,7 @@ namespace vcs::input
                     in.target = keyR1;
                     // aiming from the driver's seat (ChrisM-Pek): the target key held in a car whose camera the mouse
                     // turns - the secondary fire's key (the right mouse button)
-                    in.driverWant = !blocked && !game.paused && m.freeAimMouse && game.driving && (keyR1 || keyDriverAim) &&
+                    in.driverWant = !blocked && !game.paused && m.freeAimMouse && game.driving && !game.remote && (keyR1 || keyDriverAim) &&
                                     carcam::turns(mode);
                     if (!blocked)
                     {
@@ -1306,7 +1334,7 @@ namespace vcs::input
                         discardWheelNotches(); // nor are they played out as presses after the scope
                     g_mouse.wheelSteps = 0;
                 }
-                else if (game.driving && m.mouseWheel && !wheelBound && !g_mouse.aim.camera &&
+                else if (game.driving && !game.remote && m.mouseWheel && !wheelBound && !g_mouse.aim.camera &&
                          (m.wheelVehicleWeapons || g_mouse.aim.driver))
                 {
                     // the drive-by weapon (Mouse wheel in a vehicle: Weapons, and always while aiming from the driver's
@@ -1316,7 +1344,7 @@ namespace vcs::input
                         aim::driverWheel(static_cast<int>(notch[1]) - static_cast<int>(notch[0]));
                     g_mouse.wheelSteps = 0;
                 }
-                else if (!m.mouseWheel || wheelBound || g_mouse.aim.camera || aim::aiming())
+                else if (!m.mouseWheel || wheelBound || g_mouse.aim.camera || aim::aiming() || game.remote)
                     g_mouse.wheelSteps = 0;
                 else if (game.driving)
                 {
@@ -1833,6 +1861,10 @@ namespace vcs::input
         };
         const Flag flags[] = {
             {"pad.swap_sticks", "Swap sticks", "Move with the right stick and turn the camera with the left (left-handed)."},
+            {"pad.round_stick", "Left stick without the square dead zone",
+             "The game ignores each direction of the left stick on its own for its first third, so the stick held a little "
+             "off straight goes straight and a slight diagonal does nothing. On: the stick goes where it points, its dead "
+             "zone the round one above. Off: as on the PS2."},
             {"pad.invert_x", "Invert camera left / right", "The right stick turns the camera the other way."},
             {"pad.invert_y", "Invert camera up / down", "Pushing the right stick up looks down."},
         };
