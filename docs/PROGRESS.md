@@ -1070,6 +1070,11 @@ dropped on uploads (lazy render-target patching).
       `PS2X_HW_PIXEL_Z=0` = before (1 = rounded vertices: stripes stay).
     - **The Viceport V sign (-824, -1462): the game's own** - one board's back stands in front of the other's face
       from the west; the same on the emulated path, without the rules, without Detailed city and the texture pack.
+    - **Palms by the road coming and going with the camera (-835, -178): fixed.** Caused by the scan's fan (bd76b31):
+      at 300 % it fed the game's sorted alpha list (palms, trees: 200 nodes) far palms first, and the near row found it
+      full (game-internals.md 6x). The pool is 2000 now (the most seen 268); the row at every heading, nothing refused.
+      `VCS_ALPHA_LIST=0` = the game's 200. The far water's darker patch by the pier: the game's own (the same with the
+      depth rules off, Detailed city 0 and on the emulated path).
 
 ## Milestone 9 - Linux (started 2026-10-30)
 
@@ -1304,6 +1309,7 @@ Python scripts still usable on their own. docs/LAUNCHER.md has the whole of it; 
 | `PS2X_IOP_REALTIME=0` | IOP time purely from EE cycles (audio slows with the game) |
 | `VCS_TEST_SAVE=s[:slot]` | save to slot 1 (or 1..8) through the game's code s seconds after boot (mid-script: prefer `tools/saves.py`) |
 | `VCS_TRACE_SECTORS=1`, `VCS_TRACE_CELL=1` | world sector draw / current hex cell vs camera |
+| `VCS_ALPHA_LIST=<nodes>` | the sorted alpha list's pool (palms, trees, everything drawn with alpha): 2000 (the second list 300); 0 = the game's 200 / 30, where at 300 % near palms go missing by the camera's heading (game-internals.md 6x). `worlddetail`'s `alpha=` shows pool / peak / refused |
 | `VCS_SCAN_FAN=0` | the world scan's 300 m-depth triangle as the game has it: entities (palms, props) beyond ~300 m shown by where they sit in the view and by the pitch, not by distance (game-internals.md 6u) |
 | `VCS_SECTOR_DIFF=1` | analysis: logs the world sector records whose draw changed since the frame before (`[sectordiff] shown / gone`, keyed by id and gid; game-internals.md 6u) |
 | `VCS_SECTOR_PROBE=<file>` | analysis: the file's command, re-read every 200 ms - `list` logs the sector entries drawn (model index, position), a number skips that model index (game-internals.md 6o: which piece of the world a model is) |

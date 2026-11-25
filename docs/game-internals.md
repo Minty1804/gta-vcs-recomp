@@ -2301,7 +2301,9 @@ FUN_0023C820 (camera position only).
   the Draw distance, the chord points pushed out by 1 / cos(step / 2). It holds the triangle, so nothing the game drew
   goes; what shows is then up to each model's own distance. The polygon lives in the port's scratch (`kPortScratchBase`
   0x07800000, vcs_memory.h). Checked: the palm group at every yaw 60..93 and pitch -12..12 (none missing; the game's
-  triangle lost it at most of them); game ms within 0.1 at 100 %, +0.1..0.5 at 300 % (bench.py).
+  triangle lost it at most of them); game ms within 0.1 at 100 %, +0.1..0.5 at 300 % (bench.py). **Missed then**: "the
+  lists stay short" held for ScanSectorList's arrays, not for the sorted alpha list the palms go to - at 300 % the fan
+  filled its 200 nodes and near palms were dropped by the camera's heading (6x).
 - **Not this**: the bridge sign at (-870, -926) that shows a second, partly blue board by the pitch (-8.9 vs -4.1)
   stays with the fan; no sector record changes between those pitches either (`VCS_SECTOR_DIFF=1`, 10 alternating
   steps). It is two signs back to back fighting in the depth buffer: 6v.
@@ -2365,6 +2367,39 @@ sign (6v) clean at both pitches and after the long route; a downtown street at 8
 on the road differs; fire and explosions on D3D11 / AMD drawn as before (the exported depth once hid them there,
 DECISIONS.md 2026-11-04); GPU time at 2560x1440, MSAA 2x the same (1.2 / 1.8 / 0.6 ms at three spots against 1.2 / 1.8 /
 0.6 with both rules off); cruise, texpack, hud checks pass.
+
+### 6x. The sorted alpha list: 200 nodes, and what does not fit is not drawn (2026-11-25)
+
+The player's report of 2026-11-25: in a car at (-835, -178), the camera behind it at heading 222 (F3), the row of palms
+by the road on the right past the second street light (x ~ -825, y -250 .. -150, 10-60 m away) missing; at 217 there;
+waiting 15 s changed nothing. Reproduced with the free camera at that pose: the row gone from heading ~222 up, there
+below. With `VCS_SCAN_FAN=0` it was there at 216 / 224 / 228; on the emulated VU1 path (`PS2X_HLE=0`) it went too:
+the entities, not the drawing. Not the polygon: FUN_0035DEA8 replayed in Python (`walker.py`) on the game's triangle and
+on the fan, rotated over 60 degrees - every sector of the triangle is in the fan.
+
+- **Palms are not in ScanSectorList's arrays** (0x742B80 etc.: 13 lamps and props there, no palm at either heading).
+  The palms are entities in each sector's list 10 (models 545 / 574 along that road). SetupEntityVisibility
+  (`FUN_0035EFD8`) hands everything drawn with alpha to **CVisibilityPlugins::InsertEntityIntoSortedList =
+  `FUN_0036EE70`(entity, distance)**: into the CLinkList at **`0x6F40D0`**, or **`0x6F4118`** for entities with flag
+  bit 45 (+0x48), sorted by distance.
+- **CLinkList** (VC's): `FUN_0047BF98` Init(list, n) - n x 16-byte nodes from the main heap (`FUN_002BD178`), list +0x40
+  the array; +0x0C / +0x10 the used list and its end, +0x2C / +0x30 the free list and its end. `FUN_0047C2F0`
+  InsertSorted(list, &{entity, distance}) - **returns 0 when the free list is empty (+0x2C equal to list + 0x30): the
+  entity is not drawn**. `FUN_0047C140` ClearAll, from `FUN_0036EDB0` at the start of ScanWorld (0x35E750) each frame.
+  CVisibilityPlugins::Initialise makes them at 0x36D898 / 0x36D8AC: **200 and 30 nodes**.
+- **Why by the heading**: the walker goes from the polygon's lowest sector row up. Looking south from there the far
+  rows come first and the camera's own row last; with the fan at 300 % and Solid far palms the list was full (200 used,
+  thousands refused over a few seconds at every heading of the sweep) before the near row's turn. Which palms lost
+  depended on what came earlier - a few degrees decided it. The game's triangle stayed under 105 there, 100 % with
+  the fan under 70.
+
+The port's fix (`src/game/vcs_world_detail.cpp`, always on; `VCS_ALPHA_LIST=<nodes>`, 0 = the game's 200 / 30): Init
+gets 2000 nodes for 0x6F40D0 and 300 for 0x6F4118 (the game's proportion), hooked before the original. The lists are
+only walked, never counted, so nothing else depends on the size. The most seen: 268 (7 spots x 8 yaws, high and low,
+at 300 %; `alpha_peak`). `worlddetail` prints `alpha=<pool>/<peak since the last query>/<refused so far>` for both.
+Checked: the row at every heading 208..232 with nothing refused; the far shore's palm group of 6u still whole;
+bench.py game ms against `VCS_ALPHA_LIST=0`: 3.2 / 3.0 / 3.6 / 2.4 / 3.4, drive 7.4 against 3.2 / 2.6 / 3.6 / 2.5 / 3.5,
+drive 7.2 (noise); traffic and world checks pass.
 
 ## 7. Textures: `.XTX`
 

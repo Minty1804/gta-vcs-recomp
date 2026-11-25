@@ -2153,6 +2153,15 @@ in the noise at 100 % (+0.1..0.5 ms of game time at 300 %). The fan's radius fol
 game's own reach. `VCS_SCAN_FAN=0` is the switch back for comparing. Considered and left: only scaling the triangle
 with Draw distance - the depth-not-distance popping and the pitch dependence would have stayed.
 
+## 2026-11-25 - The sorted alpha list's pool: 2000 nodes, always on
+
+The scan's fan (above) let more palms in than the game's sorted alpha list holds (200), and what does not fit is not
+drawn: a row of near palms came and went with a few degrees of the camera (game-internals.md 6x). The pool is made larger
+where the game makes it, not the fan smaller (that brings back the 6u popping) and not the scan reordered near to far
+(the list would still be full, only of other things). 2000 nodes is 7 times the most seen at 300 % for 32 KB of the
+main heap; the sorted insert walks only what is in the list, so the size costs nothing by itself. Always on: nobody
+wants palms dropped; `VCS_ALPHA_LIST=0` is the switch back.
+
 ## 2026-11-25 - The facing rule for coplanar faces: always on, not an option
 
 The bridge sign that showed a second, partly blue board by the camera's pitch (the player's report of 2026-11-24) is two

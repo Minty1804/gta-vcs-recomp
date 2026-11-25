@@ -666,6 +666,62 @@ namespace vcs::world
             g_origScanPolygon(rdram, ctx, runtime);
         }
 
+        // [Minty1804 fork] The sorted alpha lists' pools (the player's report of 2026-11-25: a row of palms by the road
+        // at (-825, -250 .. -150) gone with the camera turned a few degrees). Palms, trees and everything else drawn with
+        // alpha are not in ScanSectorList's arrays: SetupEntityVisibility (FUN_0035EFD8) hands them to
+        // CVisibilityPlugins::InsertEntityIntoSortedList (FUN_0036EE70), which puts them, sorted by distance, into one
+        // of two CLinkLists - 0x6F40D0 (200 nodes) or 0x6F4118 (30; entities with flag bit 45) - made by
+        // CLinkList::Init (FUN_0047BF98(list, n): n x 16 bytes from the main heap) in CVisibilityPlugins::Initialise
+        // (0x36D898 / 0x36D8AC) and emptied every frame by ClearAll (FUN_0047C140, from FUN_0036EDB0 at the start of
+        // ScanWorld). CLinkList::InsertSorted (FUN_0047C2F0) returns 0 when the free list is empty (list + 0x2C equal
+        // to its end, list + 0x30): the entity is simply not drawn. The game's triangle stayed under 200; the scan's
+        // fan at 300 % reaches far more palms (and Solid far palms keeps them), and the walk goes from the polygon's
+        // lowest sector row up, so looking south the far palms came first and the near row, in the camera's own row,
+        // found the pool empty. Here the pools are made larger (VCS_ALPHA_LIST=<nodes>, 0 = the game's 200 / 30); the
+        // lists are walked, never counted, so nothing else depends on the size (game-internals.md 6x).
+        constexpr uint32_t kListInit = 0x0047BF98u, kListInsertSorted = 0x0047C2F0u, kListClearAll = 0x0047C140u;
+        constexpr uint32_t kAlphaList = 0x006F40D0u, kAlphaList2 = 0x006F4118u;
+        // 2000: the most seen was 268 (7 spots x 8 yaws, high and low, at 300 %; with the game's triangle the list
+        // stayed under 105); 32 KB of the main heap. Set from VCS_ALPHA_LIST in install(); 0 = the game's pools
+        uint32_t g_alphaNodes = 2000;
+        PS2Runtime::RecompiledFunction g_origListInit = nullptr, g_origInsertSorted = nullptr, g_origClearAll = nullptr;
+        std::atomic<uint32_t> g_alphaPool[2]{}, g_alphaUsed[2]{}, g_alphaPeak[2]{};
+        std::atomic<uint64_t> g_alphaRefused[2]{};
+        int alphaIndex(uint32_t list) { return list == kAlphaList ? 0 : list == kAlphaList2 ? 1 : -1; }
+        PS2_GUEST_CC void listInit(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            if (const int i = alphaIndex(GPR_U32(ctx, 4)); i >= 0)
+            {
+                // the second list keeps the game's proportion to the first (30 : 200)
+                if (g_alphaNodes)
+                    SET_GPR_U32(ctx, 5, std::max<uint32_t>(GPR_U32(ctx, 5), i == 0 ? g_alphaNodes : g_alphaNodes * 3u / 20u));
+                g_alphaPool[i].store(GPR_U32(ctx, 5), std::memory_order_relaxed);
+            }
+            g_origListInit(rdram, ctx, runtime);
+        }
+        PS2_GUEST_CC void insertSorted(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            const uint32_t list = GPR_U32(ctx, 4);
+            if (const int i = alphaIndex(list); i >= 0)
+            {
+                if (rd32(rdram, list + 0x2Cu) == list + 0x30u)
+                    g_alphaRefused[i].fetch_add(1, std::memory_order_relaxed);
+                else
+                    g_alphaUsed[i].fetch_add(1, std::memory_order_relaxed);
+            }
+            g_origInsertSorted(rdram, ctx, runtime);
+        }
+        PS2_GUEST_CC void clearAll(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            if (const int i = alphaIndex(GPR_U32(ctx, 4)); i >= 0)
+            {
+                const uint32_t used = g_alphaUsed[i].exchange(0, std::memory_order_relaxed);
+                if (used > g_alphaPeak[i].load(std::memory_order_relaxed))
+                    g_alphaPeak[i].store(used, std::memory_order_relaxed);
+            }
+            g_origClearAll(rdram, ctx, runtime);
+        }
+
         PS2Runtime::RecompiledFunction g_origStoreShadow = nullptr, g_origStoreStatic = nullptr, g_origStorePoly = nullptr;
 
         bool skipPedShadow(const uint8_t *rdram, R5900Context *ctx, int texReg)
@@ -850,6 +906,21 @@ namespace vcs::world
         else
             std::fprintf(stderr, "[world] the world scan's polygon walker not found: the game's triangle stays\n");
 
+        // the sorted alpha lists' pools (always on: a fix, not an option; VCS_ALPHA_LIST=0 = the game's 200 / 30)
+        if (const char *a = std::getenv("VCS_ALPHA_LIST"); a && *a)
+            g_alphaNodes = static_cast<uint32_t>(std::clamp(std::atoi(a), 0, 20000));
+        if ((g_origListInit = runtime.lookupFunction(kListInit)) && (g_origInsertSorted = runtime.lookupFunction(kListInsertSorted)) &&
+            (g_origClearAll = runtime.lookupFunction(kListClearAll)))
+        {
+            runtime.replaceFunction(kListInit, &listInit);
+            runtime.replaceFunction(kListInsertSorted, &insertSorted);
+            runtime.replaceFunction(kListClearAll, &clearAll);
+            if (!g_alphaNodes)
+                std::fprintf(stderr, "[world] the sorted alpha lists keep the game's 200 / 30 nodes (VCS_ALPHA_LIST=0)\n");
+        }
+        else
+            std::fprintf(stderr, "[world] CLinkList not found: the sorted alpha lists keep the game's 200 / 30 nodes\n");
+
         // the ped shadow hooks pass everything through unless the option is off
         g_origStoreShadow = runtime.lookupFunction(0x0038A000u);
         g_origStoreStatic = runtime.lookupFunction(0x003898E8u);
@@ -887,7 +958,7 @@ namespace vcs::world
         //   minpedfree minvehfree (since the last query) kept (cars kept in view, total) playerinview packets peak far
         //   carchance pedchance
         ps2control::addCommand("worlddetail", [](const std::string &, ps2control::Reply reply) {
-            char text[1200];
+            char text[1400];
             std::snprintf(text, sizeof(text),
                           "ok enabled=%d valid=%d traffic=%d peds=%d draw=%d carcap=%d pedcap=%d/%d lod=%.3f pedfree=%d "
                           "vehfree=%d pedsused=%d vehused=%d minpedfree=%u minvehfree=%u kept=%llu vanished=%llu playerinview=%d "
@@ -912,6 +983,11 @@ namespace vcs::world
                           (unsigned long long)g_stSpawnCalls.load(), (unsigned long long)g_stSpots.load(),
                           (unsigned long long)g_stBuilt.load(), (unsigned long long)g_stSurvived.load(), g_scanFan ? 1 : 0,
                           (unsigned long long)g_fanScans.load());
+            // alpha=<pool>/<peak since the last query>/<refused so far>,<the same for the second list>
+            const size_t m = std::strlen(text);
+            std::snprintf(text + m, sizeof(text) - m, " alpha=%u/%u/%llu,%u/%u/%llu", g_alphaPool[0].load(),
+                          g_alphaPeak[0].exchange(0), (unsigned long long)g_alphaRefused[0].load(), g_alphaPool[1].load(),
+                          g_alphaPeak[1].exchange(0), (unsigned long long)g_alphaRefused[1].load());
             reply(text);
         });
     }
