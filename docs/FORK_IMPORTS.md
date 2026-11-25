@@ -2,7 +2,8 @@
 
 Survey of every fork of gothamor/gta-vcs-recomp with work of its own (40 forks, every branch compared with upstream
 `main`, 2026-11-18), and of batinium's Liberty City Stories port on the same runtime (2026-11-23). willzmkv's fork looked at again on
-2026-11-23: everything after b333b16 (the head of the first survey) up to their `main` 3e71e73 of 2026-11-20 (rows 41-45). Our branch is
+2026-11-23: everything after b333b16 (the head of the first survey) up to their `main` 3e71e73 of 2026-11-20 (rows 41-45);
+and on 2026-11-24 their branch `hd-world-merge` up to 7cac426 (their fixes of 2026-11-23 / 24: rows 46-55). Our branch is
 upstream `main` + our commits, so an upstream PR that is 0 behind merges; a fork far behind is re-done on our code.
 Every item taken keeps its author on the commit and a line in the README's Credits. Items keep their numbers (commits
 and docs refer to them). "Size": S hours, M a day or so, L several days, XL a project of its own.
@@ -40,6 +41,16 @@ and docs refer to them). "Size": S hours, M a day or so, L several days, XL a pr
 | 36 | Renderer | Direct3D 12 backend, and the shader warm-up (row 35's) as a pipeline cache | willzmkv ae6c99e, 28ef950, 8c60c8d, d9f73ed; 283bb56 (warm-up) | 2026-11-23: their rhi_d3d12.cpp at main, adapted to our RHI (D3D12 after Metal in Backend, no BGRA8 / BC4 / BC5 / drawInstanced, the card from Graphics > Graphics card through dxgi_cards.h); a choice in Graphics > Graphics API, D3D11 stays the default (DECISIONS 2026-11-23). The warm-up re-done in the backend: an ID3D12PipelineLibrary of the game's real pipelines across runs (21 pipelines: 160.8 ms cold, 3.4 ms from it). NATIVE_RENDERER, PS2RECOMP_PATCHES |
 | 35 | Graphics | Graphics presets from the PC's hardware (For this PC, Low - Ultra; a first start picks one) | willzmkv 283bb56, 9c01e8f | 2026-11-23: re-done in the game, not the launcher (ours has no settings page): src/game/vcs_presets.cpp, their tiers (the lowest of card / processor / memory, never Ultra) mapped to our settings; the first start applies it before anything reads the settings (`settings::startWith`), only with none of them in vcs.ini; `rhi::Gpu::memory` in the three backends, SDL's processor / memory. The shader warm-up: row 36. The controls on a picture of the pad: not taken (launcher). DECISIONS 2026-11-23 |
 | 42 | World | Traffic at a raised Car distance: the car spawner's two gates relaxed (the extra 20 m clear check while you stand still, "driving away" past 160 m) | willzmkv bca7997 | 2026-11-23: re-done in vcs_world_detail.cpp as a hook at FindObjectsInRange's start told apart by `$ra` (AGENTS rule 2; theirs changed the stack after the call). Measured in Little Havana at 200 %: the game's gates threw 86-88 % of the cars built away, ours 0-41 %; both reach the game's limit of cars in use (18-20), the same count. `VCS_CAR_SPAWN_GATES=game`, tools/traffic_spawn_check.py |
+| 46 | Missions | TAXI's tip bar drained 4.8 times as fast at 144 fps (gothamor#208) | willzmkv 23dcc3a | 2026-11-24: its three per-frame instructions added to `vcs_script_timing.cpp` (game-internals 11f) |
+| 47 | Combat | Aiming from a car down to 35 deg below level, the wheels of a car alongside in Jive Drive (gothamor#177) | willzmkv fb7c061 | 2026-11-24: `vcs_aim.cpp`, `VCS_CAR_AIM_PITCH=0` the game's 5 deg (game-internals 12c) |
+| 48 | Camera | The BMX's follow camera at a motorbike's height (the game forgot its type 8; gothamor#166) | willzmkv 4285f99 | 2026-11-24: `vcs_carcam.cpp`, the BMX a bike for the camera's update, its collision height lifted for it, both put back; `VCS_BMX_CAM=0` (game-internals 12b) |
+| 49 | HUD | A mission's title no longer snaps to 4:3 on fade-out and cutscene entry (CHud::DrawAfterFade opens the HUD context) | willzmkv bac530a (their issue 99) | 2026-11-24: `vcs_hud.cpp`, `VCS_HUD_AFTER_FADE=0` (game-internals 6f) |
+| 50 | Timing | A horn tap switches an emergency vehicle's lights / siren above 30 fps (CPad's 8-frame horn history on real time; gothamor#209) | willzmkv 7d56b57 | 2026-11-24: `src/game/vcs_siren_timing.cpp`, their design, `VCS_SIREN_TIMING=0` (game-internals 4) |
+| 51 | Timing | The radio station's name, the breath and value-change flashes at 30 a second; the cutscene's fade-out without its lost milliseconds; free aim's waits in PS2 frames (gothamor#180) | willzmkv 4349493 | 2026-11-24: `vcs_effects_timing.cpp` 14 and `vcs_aim.cpp` (`VCS_AIM_TIMING=0`); their step floor of 0.001 not taken (DECISIONS 2026-11-24) |
+| 52 | World | Detailed city: an extra cell's hidden records stay hidden (Fort Baxter's low-detail ground over the streets after the 07:00 reload); switched cells dropped before the draw too | willzmkv 4db3d56 (its vcs_world_hd part, their issue 90) | 2026-11-24: `VCS_HD_SHOW_HIDDEN_EXTRA=1` before, `syncCondCells()` (game-internals 6t) |
+| 53 | World | Detailed city: the geometry table walked by its own length (the DIA_C3 freeze at 60 fps: a word past the Mainland's table freed as a packet; gothamor#207) | willzmkv 01b3602 (its vcs_world_hd part) | 2026-11-24: `tableCount()`, `g_maxGid` reset with the level; `VCS_HD_SWEEP_BOUNDS=0`; their `inPacketHeap` guard was ours already (game-internals 6t) |
+| 54 | Controls | An RC vehicle driven with the vehicle's keys (W walked instead; gothamor#207) | willzmkv 01b3602 (its vcs_input part) | 2026-11-24: `Players[0].m_pRemoteVehicle` taken as driving, no radio / drive-by / exit tap for it; `VCS_REMOTE_DRIVE=0` (game-internals 12) |
+| 55 | Controls | The gamepad's left stick without the game's square dead zone (their issue 93) | willzmkv 6bc138b | 2026-11-24: an option, Gamepad > Sticks and triggers, off as on the PS2 (theirs on: DECISIONS 2026-11-24); the Walk key's diagonal was ours already |
 
 ## Open or skipped
 
@@ -76,6 +87,9 @@ Rows 11 and 13 looked at again on 2026-11-20 (the user: mods "if needed" after t
 PAL disc (ChrisM-Pek), browser port (floriandotorg), Android (batinium, KenRylo-One), Intel Macs (knox29 PR #190),
 macOS path fixes (tanvir-glide PR #186, only with a space in the build path), localized disc builds and launcher
 settings (MaksVolkov7863), CI files (mahoganyprogrammer), willzmkv's bundled mods (HD Hands, HD Hud, PT-BR: shipped from outside their repository,
-made from the game's own files, and they need row 11 / 13's mod loader) and their branding, donations and release notes. Already ours: fire on AMD (upstream since 2026-11-04), draw
+made from the game's own files, and they need row 11 / 13's mod loader) and their branding, donations and release notes. From their 2026-11-23 hotfix (4db3d56): Direct3D 12 and Automatic prompts
+by default, free aim on and the Dot reticle by default (0952147), the Game Language option and pause-menu tab spacing (row
+9's), the launcher's sync, their PC foot camera (ours is our own); DomestoBot's pool bounds (01b3602: their 140-slot
+pool only). Already ours: fire on AMD (upstream since 2026-11-04), draw
 distance through the game's LOD scale, traffic / pedestrian density, mission timers above 30 fps, the pause menu with
 the mouse, HD HUD through the pack, Project2DFX's distant lights.

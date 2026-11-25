@@ -545,6 +545,29 @@ disassembly with names from `game/vcs/functions.csv`), `tools/vudis.py` (VU micr
     (OverlayRenderFx `FUN_001AC1F8`: its list is filled only by `FUN_001AD2F8`, which nothing calls - no heat haze or
     screen drops) and the drunk blur (+0x10 has no writer found). The renderer's own effects (bloom, the 512-wide smear -
     its warp is the same every frame, checked in the vertex log -, the reflection map) carry nothing from frame to frame.
+  - **HUD counters and the cutscene's fade-out** (willzmkv, gothamor#180; their fork's findings, 2026-11-24, taken
+    2026-11-24 as `vcs_effects_timing.cpp` 14): `FUN_0018BBE0` (called from 0x21F730, always followed by `FUN_00104AF8`
+    at 0x21F74C) counts the radio station's name down a frame - show `0x486160` 60 -> 0 (2 s at 30 fps, 0.43 s at
+    144), fade `0x486161` 5 -> 0, settle `0x486162` 10 -> 0, a delay at its object's +0x5F0 1 -> 0 - and resets them to
+    (0, 5, 10) while `FUN_0031C310(*(0x48F374))` says a help box shows (`+0x2A78 != 0`). `FUN_0031E3F8` (followed by
+    `FUN_0031FDF0` at 0x31C7A4) counts the breath / armour flash `0x488640` 50 -> 0; `FUN_0031FFF0` (followed by
+    `FUN_00320710` at 0x31C7C8) the HUD's value-change flash `0x488654` 100 -> 0. Between ticks each count is put
+    back by the function after it (only a count that went one down; the radio's not while a help box reset them).
+    The end of a cutscene: CutsceneMgr::Update (`FUN_00428470`, at 0x428914) takes `cvt.w.s(step x 20)` - truncated -
+    from the 1000 ms fade-out at mgr+0x98 while mgr+0x34 == 2 and mgr+0x9C != 0: 6 of 6.94 ms a frame at 144 fps, the
+    fade 14 % long; the lost fractions are carried and taken off. Their fork also lowered `timerEnsure`'s step floor
+    (50/240 -> 0.001) for cutscenes above 240 fps: not taken here, the floor is the audited ceiling (vcs_framerate.cpp)
+    and our Unlimited stops at 240 (DECISIONS 2026-11-24).
+  - **The horn's history** (willzmkv, gothamor#209; taken 2026-11-24, `src/game/vcs_siren_timing.cpp`): CPad::Update
+    (`0x002843D8`, only caller CPad::UpdatePads `0x00284390`) advances `m_nCurrentHornHistory` (CPad+0xA2, 0..7) and
+    stores GetHorn (`0x00285E08`) in `m_bHornHistory[8]` (CPad+0x9A..0xA1) once a frame (CPad 0 at `0x005147A8`).
+    CAutomobile::ProcessControl (`0x0013A0A0`, at 0x13E5EC) and CBike::ProcessControl (`0x00337208`, at 0x33BF9C), for
+    a vehicle with a siren (CVehicle::UsesSiren `0x003E9768`), read cur, (cur + 7) & 7 and (cur + 1) & 7: let go within
+    7 frames (`hist[cur] == 0 && prev && !old`, ~233 ms at 30 fps) toggles bit 0x200000 of veh+0x268 (m_bSirenOrAlarm,
+    the lights and siren); held 7 frames (`cur && prev && old`) sets veh+0x2B4 = 1, the continuous horn. At 144 fps
+    7 frames are 49 ms, so the lights never came on (Paramedic, Firefighter, Vigilante). After Update(pad 0) - at
+    CPad::Clear (`0x00283788`) with `$ra == 0x002843BC`, UpdatePads' next call - the ring is rewritten from the press
+    as timed on the unscaled ms clock (0x488280): the same three slots, the hold at 6.9 PS2 frames.
   - **Open**: the rocket trail (AddParticlesAlongLine: spacing or one a frame), which vehicles `FUN_003621F8` /
     `00399FA0` are, the exhaust threshold `0x481A44`. (Lights, explosion flashes, `FUN_002ED8E8` and `FUN_0032FD78`:
     phase 3, above.)
@@ -1148,6 +1171,15 @@ cluster moved in from the right edge with it (`[hud-anchor] x 0..640 ... prims 3
 Im2D calls whose sprite routine was called from FUN_00323FE8 (the saved return address) as a screen effect
 (`Part::Screen`): never grouped, anchor Stretch. `VCS_HAZE_FILL=0` = before. Found with `VCS_TRACE_HUDANCHOR`,
 `VCS_TRACE_IM2D` + `VCS_TRACE_IM2D_STACK`, then `tools/eedecomp.py 0x324100`. Check: `tools/haze_check.py`.
+
+**Mission titles and subtitles through a fade** (willzmkv's finding, their issue 99; taken 2026-11-24): a mission's
+bottom-right title snapped from its 16:9 corner to the 4:3 place for the fade-out and the first frames of a cutscene.
+`FUN_0021f900` (called by `FUN_0021e950` at 0x21ECD0 and `FUN_0021d9e0` at 0x21DAB4) draws the screen's fade quad
+(`FUN_0021d068`), then **CHud::DrawAfterFade** (`0x0031CA80`, at 0x21F930, `a0 = *(0x48F374)`): the subtitles and the
+HUD / mission-title text buffered for after the fade. On those frames `FUN_0021e950` skips `FUN_0021f348` and
+`FUN_0021d9e0` CHud::Draw (0x31C628), so nothing had opened the HUD context and `recordPrimitive` (gs_hw.cpp) anchored
+the text as the 3D's centre (`GSHwAnchorCentre`): at 1280x720 the title moved from 867..1237 to 708..1077.
+`vcs_hud.cpp` hooks 0x31CA80 to open it there too (not in a menu or a loading screen); `VCS_HUD_AFTER_FADE=0` = before.
 
 ### 6g. How a frame is put together (draw-list dumps, 2026-10-23)
 
@@ -2188,6 +2220,28 @@ measurement and the tools behind it.
 - Our trace switches `VCS_TRACE_SECTORS`, `VCS_SECTOR_PROBE`, `VCS_TRACE_CELL` and `VCS_TRACE_FILES` (vcs_overrides.cpp)
   replace some of the same functions and call the game's own directly: in such a run the detailed city's hooks there may
   be left out. Analyse the original's lists with them at Original; the detailed city has its own (`VCS_HD_PROBE`).
+- **An extra cell's hidden records** (willzmkv, their issue 90; taken 2026-11-24): a cell's sector list can carry
+  records with bit 15 set (0x8000, `flag 1`: hidden by that cell in the disc's data) - Fort Baxter's low-detail ground,
+  5889 (gid 4705, -1700,-194 r 162) and 5890 (gid 4706, -1687,-78 r 127) in cells 7,16 / 6,15. `build()` took every
+  extra-cell record no switch named as shown (`hide < 0 -> 0`); when `replaced()` then said no - during the reload of
+  the 07:00 / 20:00 clock window (`hourWindow(20, 7)`, the cells' condMask changing) or a radius change - the slabs
+  were drawn over the detailed streets at (-1640, -150). Now the cell's flag holds unless a switch says otherwise
+  (`switched(id) >= 0`) or the sector is a keepLod one; such a record is in the built list hidden, as the game has it
+  (taken, not a detailed sphere, no fade). `VCS_HD_SHOW_HIDDEN_EXTRA=1` = before (the probe prints `hidden by its
+  cell`). With it, `syncCondCells()`: cells whose conditional pieces no longer match the switches at level +
+  0x418..0x4B8 are dropped from `update()` and again at the draw (`install()`), so a switch a script flips in the frame
+  unloads the stale cells before anything is drawn from them (theirs: hdworld_missions 6 / 6, `flag 1 -> added` 0 of
+  112).
+- **The geometry table's length** (willzmkv, gothamor#207; taken 2026-11-24): `FUN_0023BAF0` / `FUN_0023B8E8` walk the
+  table (`*(g_info + 0)`, 0xC bytes an entry) by its count at **`*(g_info + 0x12C)`**. Our walks stopped at kMaxGid
+  (0x8000) and `g_maxGid`, which was not reset when the level changed (a save loaded, Beach -> Mainland): on the
+  Mainland (fewer than 5370 entries) `sweepPackets()` read past the table's end (gid 5370: the u16 data after it, where
+  `0x00521C61`, an address inside the frame's DMA buffer, stood), took it for a freed reference, wrote the entry and
+  called `freePacket(0x00521C61, 3)`; two frames later `FUN_0023C5B0` handed it on and the `'splash'` TXD was
+  overwritten: the freeze after DIA_C3's cutscene at 60 fps (their finding). `tableCount()` bounds every walk, the
+  pairs a piece or the game names, and the table check at a level's start; `g_maxGid` restarts with the level.
+  `VCS_HD_SWEEP_BOUNDS=0` = before. (Their other guard, `inPacketHeap()` before a packet is freed, was ours already:
+  the radius-3 hang's fix, above.)
 
 ## 7. Textures: `.XTX`
 
@@ -2878,10 +2932,16 @@ which REN_C7, SRANGE, MAR_A5, LAN_C5 and DIA_C3 use for their meters. Some missi
   - 99 DIA_C4 "Over the Top": the searchlight targets (model -19, beams by COMMAND_0478 from the towers) step 0.3 /
     0.15 a frame along their routes (x3 alerted): `7L *= $G1587[i]` (+0x53B7) and `8L = $G1587[i]` (+0x5478);
   - 60 LOU_B2 "Robbing the Cradle": the distances the Welfare Man may get away (`$G1513..15`) shrink by 0.1 a frame
-    towards 300 / 150 / 600 (+0x1353..).
+    towards 300 / 150 / 600 (+0x1353..);
+  - 19 TAXI (willzmkv, gothamor#208, 2026-11-24): the fare timers are on the game clock, but the passenger's tip bar
+    `$G1532` (shown as 0..100 in `$G14FD`, TAXI_T2) drains in the per-frame GOSUBs 0x156D (called at +0x402F, +0x4245,
+    +0x4799) and 0x16A4 (+0x4C50, "follow that car"): `SUB_VAL_FROM_FLOAT_VAR $G1532, 0.4` at +0x15B7 (`$G1500 == 1`)
+    and +0x1646 (`$G1500 == 0`), 2.0 at +0x16EE (`$G1518 == 1`, closer than 25 m). Their measure: 12.00 / s at 30 fps,
+    57.70 / s at 144 before, 11.98 after.
 - **Checked and fine**: TOUR's "Fun" (scored every 2.5 s of TIMERB), REN_C6 / LAN_C7 bars (TIMERA, GET_GAME_TIMER),
   REN_C7 cable damage (timed opcodes) and rig stress (+25 a hit), LAN_B4 cash, DIA_C3 signal, the counters of kills /
-  pickups, health-derived bars (LAN_B6 / C3 / C8 Lance, damage bars), TAXI fares, E_RO cruise speed (set from the car's
+  pickups, health-derived bars (LAN_B6 / C3 / C8 Lance, damage bars), TAXI's fare timers (its tip bar is per frame:
+  above), E_RO cruise speed (set from the car's
   speed), position offsets (set, then +-c), the golf power bar.
 - **Per frame but looks only** (not changed): text grow / scroll animations (CRASH, SRANGE), object slides and spins
   (GON_C4, MEN_C3's barrier, camera smoothing in LAN_B6), particle bursts, the shared camera-shake helper (0.63 / 0.7 /
@@ -3006,7 +3066,11 @@ timing at 60 fps; independent timing at 60 / 144 fps got through, by luck (below
 - **Player ped**: `*(0x4E4910)` = `CWorld::Players[0].m_pPed` (`FUN_00237fb0(ped)` returns `&Players[0]` for the
   player's ped). The ped object starts with its matrix: right (+0), forward (+0x10), up (+0x20), position (+0x30),
   each row with a word after it. Found by searching RAM for vectors near the camera that moved when the player
-  walked (`findvec`), then the pointers to the object (`findu32`).
+  walked (`findvec`), then the pointers to the object (`findu32`). `*(0x4E4914)` = `Players[0].m_pRemoteVehicle`, the
+  RC vehicle the player drives (FUN_002D5188 / FUN_0024A458; willzmkv's finding, gothamor#207): the player stands on
+  foot meanwhile (no +0x480 vehicle, not state 0x37), so our keyboard had the on-foot keys - W walked instead of
+  driving DomestoBot or an RC car. `vcs_input.cpp` takes it as driving (the Vehicle / Aircraft keys, by the RC
+  vehicle's own type), without the radio wheel, the drive-by and the tap to get out; `VCS_REMOTE_DRIVE=0` = before.
 - **TheCamera** `0x6F44D0`: +0x30 is the camera's own position (its matrix; a few metres behind the player in normal
   play - read as "the point it follows" until the free camera showed it equal to the camera, 2026-10-30); it also holds pointers to the player ped
   (+0xE0, +0x350, +0x7F8). Its active CCam is at +0x70 (12b).
@@ -3117,7 +3181,11 @@ timing at 60 fps; independent timing at 60 / 144 fps got through, by luck (below
   stick's travel is dead** on top of any gamepad deadzone. The results are CPad 0 (`0x5147A8`, 0xD4 bytes per pad,
   FUN_002852a8(n)) +2 / +4 left x / y, +6 / +8 right x / y (s16); **+0x96 = DisablePlayerControls** (the right-stick
   getters FUN_00286af0 / FUN_00286b20 return 0 while it is set; FUN_00286b20 negates y when the game's own invert flag
-  `0x487A58` is set). Found when mouse pitch below about half a tilt came out a third short.
+  `0x487A58` is set). Found when mouse pitch below about half a tilt came out a third short. The dead third is per
+  axis - a square: a gamepad's stick held a little off straight snaps to it, a slight diagonal does nothing (willzmkv,
+  their issue 93). Gamepad > Sticks and triggers > **Left stick without the square dead zone** (off by default: the
+  PS2's) passes each analog axis of the left stick through the curve's inverse (`rawFor`), so the game reads the stick's
+  own tilt past our round deadzone.
 - **Walking on a diagonal** (2026-11-16, a player's report: Alt + W + D stood still): the curve is per axis, so Walk's
   45% scaled as a float vector gave 0.45 / sqrt 2 = 0.318 per axis, byte offset 40 - inside the dead 42 on both, and
   the game read no stick at all. Walk now takes the game value one axis has at Walking speed (45%: byte 57 -> 22),
@@ -3147,6 +3215,14 @@ timing at 60 fps; independent timing at 60 / 144 fps got through, by luck (below
   0 cars (Sentinel), **1 boats** (Speeder - and the Skimmer, a seaplane to the player), 2 the jet ski, **4
   helicopters** (Maverick, Sparrow, Hunter, Huey, the air ambulance, the autogyro), **5 planes** (Biplane, AEROPL - and
   the hovercraft, model 198), 6 bikes (PCJ-600), 8 the BMX, 9 the quad. The model index is the entity's +0x56 (s16).
+  **The BMX's camera** (willzmkv, gothamor#166; taken 2026-11-24): CBmx's constructor (`0x24EBC8`) calls CBike's
+  (which sets +0x354 = 6) and then writes 8. `FUN_0029FAF0` (the follow camera behind a vehicle) tests 6 and the Quad
+  (model 230) for the bike row of its tuning table (row 2, `1.1 x colMaxZ - 0.10`), the bike's speed FOV (0x29FF78) and
+  the wheel contacts at +0x668 (0x2A0840, 0x2A1268), and forgets 8: the BMX had the car row (row 0 at 0x487BE8, `1.3 x
+  colMaxZ - 0.40`) and +0x7FC's contacts - the camera at the frame's height (target +0.300 / source +0.801 m), Vic's
+  head across the horizon. `vcs_carcam.cpp` makes it a bike for the call and its collision model's max z (CColModel
+  +0x28: 0.538 / 0.685 m; the model info's +0x14, `*(0x486518)`) at least a motorcycle's 0.71 m, both put back after:
+  target +0.681 / source +1.30..1.33 m, the Sanchez's +0.681 / +1.388 (their measure). `VCS_BMX_CAM=0` = the game's.
   What each PS2 button does there, with the gamepad injected (identity map) and the vehicle's matrix read before and
   after 1.5 s (heading, pitch, roll, height):
   - **Maverick**, hovering after 7 s of Cross from the ground: Cross climbs (+10 m against +4 coasting), Square
@@ -3480,7 +3556,9 @@ hidden run (rig `peek` / `poke`, snapshots diffed).
   turns it about the camera and puts it at **the weapon's range** (weapon info `*(*(0x712770) + 4) + type * 0x70`, +8:
   pistol 30, SMG / Mac 45, M249 / minigun 75, rifles 90; byte 0 bit 7 = moves while aiming) - in the car with no
   side-to-side limit (on foot +-110 deg from Vic's heading) and up / down only between 70 and 95 deg from Vic's up (20
-  above level, 5 below). Then a line test from the camera to the dummy (FUN_001908C0) pulls it onto what it hits. The
+  above level, 5 below; our free aim from a car goes down to 35 below - Jive Drive's wheels alongside, willzmkv,
+  gothamor#177 - which holds because FUN_002343E0 skips its 95 deg clamp while the left stick is centred, `$f22 == 0`;
+  `VCS_CAR_AIM_PITCH=0` = the game's 5). Then a line test from the camera to the dummy (FUN_001908C0) pulls it onto what it hits. The
   car's turning does not turn it: the aim keeps its world direction.
 - The passenger's shots go through FireInstantHit's line test at 0x2C47A4 like the on-foot ones (vcs_aim.cpp's shot
   line counted them: 62 shots in 3 s of fire in Jive Drive). vcs_aim.cpp takes the car's free aim over when free aim

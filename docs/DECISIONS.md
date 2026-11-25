@@ -2107,3 +2107,29 @@ turn off, leaving them always on.
   what to try; the rig keeps what needs numbers, time or many places (AGENTS.md, Working style).
 - **Would change it**: a check that could run faster than real time (the game's timing is real time: not now), or the
   user asking for the full suite on every change.
+
+## 2026-11-24 - willzmkv's fixes of 2026-11-23 / 24 taken, re-done on our code (the user's request)
+
+- **What**: their branch hd-world-merge (up to 7cac426) fixed eight issues that are ours too (gothamor#166, #177, #180,
+  #207, #208, #209 and their own 90, 93, 99; FORK_IMPORTS rows 46-55). Our files differ from theirs by hundreds of
+  lines (vcs_input, vcs_aim, vcs_world_hd), so each fix is written again on ours with its switch back, its author on
+  the commit and in the README's Credits.
+- **Not taken, and why**:
+  - the step floor at 0.001 (theirs, for cutscenes above 240 fps): our floor is the ceiling the frame-rate audit
+    measured (vcs_framerate.cpp), and our Unlimited stops at 240. Below it nothing changes; above it the whole game
+    would run at steps nobody has audited. The cutscene fade's own truncation is fixed (vcs_effects_timing 14).
+  - the left stick past the square dead zone **on by default** (theirs): it changes how every gamepad feels on foot and
+    steering, so it is an option (Gamepad > Sticks and triggers), off as on the PS2 - "authentic by default". The
+    diagonal Walk key's part was ours already (VCS_WALK_FIX, 2026-11-16).
+  - DomestoBot's pool bounds (#207): only their 140-slot vehicle pool has slots past 40; ours is the game's.
+  - their hotfix's defaults and launcher (Direct3D 12 first, Automatic prompts, free aim on, the Dot reticle, the
+    language option, VERSION / release notes) and their PC foot camera: our defaults stay (DECISIONS 2026-11-23), our
+    foot camera is our own design.
+- **An exception to AGENTS rule 2** (row 48, the BMX's camera): the hook makes the BMX a bike and lifts its collision
+  height for FUN_0029FAF0, and puts both back after the original returns. Nothing in the caller (CCam::Process,
+  FUN_00294540, at 0x294A70) always follows the call to restore from instead (it branches to a shared tail), and leaving
+  the values changed until a later hook would show the rest of the frame - physics, other cameras - a BMX of type 6.
+  The camera's update calls nothing that yields to the EE scheduler, so it runs to its end; should it ever return
+  early, the rest of it runs with the game's own values: the car's camera row for that frame, never a BMX left a bike.
+- **Would change it**: a frame-rate audit past 240 fps (then the floor and Unlimited can move together); players asking
+  for the round stick by default.

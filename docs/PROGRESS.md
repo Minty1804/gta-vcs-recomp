@@ -422,6 +422,7 @@ dropped on uploads (lazy render-target patching).
       scaled by step / (50/30) in the script VM's arithmetic handlers (`src/game/vcs_script_timing.cpp`), only when
       the frame isn't the PS2's. PHI_A2 at 1/144: heat floor 2.162 -> 0.4496 a second (0.450 at 1/30), heat at +1:
       144 -> 29.5 (29.1 at 1/30). `framerate_audit.py` scenario `heat`, `--sites` (all 30 found). game-internals.md 11f.
+      2026-11-24: TAXI's tip bar, 3 more (willzmkv, gothamor#208).
 - [x] Vehicle physics on the time step (2026-10-28, user report: at high frame rates a car running over someone jumped
       far more than it should, and a stolen bike sometimes flipped forward). Two per-frame amounts without the step:
       FUN_003F34F0 pushes a wheel up once a frame while a dead or knocked-down ped is under it (the bump of a body;
@@ -559,6 +560,11 @@ dropped on uploads (lazy render-target patching).
       ms, rain on cars 1069-1076 / 3810-4190 / 1069-1087 a second, the blur FIX 12 from the history / 16 from the last
       frame; the particles' own rates are put back when it is switched on. The menu's label column widens per page for
       the name.
+- [x] **willzmkv's high-frame-rate fixes** (2026-11-24, FORK_IMPORTS rows 46, 50, 51): TAXI's tip bar, the horn tap
+      that switches a siren (`vcs_siren_timing.cpp`), the radio station's name and two HUD flashes at 30 a second, the
+      cutscene fade's lost milliseconds (`vcs_effects_timing.cpp` 14), free aim's waits in PS2 frames. Ported and built;
+      the symptoms not reproduced here (their numbers in game-internals.md 4 / 11f), handed to the player to try.
+      Not taken: their step floor of 0.001 for cutscenes above 240 fps (DECISIONS 2026-11-24).
 - [ ] Fixes for what changes at the shorter step (physics, animations, script waits, particles, camera), each behind
       the switch; frame pacing. Left from the script survey (game-internals.md 11f): per-frame object / camera /
       text animations in missions (looks only). Effects survey (2026-11-14, game-internals.md 4 "Effects that run per
@@ -1213,7 +1219,7 @@ Python scripts still usable on their own. docs/LAUNCHER.md has the whole of it; 
 | `VCS_MUSIC_TIMESTEP=0` | radio stations off the air advance a frame's worth per frame, as on the PS2 (game-internals.md 9; the reference) |
 | `VCS_PARTICLE_TIMING=0` | particles fade, grow and spawn once a frame (before 2026-11-14: smoke 1/4.8 as long at 144 fps, fires thin) |
 | `VCS_REDUCE_POSTFX=1` | Graphics > Effects > Lighter effects above 30 fps for one run: the motion blur, particles and effects once a frame as before 2026-11-13 / 14 (live in the menu) |
-| `VCS_EFFECTS_TIMING=0` | lightning, sun glare, clouds, camera shake, the video overlay, the photo flash, the HUD bar flash, peds fading, streaks, rubbish, steam after rain, rain streaks starting, explosions (bursts, length, flicker) and the banknote spray step once a frame (before 2026-11-14) |
+| `VCS_EFFECTS_TIMING=0` | lightning, sun glare, clouds, camera shake, the video overlay, the photo flash, the HUD bar flash, peds fading, streaks, rubbish, steam after rain, rain streaks starting, explosions (bursts, length, flicker), the banknote spray, the radio station's name, the breath / value-change flashes and the cutscene's fade-out step once a frame (before 2026-11-14 / 2026-11-24) |
 | `VCS_EFFECTS_LOG=1` | every 30 s of real time: frames and PS2 frames a second, lightning bursts (count, length), cloud turn / spin a second, and each effect's steps / rolls that took effect a second (with `VCS_EFFECTS_TIMING=0`: the per-frame counts) |
 | `VCS_PARTICLE_LOG=1` | every 10 s of game clock: AddParticle calls / passed per second by return address (`*` = throttled), and particles died per second and their mean lifetime by type |
 | `VCS_TURN_LOG=<model>` | every ApplyTurnForce on vehicles of that model (212 = PCJ-600): caller, its change to the yaw / pitch rate (sum by caller to find a per-frame push) |
@@ -1320,6 +1326,15 @@ Python scripts still usable on their own. docs/LAUNCHER.md has the whole of it; 
 | `PS2X_HW_BLOCK_TEXTURES=0` | Texture packs' block-compressed DDS decoded to RGBA as before 2026-11-19 instead of going to the GPU as stored (the reference; game-internals.md 7b) |
 | `VCS_TEXPACK_VERIFY=1` | Every pack DDS also decoded and its texels checked against the alpha bounds that chose RGBA or as stored (`[texpack] verify` lines; texpack_check --real) |
 | `VCS_TEXPACK_MAX=<px>` | Texture pack images larger than this many pixels a side are shrunk to their first mip level that fits (memory; no effect on hitches, PERFORMANCE.md 33) |
+| `VCS_CAR_AIM_PITCH=0` | aiming from a car (the game's drive-by free aim) down to the game's 5 degrees below level instead of 35 (Jive Drive's wheels; gothamor#177, game-internals.md 12c) |
+| `VCS_BMX_CAM=0` | the BMX's follow camera as the game has it: the car row, at the frame's height (gothamor#166, game-internals.md 12b) |
+| `VCS_HUD_AFTER_FADE=0` | CHud::DrawAfterFade (0x31CA80) does not open the HUD context: a mission title snaps to its 4:3 place on fade-out and cutscene-entry frames, as before 2026-11-24 (game-internals.md 6f) |
+| `VCS_SIREN_TIMING=0`, `VCS_SIREN_LOG=1` | CPad 0's horn history per frame, as the game has it (above 30 fps a horn tap no longer switches the siren; gothamor#209); log each press, hold and release (game-internals.md 4) |
+| `VCS_AIM_TIMING=0` | free aim's waits (the retry, the camera's blend, the hand-back to the follow camera) a frame each instead of PS2 frames (cut short above 30 fps, as before 2026-11-24; gothamor#180) |
+| `VCS_HD_SHOW_HIDDEN_EXTRA=1` | Detailed city: an extra cell's records hidden by their 0x8000 flag shown as before 2026-11-24 (Fort Baxter's low-detail ground over the streets after a reload; game-internals.md 6t) |
+| `VCS_HD_DRAW_SYNC=0` | Detailed city: no switch check before the draw (cells a script's switch made stale this frame drawn until the next update), as before 2026-11-24 (game-internals.md 6t) |
+| `VCS_HD_SWEEP_BOUNDS=0` | Detailed city: the geometry table walked to kMaxGid instead of its own length (g_info + 0x12C), as before 2026-11-24 (the DIA_C3 heap corruption at 60 fps; gothamor#207) |
+| `VCS_REMOTE_DRIVE=0` | an RC vehicle driven with the on-foot keys, as before 2026-11-24 (W walks instead of driving it; gothamor#207) |
 | `VCS_CAR_SPAWN_GATES=game` | The car spawner's clear20A / not_toward checks as the game has them at a raised Car distance or Traffic density (default: relaxed; game-internals.md 12d) |
 | `VCS_CAR_DISTANCE=100..200` | World > Draw distance > Car distance for this run (percent of GenerationDistMultiplier while the car spawner and RemoveDistantCars run; game-internals.md 12d) |
 | `VCS_PED_SHADOWS=0\|1` | World > Details > Character shadows for this run (0: no `shad_ped` shadow is stored; game-internals.md 12d) |

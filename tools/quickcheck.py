@@ -71,6 +71,8 @@ RULES = [
     ("src/game/vcs_input.cpp", ["controls", "pcscheme"], "your controls on foot and driving"),
     ("src/game/vcs_aim.cpp", ["controls", "driveraim"], "aiming with the mouse on foot and from a car"),
     ("src/game/vcs_frontend.cpp", ["menu"], "the pause menu with keyboard, mouse and pad"),
+    ("src/game/vcs_carcam.cpp", ["controls"], "the camera behind a car, a motorbike and the BMX, turned with the mouse"),
+    ("src/game/vcs_hud.cpp", ["hud", "cutscene"],"the HUD, and a mission's title through its fade into the first cutscene"),
     ("src/game/vcs_trainer.cpp", ["trainer"], "the trainer (F5): the feature changed"),
     ("src/game/vcs_texture_pack.*", ["texpack"], "your texture pack in a few places"),
     ("src/game/vcs_stream.*", ["mods", "gamefiles"], "a mod of yours in modloader/"),

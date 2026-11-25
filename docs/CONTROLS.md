@@ -261,8 +261,11 @@ bound to the wheel, or on foot while aiming.
   gamepad" above).
 - **Sticks and triggers**: deadzone per stick (12%; the range past it is stretched, so a small tilt beyond it still
   counts), **Camera speed** (the right stick's tilt scaled), **Trigger press point** (LT / RT are L2 / R2 buttons),
-  **Swap sticks**, **Invert camera** left / right and up / down, **Free aim** (above; to aim with the left trigger,
-  give Target the LT and move Previous weapon / target to another button).
+  **Swap sticks**, **Left stick without the square dead zone** (off: the game ignores each axis of the stick on its own
+  for its first third, so a stick held a little off straight goes straight and a slight diagonal does nothing - as on
+  the PS2; on: the stick goes where it points; willzmkv's, their issue 93), **Invert camera** left / right and up /
+  down, **Free aim** (above; to aim with the left trigger, give Target the LT and move Previous weapon / target to
+  another button).
 - **Vibration**: the DualShock 2's motors on the gamepad's rumble, 0-200% (100% as on the PS2, 0% off). The game
   drives them itself (crashes, explosions, gunfire; game-internals.md 12a).
 

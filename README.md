@@ -173,6 +173,7 @@ The settings menu (F2) is laid out by what a setting does: **Display**, **Graphi
 - **Quick save**: F12 opens the game's save menu anywhere outside a mission, and loading puts you back there.
 - **A faster renderer**: half the draw calls, state sent only when it changes, runtime speed-ups from the LCS port.
 - The HUD no longer flickers in the rain or throws a digit for a frame.
+- **High frame rates fixed** where the game counted frames: the taxi's tip, the sirens' horn tap, the radio's name.
 
 </td>
 </tr>
@@ -513,6 +514,11 @@ is listed here (the full list of candidates, done or not: [docs/FORK_IMPORTS.md]
   (commits 283bb56, 9c01e8f), their tiers re-done in the game's own menu.
 - **Traffic at a raised Car distance** (the car spawner's two gates relaxed): [willzmkv](https://github.com/willzmkv)
   (dejot), from their fork (commit bca7997), re-done as a hook before the game's call.
+- **Fixes of 2026-11-24** - the taxi's tip, the sirens, the radio's name and the HUD flashes at high frame rates,
+  aiming down from a car, the BMX's camera, a mission title through a fade, Fort Baxter's ground and the DIA_C3 freeze
+  in the detailed city, RC vehicles on the keyboard, the left stick without the square dead zone:
+  [willzmkv](https://github.com/willzmkv) (dejot), from their fork (commits 23dcc3a, fb7c061, 4285f99, bac530a,
+  7d56b57, 4349493, 4db3d56, 01b3602, 6bc138b), re-done on ours.
 - **This README's layout** (centred header, badges, feature tables side by side, collapsed sections): after
   [willzmkv](https://github.com/willzmkv)'s (dejot) README for their fork.
 
