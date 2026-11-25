@@ -73,7 +73,8 @@ python3 tools/shader_tools.py               # macOS: glslang + SPIRV-Cross for t
 python tools/build.py --opt none|lto|pgo    # game optimisation, kept until changed (lto: the default; pgo: ThinLTO + profile, trains if needed)
 python tools/bench.py [OUT]                  # game-thread benchmark: fixed city spots + an AI drive (game / worker ms)
 python tools/cruise.py run [OUT] [ENV=VAL]   # stutter rig: the car along a fixed route at 144 km/h, every frame timed;
-                                             # hitches with their texture / main-thread / game-thread cause (PERFORMANCE.md 21)
+                                             # hitches with their texture / main-thread / game-thread cause (PERFORMANCE.md 21);
+                                             # --hour H: the clock at the start (12; 22 streams the night's lit windows)
 python tools/quickcheck.py [--run] [--budget MIN]  # the checks a change needs, from the files it touched, with their cost
                                              # first (--files / --base REF / --since H; --full: the whole suite)
 python tools/clean.py [--apply] [--keep-days 7]   # delete test output in build/ (lists first; builds, saves, baselines kept)

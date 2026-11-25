@@ -2162,6 +2162,19 @@ where the game makes it, not the fan smaller (that brings back the 6u popping) a
 main heap; the sorted insert walks only what is in the list, so the size costs nothing by itself. Always on: nobody
 wants palms dropped; `VCS_ALPHA_LIST=0` is the switch back.
 
+## 2026-11-25 - Lit windows follow the clock: every piece by the hour read, drawn by its window, always on
+
+The game picks a cell's lit windows and neon when it reads the cell and never again, so a tower stayed dark all night or
+lit all day, and was lit from one cell and dark from the next (the player's report; game-internals.md 6y). Every piece
+by the hour is read with its cell now and its records are left out at the draw while the hour is outside its window.
+Chosen over reading a cell again when the hour changes (what the detailed city's extra cells did): no disc reads and no
+cell swapped on the hour (the game's own cell could only be read again through its swap, with its collision), and the
+change is at the hour exactly. The memory is the game's own night case (all windows overlap then). Always on: nobody
+wants buildings lit at noon; `VCS_HOUR_PIECES=0` is the switch back. The street-end house dropping to low detail is the
+game's per-cell detail, left as it is: Detailed city is the option for it. The price: a drive by day streams like
+one by night in the original (cruise.py: 4 - 6 hitches of ~70 ms over 139 s at 144 km/h by day against 1 - 3 before,
+the same as the game's own 4 at night).
+
 ## 2026-11-25 - The facing rule for coplanar faces: always on, not an option
 
 The bridge sign that showed a second, partly blue board by the camera's pitch (the player's report of 2026-11-24) is two

@@ -97,6 +97,10 @@ namespace vcs::world_hd
         PS2Runtime::RecompiledFunction g_choose = nullptr, g_areaForPosition = nullptr, g_swap = nullptr, g_drop = nullptr,
                                        g_flush = nullptr, g_draw = nullptr, g_sector = nullptr, g_levelLoad = nullptr;
         constexpr uint32_t kSectorDraw = 0x00240ED8u; // FUN_00240ED8(level, record)
+        // FUN_0023D600(level): the cell being read (slot level + 0x258) queues its conditional pieces that are on; it asks
+        // FUN_002287E8(from, to) - is the hour inside [from, to) - for those by the hour, returning to 0x23D690
+        constexpr uint32_t kQueuePieces = 0x0023D600u, kHourInside = 0x002287E8u, kQueuePiecesHourReturn = 0x0023D690u;
+        PS2Runtime::RecompiledFunction g_queuePieces = nullptr, g_hourInside = nullptr;
         constexpr uint32_t kPacketBuffer = 0x00520F90u; // the frame's packet buffer (FUN_00476770: its use)
         std::atomic<uint32_t> g_sectorCalls{0}, g_sectorSkips{0}, g_bufferPeak{0};
         double g_costUs = 0.0, g_costPeakUs = 0.0;
@@ -1074,6 +1078,149 @@ namespace vcs::world_hd
             return hourWindow(value, kind & 0x7Fu);
         }
 
+        bool levelUsable();
+
+        // ---- the pieces by the hour: read whatever the hour, shown by the clock (game-internals.md 6y) ----
+        // A cell's conditional pieces by the hour are the lit windows and neon of its buildings (windows 17-20 h to 5-9 h,
+        // only "on" windows: off is the piece absent). FUN_0023D600 asks FUN_002287E8 for each while the cell is read and
+        // queues only those on then; nothing looks again until the cell is read again - a cell read by day kept its towers
+        // dark all night, one read at night kept them lit at noon, and two neighbours read at different hours lit a tower
+        // from one side of a street and not the other (the player's report, 2026-11-25). Now every such piece is read
+        // (as at night, when all of them are on at once: the game's own worst case) and sectorHook leaves out the records
+        // of a piece whose window is off at the hour, so they follow the clock. VCS_HOUR_PIECES=0 = the game's way.
+        bool hourPiecesAlways()
+        {
+            static const bool on = [] {
+                const char *e = std::getenv("VCS_HOUR_PIECES");
+                return !(e && e[0] == '0');
+            }();
+            return on;
+        }
+
+        // a conditional piece of a cell's list (not a switched sector): on for the read
+        bool pieceOn(uint8_t kind, uint8_t value)
+        {
+            if (kind != 0xFFu && (kind & 0x80u) && hourPiecesAlways())
+                return true;
+            return switchedOn(kind, value);
+        }
+
+        std::array<uint16_t, kMaxGid> g_hourWindow{};                  // gid -> its piece's window (from << 8 | to), 0 none
+        std::vector<uint16_t> g_hourGids;                              // the gids with a window
+        std::unordered_map<uint32_t, std::vector<uint16_t>> g_pieceGids; // piece index -> its gids (read once)
+        std::bitset<kMaxGid> g_hourOff;                                // gids whose window is off at g_hourOffAt
+        int g_hourOffAt = -1;                                          // the hour g_hourOff is for (-1: to compute)
+        uint64_t g_hourConflicts = 0;
+
+        void resetHourPieces()
+        {
+            for (uint16_t gid : g_hourGids)
+                g_hourWindow[gid] = 0;
+            g_hourGids.clear();
+            g_pieceGids.clear();
+            g_hourOff.reset();
+            g_hourOffAt = -1;
+        }
+
+        void noteHourGid(uint16_t gid, uint8_t kind, uint8_t value)
+        {
+            if (gid == 0 || gid >= kMaxGid)
+                return;
+            const uint16_t w = uint16_t(uint32_t(value) << 8 | (kind & 0x7Fu));
+            uint16_t &have = g_hourWindow[gid];
+            if (have == w)
+                return;
+            if (have)
+            {
+                // the same gid under two windows: shown while either is on (the union)
+                if (++g_hourConflicts <= 20u)
+                    std::fprintf(stderr, "[hour-pieces] gid %u under %u-%u and %u-%u\n", gid, have >> 8, have & 0xFFu,
+                                 w >> 8, w & 0xFFu);
+                const uint8_t from = std::min<uint8_t>(have >> 8, value), to = std::max<uint8_t>(have & 0xFFu, kind & 0x7Fu);
+                have = uint16_t(uint32_t(from) << 8 | to);
+            }
+            else
+            {
+                have = w;
+                g_hourGids.push_back(gid);
+            }
+            g_hourOffAt = -1;
+        }
+
+        // the gids a piece supplies (its pairs), read from the disc once per piece index
+        const std::vector<uint16_t> *pieceGids(uint32_t index)
+        {
+            const auto found = g_pieceGids.find(index);
+            if (found != g_pieceGids.end())
+                return &found->second;
+            vcs::IsoImage *image = iso();
+            const uint32_t entry = rd32(g_info + 4u) + index * 0x20u;
+            if (!image || !g_imageBase || !valid(entry, 0x20u) || rd32(entry) != kDlrw)
+                return nullptr;
+            const uint32_t bytes = rd32(entry + 8u), fileOffset = rd32(entry + 0x18u);
+            if (bytes < 0x40u || bytes > 0x200000u)
+                return nullptr;
+            std::vector<uint8_t> buf(bytes);
+            if (!image->readBytes(g_imageBase + fileOffset, bytes, buf.data()))
+                return nullptr;
+            auto at32 = [&](uint32_t off) {
+                uint32_t v = 0;
+                std::memcpy(&v, buf.data() + off, 4);
+                return v;
+            };
+            // the piece's first words: its pairs (an offset from the piece - 0x20, relocated by the read) and their count
+            const uint32_t pairs = at32(0), count = uint32_t(buf[4]) | uint32_t(buf[5]) << 8;
+            std::vector<uint16_t> gids;
+            if (pairs >= 0x20u && uint64_t(pairs - 0x20u) + uint64_t(count) * 8u <= bytes)
+                for (uint32_t i = 0; i < count; ++i)
+                    if (const uint32_t gid = at32(pairs - 0x20u + i * 8u); gid && gid < kMaxGid)
+                        gids.push_back(uint16_t(gid));
+            return &g_pieceGids.emplace(index, std::move(gids)).first->second;
+        }
+
+        // before FUN_0023D600 queues the pieces of the cell being read: its pieces by the hour noted with their windows
+        void noteReadingCell(uint32_t level)
+        {
+            if (!levelUsable() || level != g_level)
+                return;
+            const uint32_t slot = rd32(level + 0x258u);
+            if (!valid(slot, 0x24u))
+                return;
+            const uint32_t list = rd32(slot + 0x20u);
+            if (!valid(list, 0x34u))
+                return;
+            const uint32_t conds = rd16(list + 0x2Cu), condAt = rd32(list + 0x30u);
+            if (!conds || conds >= 0x100u || !valid(condAt, conds * 4u))
+                return;
+            for (uint32_t i = 0; i < conds; ++i)
+            {
+                const uint32_t c = condAt + i * 4u;
+                const uint8_t kind = rd8(c);
+                if (kind == 0xFFu || !(kind & 0x80u))
+                    continue;
+                if (const std::vector<uint16_t> *gids = pieceGids(rd16(c + 2u)))
+                    for (uint16_t gid : *gids)
+                        noteHourGid(gid, kind, rd8(c + 1u));
+            }
+        }
+
+        // a record of a piece whose window is off now: not drawn
+        bool hourOff(uint16_t gid)
+        {
+            if (g_hourGids.empty() || gid >= kMaxGid || !g_hourWindow[gid])
+                return false;
+            const int hour = rd8(kHour);
+            if (hour != g_hourOffAt)
+            {
+                g_hourOff.reset();
+                for (uint16_t g : g_hourGids)
+                    if (!hourWindow(uint8_t(g_hourWindow[g] >> 8), uint8_t(g_hourWindow[g] & 0xFFu)))
+                        g_hourOff.set(g);
+                g_hourOffAt = hour;
+            }
+            return g_hourOff.test(gid);
+        }
+
         void enterCell(Cell &cell)
         {
             enter(cell.list, cell.owner, cell);
@@ -1141,14 +1288,15 @@ namespace vcs::world_hd
         // A cell list's conditions (FUN_0023D600: {kind, value, piece index} at +0x30, count +0x2C), the ones on now as bits.
         // The pieces they switch hold, among others, the buildings' lit windows at night: read once with the cell, a cell
         // read in the afternoon kept its dark towers all night (the player's downtown tower, 2026-11-12) - update() reads a
-        // cell again when its mask changes.
+        // cell again when its mask changes. (With the pieces by the hour always read - hourPiecesAlways() - only a mission switch
+        // changes it: the clock is followed at the draw.)
         std::array<uint64_t, 4> condMask(uint32_t list, uint32_t bytes)
         {
             const uint32_t conds = rd16(list + 0x2Cu), condAt = rd32(list + 0x30u);
             std::array<uint64_t, 4> mask{};
             if (conds && conds < 0x100u && condAt >= list && condAt + conds * 4u <= list + bytes)
                 for (uint32_t i = 0; i < conds; ++i)
-                    if (switchedOn(rd8(condAt + i * 4u), rd8(condAt + i * 4u + 1u)))
+                    if (pieceOn(rd8(condAt + i * 4u), rd8(condAt + i * 4u + 1u)))
                         mask[i >> 6] |= uint64_t(1) << (i & 63u);
             return mask;
         }
@@ -1174,7 +1322,7 @@ namespace vcs::world_hd
                 {
                     const uint32_t c = condAt + i * 4u;
                     const uint8_t kind = rd8(c);
-                    if (!switchedOn(kind, rd8(c + 1u)))
+                    if (!pieceOn(kind, rd8(c + 1u)))
                         continue;
                     Piece p;
                     if (loadIndexed(rd32(g_info + 4u) + uint32_t(rd16(c + 2u)) * 0x20u, p))
@@ -1182,6 +1330,9 @@ namespace vcs::world_hd
                         if (!(kind & 0x80u))
                             for (const auto &[gid, geom] : p.pairs)
                                 cell->condGids.insert(static_cast<uint16_t>(gid));
+                        else if (kind != 0xFFu && hourPiecesAlways())
+                            for (const auto &[gid, geom] : p.pairs)
+                                noteHourGid(static_cast<uint16_t>(gid), kind, rd8(c + 1u));
                         cell->conditional.push_back(std::move(p));
                     }
                 }
@@ -1989,6 +2140,7 @@ namespace vcs::world_hd
             {
                 if (g_level)
                     dropAll(false); // another level's data: the table is not what we entered into
+                resetHourPieces(); // (its gids and piece indices are another level's)
                 if (tableBounded())
                     g_maxGid = 0; // (and its length another)
                 g_level = level;
@@ -2545,6 +2697,12 @@ namespace vcs::world_hd
         PS2_GUEST_CC void sectorHook(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
             g_ram = rdram;
+            // a piece by the hour whose window is off (lit windows by day): not drawn, as if the cell had been read now
+            if (!g_hourGids.empty() && valid(getRegU32(ctx, 5), kRecord) && hourOff(rd16(getRegU32(ctx, 5) + 2u)))
+            {
+                ctx->pc = getRegU32(ctx, 31);
+                return;
+            }
             if (g_pktDebug && valid(getRegU32(ctx, 5), kRecord))
                 checkCalls(getRegU32(ctx, 5));
             if (g_drawCheck && valid(getRegU32(ctx, 5), kRecord))
@@ -2754,6 +2912,29 @@ namespace vcs::world_hd
             }
             g_choose(rdram, ctx, runtime);
         }
+        // the pieces by the hour (hourPiecesAlways): noted before the cell's queue is made, and every one of them on for it
+        PS2_GUEST_CC void queuePiecesHook(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            if (hourPiecesAlways())
+            {
+                std::lock_guard<std::recursive_mutex> lock(g_mutex);
+                g_ram = rdram;
+                noteReadingCell(getRegU32(ctx, 4)); // (0.04 - 0.5 ms with a disc read, 2026-11-25)
+            }
+            g_queuePieces(rdram, ctx, runtime);
+        }
+
+        PS2_GUEST_CC void hourInsideHook(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            if (getRegU32(ctx, 31) == kQueuePiecesHourReturn && hourPiecesAlways())
+            {
+                SET_GPR_U32(ctx, 2, 1u); // on: read with the cell (shown by the clock, sectorHook)
+                ctx->pc = getRegU32(ctx, 31);
+                return;
+            }
+            g_hourInside(rdram, ctx, runtime);
+        }
+
         template <PS2Runtime::RecompiledFunction *Original>
         PS2_GUEST_CC void restoreHook(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
@@ -2881,6 +3062,8 @@ namespace vcs::world_hd
             {kLevelLoad, &g_levelLoad, &levelLoadHook},
             {kWorldDraw, &g_draw, &drawHook},
             {kSectorDraw, &g_sector, &sectorHook},
+            {kQueuePieces, &g_queuePieces, &queuePiecesHook},
+            {kHourInside, &g_hourInside, &hourInsideHook},
         };
         for (const Hook &h : hooks)
             if (!(*h.original = runtime.lookupFunction(h.at)))

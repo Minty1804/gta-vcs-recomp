@@ -1075,6 +1075,12 @@ dropped on uploads (lazy render-target patching).
       full (game-internals.md 6x). The pool is 2000 now (the most seen 268); the row at every heading, nothing refused.
       `VCS_ALPHA_LIST=0` = the game's 200. The far water's darker patch by the pier: the game's own (the same with the
       depth rules off, Detailed city 0 and on the emulated path).
+    - **A tower's lit windows out when near, on when farther (-1002, -455): fixed.** The game chooses a cell's pieces by
+      the hour (lit windows, neon) only when it reads the cell; two neighbouring cells read at different hours drew the
+      tower lit from one and dark from the other (game-internals.md 6y). Every such piece is read now and drawn by the
+      clock: the tower read at noon lit at 22:00, read at night dark at noon, off at 6:00 sharp. `VCS_HOUR_PIECES=0` =
+      the game's way. **The house at the street's end dropping to low detail**: the game's per-cell detail (the far
+      model in cell (11, 13)'s list); Detailed city 1 shows it detailed.
 
 ## Milestone 9 - Linux (started 2026-10-30)
 
@@ -1309,6 +1315,7 @@ Python scripts still usable on their own. docs/LAUNCHER.md has the whole of it; 
 | `PS2X_IOP_REALTIME=0` | IOP time purely from EE cycles (audio slows with the game) |
 | `VCS_TEST_SAVE=s[:slot]` | save to slot 1 (or 1..8) through the game's code s seconds after boot (mid-script: prefer `tools/saves.py`) |
 | `VCS_TRACE_SECTORS=1`, `VCS_TRACE_CELL=1` | world sector draw / current hex cell vs camera |
+| `VCS_HOUR_PIECES=0` | the cells' pieces by the hour (lit windows, neon) chosen when the cell is read, as the game does (a tower lit or dark by when its cell was read); default 1: every one read, drawn by the clock (game-internals.md 6y) |
 | `VCS_ALPHA_LIST=<nodes>` | the sorted alpha list's pool (palms, trees, everything drawn with alpha): 2000 (the second list 300); 0 = the game's 200 / 30, where at 300 % near palms go missing by the camera's heading (game-internals.md 6x). `worlddetail`'s `alpha=` shows pool / peak / refused |
 | `VCS_SCAN_FAN=0` | the world scan's 300 m-depth triangle as the game has it: entities (palms, props) beyond ~300 m shown by where they sit in the view and by the pitch, not by distance (game-internals.md 6u) |
 | `VCS_SECTOR_DIFF=1` | analysis: logs the world sector records whose draw changed since the frame before (`[sectordiff] shown / gone`, keyed by id and gid; game-internals.md 6u) |

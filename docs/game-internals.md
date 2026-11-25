@@ -2261,7 +2261,9 @@ measurement and the tools behind it.
   65 - 290 m, all in those bursts. A clock change now marks the cells `stale`; update() reads the nearest stale or
   missing one a frame, the stale one dropped in the same update just before its new copy goes in, so no build sees the
   hole (66 late in the same run, all at the swaps). A switch (level + 0x418..) still drops at once. `VCS_HD_CLOCK_DROP=1`
-  = before; the log says which: `cells to read again` / `cells dropped` / `the level's data read again`.
+  = before; the log says which: `cells to read again` / `cells dropped` / `the level's data read again`. Since 6y
+  (2026-11-25) the clock no longer changes a mask at all - every piece by the hour is read and drawn by its window - so
+  none is read again on the hour (with `VCS_HOUR_PIECES=0` as above).
 - **The fade off by default** (2026-11-24, the user's choice after "much flicker on far buildings while moving"): while
   an extra sector fades in (1 s, beyond 250 m), the low-detail sector it replaces is drawn under it - at that distance
   the two fight in the depth buffer, and moving there is always one fading. `VCS_HD_FADE=<s>` brings it back.
@@ -2400,6 +2402,44 @@ at 300 %; `alpha_peak`). `worlddetail` prints `alpha=<pool>/<peak since the last
 Checked: the row at every heading 208..232 with nothing refused; the far shore's palm group of 6u still whole;
 bench.py game ms against `VCS_ALPHA_LIST=0`: 3.2 / 3.0 / 3.6 / 2.4 / 3.4, drive 7.4 against 3.2 / 2.6 / 3.6 / 2.5 / 3.5,
 drive 7.2 (noise); traffic and world checks pass.
+
+### 6y. Lit windows by the hour: chosen when a cell is read, never again (2026-11-25)
+
+The player's report of 2026-11-25 near (-1002, -455), Little Havana, at dawn: a tower's lit windows and neon rims went
+out walking towards it and came back walking away; and the house at the end of the street (north, ~100 m) dropped to
+low detail a few metres further south. Both change where the camera crosses from cell (11, 14) into (11, 13) (the hex
+cells of 6b; at x -1002 between y -470 and -480; `level + 0x248` polled while the camera walked, `night6`).
+
+- **The house** is the per-cell detail of 6b / 6t: (11, 13)'s list carries it as a far model, (11, 14)'s detailed - at
+  any draw distance. Detailed city 1 shows it detailed from (11, 13) too (`night10`, radius 0 against 1).
+- **The lights.** A cell list's conditional pieces {kind, value, piece index} (list `+0x30`, count `+0x2C`) with kind
+  bit 7 set are by the hour: on while FUN_002287E8(value, kind & 0x7F) - the hour in [from, to), wrapping - says so.
+  Around the tower both cells carry the same: 18/19/20 h to 5 h, 17/18/19 h to 6 h, 19 h to 7 / 8 / 9 h (`conds.py`);
+  only "on" windows, off being the piece absent. They are the buildings' lit windows and neon: extra geometry whose
+  records sit in the cell's list and draw only while their gid has geometry. **FUN_0023D600(level)** asks the hour once,
+  for the slot being read (`+0x258`), and queues the pieces on then (`level + 0x294`, count `+0x414`); nothing asks
+  again while the cell stays loaded (FUN_0023C820 only reads, swaps and drops cells; FUN_0023D740's hour test is the
+  switched sectors'). Measured (`night7`, the cells read fresh by teleporting away and back): read at 12:00, the tower
+  stayed dark at 22:00; read at 22:00, it stayed lit at 12:00; read at 4:00, lit at 6:40. The player's two cells had
+  been read at different hours, so the tower was lit from one side of the street and dark from the other. The game's
+  own, PS2 included; the detailed city's extra cells had the same (2026-11-12) and were read again on every hour change
+  (6t: 50 - 60 cells at once).
+
+The port's fix (`src/game/vcs_world_hd.cpp`, always on; `VCS_HOUR_PIECES=0` = the game's way): FUN_002287E8 answers
+"on" when called from FUN_0023D600 (return 0x23D690), so every piece by the hour is read with its cell - what the game
+does at night, when all their windows overlap (the queue's and the slot's worst case, by design). Before the original,
+FUN_0023D600's hook notes the reading cell's hour pieces: their gids (the piece's pairs, read from the disc once per
+piece index) with their window. FUN_00240ED8 (every record drawn, the translucent list too) leaves out a record whose gid's
+window is off at the hour, so the pieces follow the clock at once, read or not. The extra cells read every hour piece
+the same way (their mask no longer holds the hour: no reading again on the hour). A gid under two windows would be shown
+for the union (logged `[hour-pieces]`; none seen).
+Checked: the tower read at 12:00 lit at 22:00, read at 22:00 dark at 12:00, lit at 5:56 and dark from 6:00 (its window
+19 - 6), with Detailed city 0 and 2; `VCS_HOUR_PIECES=0` gives the stale ones back. The cost is the game's own at
+night: cruise.py (144 km/h, 139 s) at 12:00 had 1 / 3 hitches (8 / 22 ms lost a minute) without the fix and 6 / 4
+(99 / 81 ms; a first run 24, 380 ms, not seen again) with it; at 22:00, 4 (81 ms) without and 5 (88 ms) with - the
+hitches are the game thread reading the night's pieces (30 - 77 ms of game time), the note itself 0.04 - 0.5 ms
+(`cruise.py run --hour 22`). hdmissions: k12_beach's one build with both versions (cell 18,6) as on 2026-11-24
+before this change; the rest pass.
 
 ## 7. Textures: `.XTX`
 

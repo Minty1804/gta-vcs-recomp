@@ -124,7 +124,7 @@ def report(rows, out_json=None, label=""):
 
 
 # ---- run ----------------------------------------------------------------------------------------------------------
-def run(out, route, speed, laps, fps, extra_env, name, settle=4.0, shots=0.0):
+def run(out, route, speed, laps, fps, extra_env, name, settle=4.0, shots=0.0, hour=12):
     out = os.path.abspath(out)
     pts = load_route(route)
     os.makedirs(out, exist_ok=True)
@@ -147,7 +147,7 @@ def run(out, route, speed, laps, fps, extra_env, name, settle=4.0, shots=0.0):
     run_secs = 0.0
     try:
         g.wait_ingame()
-        g.set_time(12)
+        g.set_time(hour)
         g.weather(0)
         g.invincible()
         g.prime()
@@ -245,6 +245,8 @@ def main():
     r.add_argument("--laps", type=int, default=1)
     r.add_argument("--fps", type=int, default=60, help="VCS_FPS (0: unlimited)")
     r.add_argument("--name", default="cruise")
+    r.add_argument("--hour", type=int, default=12, help="the clock at the start (22: the night's streaming - every "
+                   "building's lit windows read with its cell)")
     r.add_argument("--shots", type=float, default=0.0, help="a screenshot every S seconds (checking the route; each "
                    "is a hitch of its own, so not while measuring)")
     r.add_argument("env", nargs="*", help="ENV=VAL for the game")
@@ -266,7 +268,7 @@ def main():
             pairs.append(a.out)
             a.out = None
         run(a.out or os.path.join(ROOT, "build", "cruise", a.name), a.route, a.speed, a.laps, a.fps,
-            dict(x.split("=", 1) for x in pairs), a.name, shots=a.shots)
+            dict(x.split("=", 1) for x in pairs), a.name, shots=a.shots, hour=a.hour)
     elif a.cmd == "report":
         report(perf_report.load(a.csv, a.t_from, a.t_to), a.json)
     else:
