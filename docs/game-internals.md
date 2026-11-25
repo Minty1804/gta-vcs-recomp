@@ -2575,6 +2575,9 @@ RDRAM for the difference.
   was ~4 units behind it. Same at Detailed city 0, 2 and 3; the cruise at 23:00 costs the same (4 hitches, 83 vs 82 ms
   a minute). `VCS_LODLIGHTS_ORIGIN=cell|old`, `VCS_LODLIGHTS_DEPTH=0` go back for comparing. Not changed: blinking
   lights switch on and off like the mod's table says (the mod's own fade shares one value across all lights).
+  Then, at the player's wish ("smaller, a bit more translucent, more natural"): size factor 1.25 (the mod's ini 1.5),
+  strength 0.9, and the glow a bright core (centre to 0.3 of the radius) with a halo at 0.3 of its colour fading to the
+  rim - 36 triangles a light instead of 12; the old cone read as flat discs.
 
 ## 8. Data loaded at boot
 

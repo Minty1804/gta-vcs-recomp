@@ -1086,7 +1086,8 @@ dropped on uploads (lazy render-target patching).
       lights' camera was off by more than 15 m in 6340 of 8983 frames (a whole neighbourhood's lights over another after
       a teleport, a cell off one frame in eight). Now the map cell's centre fitted to TheCamera at each chain's kick: 0
       frames off, none lost; the glows at the buildings' depth layer. Detailed city 0 / 2 / 3 alike, same cost
-      (game-internals.md 7c).
+      (game-internals.md 7c). Then smaller and fainter (the player's wish): size x 1.25 instead of the mod's 1.5,
+      strength 0.9, and each glow a bright core with a faint halo instead of a cone from full colour to the rim.
 
 ## Milestone 9 - Linux (started 2026-10-30)
 
@@ -1408,7 +1409,7 @@ Python scripts still usable on their own. docs/LAUNCHER.md has the whole of it; 
 | `VCS_SOLID_FAR_PALMS=0\|1` | World > Details > Solid far palms for this run (the far vegetation's distance fade off, native draw only; game-internals.md 7b) |
 | `VCS_DISTANT_LIGHTS=0\|1` | World > Details > Distant lights for this run (Project2DFX's far street lights at night; game-internals.md 7c) |
 | `VCS_LODLIGHTS_FILE=<path>` | The light table to read (default `project2dfx/lodl.c` next to vcs.exe, fetched by the build) |
-| `VCS_LODLIGHTS_FARCLIP=m`, `VCS_LODLIGHTS_RADIUS=x`, `VCS_LODLIGHTS_INTENSITY=x` | The lights' range (1000 m), size factor (1.5) and strength (1) |
+| `VCS_LODLIGHTS_FARCLIP=m`, `VCS_LODLIGHTS_RADIUS=x`, `VCS_LODLIGHTS_INTENSITY=x` | The lights' range (1000 m), size factor (1.25; the mod's 1.5 until 2026-11-25) and strength (0.9; was 1) |
 | `VCS_LODLIGHTS_LOG=1\|2` | Every 5 s: lights in range / drawn a frame, the cost, the camera and its matrices, how the origin was found (which kick's `0x6FE980` the cell matches, frames left out, TheCamera's distance from the drawn camera); 2: the cameras and depth layers of each world chain |
 | `VCS_LODLIGHTS_ORIGIN=cell\|old` | Distant lights' render origin: `0x6FE980` at the chain's kick, or TheCamera + 0x1170 at the game frame with z 0 (before 2026-11-25: lights in the wrong places); default the cell centre fitted to TheCamera (game-internals.md 7c) |
 | `VCS_LODLIGHTS_DEPTH=0` | Distant lights at the first world packet's depth layer (the farthest; before 2026-11-25) instead of the buildings' |

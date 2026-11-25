@@ -12,9 +12,10 @@
 // The rules are Project2DFX's (source/GTAVCS.PCSX2F.Project2DFX/lodl.c, RenderLODLightsBuffered, and its PCSX2 ini):
 // - 19:00 - 7:00 only, the strength rising from 30 / 255 at 19:00 to 255 at midnight, full until 3:00, down to 30 at 7:00;
 // - a light shows from a third of its own corona distance (farclip) out to 1000 m, its radius growing from 0 there to
-//   3.5 at farclip (x the size factor, x 1.5), and with distance (x 0.0025 d + 0.25, at most x 4);
+//   3.5 at farclip (x the size factor, x 1.25 here), and with distance (x 0.0025 d + 0.25, at most x 4);
 // - blinking lights (show mode 1-7) on / off by the game's ms clock; traffic lights (size 0.45) by the minute.
-// VCS_LODLIGHTS_FARCLIP / VCS_LODLIGHTS_RADIUS / VCS_LODLIGHTS_INTENSITY change the 1000 m, the 1.5 and the strength;
+// VCS_LODLIGHTS_FARCLIP / VCS_LODLIGHTS_RADIUS / VCS_LODLIGHTS_INTENSITY change the 1000 m, the size factor (1.25; the mod's
+// 1.5 until 2026-11-25, smaller at the player's wish) and the strength (0.9; was 1);
 // VCS_LODLIGHTS_LOG=1 prints what was drawn every 5 s (and the camera, to check the projection), and how the origin was
 // found; =2 the cameras and depth layers of a chain's world packets. VCS_LODLIGHTS_ORIGIN / _DEPTH / _PULL: see onMscal and
 // drawLights.
@@ -295,8 +296,11 @@ namespace vcs::lodlights
         };
         Stats g_stats; // the GS stage's
 
-        // A round glow as a 12-triangle fan (a triangle list): the colour at the centre, black at the rim (added: nothing)
+        // A round glow (a triangle list): a small bright core and a faint halo, like a corona sprite's falloff rather than a
+        // cone - the colour at the centre, kHaloLevel of it at kCore of the radius, black at the rim (added: nothing).
+        // Until 2026-11-25 one cone from the full colour to the rim: read as flat, opaque discs (the player's report).
         constexpr int kSegments = 12;
+        constexpr float kCore = 0.3f, kHaloLevel = 0.3f;
         struct Circle
         {
             float c[kSegments + 1], s[kSegments + 1];
@@ -314,16 +318,35 @@ namespace vcs::lodlights
 
         void glow(std::vector<GSHwOverlayVertex> &out, float x, float y, float z, float rx, float ry, float r, float g, float b)
         {
-            const GSHwOverlayVertex centre{x, y, z, static_cast<uint8_t>(std::min(r, 255.0f)), static_cast<uint8_t>(std::min(g, 255.0f)),
-                                           static_cast<uint8_t>(std::min(b, 255.0f)), 0x80};
-            const size_t at = out.size();
-            out.resize(at + 3u * kSegments);
-            GSHwOverlayVertex *v = out.data() + at;
-            for (int i = 0; i < kSegments; ++i, v += 3)
+            auto colour = [&](float k) {
+                return GSHwOverlayVertex{0.0f, 0.0f, z, static_cast<uint8_t>(std::min(r * k, 255.0f)),
+                                         static_cast<uint8_t>(std::min(g * k, 255.0f)), static_cast<uint8_t>(std::min(b * k, 255.0f)),
+                                         0x80};
+            };
+            GSHwOverlayVertex centre = colour(1.0f), halo = colour(kHaloLevel), rim = colour(0.0f);
+            centre.x = x;
+            centre.y = y;
+            auto at = [&](GSHwOverlayVertex v, int i, float k) {
+                v.x = x + g_circle.c[i] * rx * k;
+                v.y = y + g_circle.s[i] * ry * k;
+                return v;
+            };
+            const size_t first = out.size();
+            out.resize(first + 9u * kSegments);
+            GSHwOverlayVertex *v = out.data() + first;
+            for (int i = 0; i < kSegments; ++i, v += 9)
             {
+                const GSHwOverlayVertex h0 = at(halo, i, kCore), h1 = at(halo, i + 1, kCore);
+                const GSHwOverlayVertex r0 = at(rim, i, 1.0f), r1 = at(rim, i + 1, 1.0f);
                 v[0] = centre;
-                v[1] = {x + g_circle.c[i] * rx, y + g_circle.s[i] * ry, z, 0, 0, 0, 0x80};
-                v[2] = {x + g_circle.c[i + 1] * rx, y + g_circle.s[i + 1] * ry, z, 0, 0, 0, 0x80};
+                v[1] = h0;
+                v[2] = h1;
+                v[3] = h0;
+                v[4] = r0;
+                v[5] = r1;
+                v[6] = h0;
+                v[7] = r1;
+                v[8] = h1;
             }
         }
 
@@ -340,8 +363,8 @@ namespace vcs::lodlights
                 return;
             }
             static const float farClip = envFloat("VCS_LODLIGHTS_FARCLIP", 1000.0f);
-            static const float radiusScale = envFloat("VCS_LODLIGHTS_RADIUS", 1.5f);
-            static const float intensity = envFloat("VCS_LODLIGHTS_INTENSITY", 1.0f);
+            static const float radiusScale = envFloat("VCS_LODLIGHTS_RADIUS", 1.25f);
+            static const float intensity = envFloat("VCS_LODLIGHTS_INTENSITY", 0.9f);
             static const float pullCap = envFloat("VCS_LODLIGHTS_PULL", 0.0f);
             const int minute = clock % 60;
             // the screen in window coordinates: the viewport's centre (P3) +- its half size (P0.x, P1.y)
