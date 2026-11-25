@@ -1031,6 +1031,16 @@ dropped on uploads (lazy render-target patching).
   packet heap - fixed with a check of every free against the heap's block chain; the bar passed at radius 3 (3 h soak
   all ok, memchecks, cruise 5 hitches against 2, overlap scan, mission buildings; game-internals.md 6t). World > Memory
   > **Streaming memory** (PS2 by default; 9d). Graphics > Image quality > **Sharp trails** (off by default; 6g).
+  - **Open (the player, 2026-11-24, radius 3):** buildings beside you at low detail for some seconds, flicker on the
+    water between the islands, much flicker on far buildings while moving. Measured: not from that day's changes
+    (cruise.py's city route with `VCS_HD_OSC=1`: 233 sectors flipping, 257 with `VCS_HD_SHOW_HIDDEN_EXTRA=1
+    VCS_HD_DRAW_SYNC=0 VCS_HD_SWEEP_BOUNDS=0`); most flips come in the first seconds after the car is put on the route
+    (frames 1625 - 1783), a few dozen over the 150 s drive: 84 far detailed sectors (~600 m, extra cells at the reach's
+    edge) going and coming, 137 of the game's low-detail sectors hidden and shown with them. `VCS_HD_LATE` sees nothing
+    at the route's speed (its camera-jump guard). From the free camera at 50 m over Leaf Links, panning 3 m a shot,
+    radius 3 and 0 blink alike (10396 / 11529 and 7404 / 8888 pixels over 6 frames). Next: the player's spots (F3's
+    position) and a minute with `VCS_HD_FADE=0` - the 1 s fade draws a far detailed sector over the low-detail one it
+    replaces, the suspect for the far flicker.
 
 ## Milestone 9 - Linux (started 2026-10-30)
 
