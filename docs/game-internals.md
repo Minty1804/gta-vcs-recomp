@@ -2334,6 +2334,12 @@ see it the same way by construction - not yet checked on those. GS draws (2D, ef
 Checked: the sign at both pitches and after the long route clean; four other spots (fort, streets from high and far, the
 shore) differ only by pedestrians; bench.py the same (render 0.2-0.8 ms, drive 7.1 / 7.2 ms game).
 
+- **Not this**: the Viceport sign at about (-824, -1462) ("Vice City Port Authority / Main Building", the player's
+  report of 2026-11-25, seen from (-871, -1445)) whose white face looks cut by a dark board. It is a V of two boards: from
+  the west one board's face shows and the other's plain back stands in front of part of it, at an angle - real
+  geometry metres apart, the same with the emulated VU1 path (`PS2X_HLE=0`) and with `PS2X_HW_FACING_BIAS=0`; from the
+  south both faces read. The game's own look, left as it is.
+
 ## 7. Textures: `.XTX`
 
 Confirmed from `LOADSC*.XTX` (263,372 bytes each, 512x512 8-bit):
