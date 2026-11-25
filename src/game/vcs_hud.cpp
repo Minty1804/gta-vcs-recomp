@@ -52,11 +52,12 @@ namespace vcs
         constexpr uint32_t kIm2DRender = 0x002FBE08u;        // (prim, vertices, count): RwIm2DRenderPrimitive
         constexpr uint32_t kIm2DRenderIndexed = 0x002FBE68u; // (prim, vertices, count, indices, indexCount)
         constexpr uint32_t kHudDraw = 0x0031C628u;           // CHud::Draw
+        constexpr uint32_t kHudAfterFade = 0x0031CA80u;      // CHud::DrawAfterFade: subtitles, mission titles over the fade
         constexpr uint32_t kHudZ = 0x00FFFFFEu;              // the HUD's Im2D z (the far plane)
         constexpr uint32_t kRenderStateSet = 0x00175198u;    // RwRenderStateSet(state, value); 6 = rwRENDERSTATEZTESTENABLE
 
         PS2Runtime::RecompiledFunction g_origRender = nullptr, g_origRenderIndexed = nullptr, g_origHudDraw = nullptr,
-                                       g_origRenderStateSet = nullptr;
+                                       g_origHudAfterFade = nullptr, g_origRenderStateSet = nullptr;
         bool g_inHud = false;    // game thread
         bool g_inMenu = false;   // the frontend's draw (FUN_003b53f8) to the frame kick; game thread
         constexpr uint32_t kMenuDraw = 0x003B53F8u; // the frontend / pause menu's draw, called from FUN_0021f7d8
@@ -577,6 +578,22 @@ namespace vcs
             g_origHudDraw(rdram, ctx, runtime);
         }
 
+        // CHud::DrawAfterFade (from FUN_0021f900, after the screen's fade quad): on fade-out and cutscene-entry frames
+        // CHud::Draw is skipped, so nothing had opened the HUD context and a mission title was anchored as the 3D's 4:3
+        // centre (snapping inward from the 16:9 corner for those frames; willzmkv, their issue 99). It opens it here too.
+        // VCS_HUD_AFTER_FADE=0: as before.
+        PS2_GUEST_CC void hudAfterFade(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            if (g_hooked && !g_inMenu && !g_inLoading)
+            {
+                if (traceNow() && !g_inHud)
+                    std::fprintf(stderr, "[im2d] --- hud after fade (%08x)\n", kHudAfterFade);
+                g_inHud = true;
+                g_inRadar = false;
+            }
+            g_origHudAfterFade(rdram, ctx, runtime);
+        }
+
         PS2_GUEST_CC void radarDraw(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
             g_inRadar = true;
@@ -723,6 +740,9 @@ namespace vcs
         if (!g_origRender || !g_origRenderIndexed || !g_origHudDraw || !g_origRenderStateSet)
             return;
         runtime.replaceFunction(kRenderStateSet, &renderStateSet);
+        if (const char *e = std::getenv("VCS_HUD_AFTER_FADE"); !(e && e[0] == '0'))
+            if ((g_origHudAfterFade = runtime.lookupFunction(kHudAfterFade)))
+                runtime.replaceFunction(kHudAfterFade, &hudAfterFade);
         runtime.replaceFunction(kIm2DRender, &im2dRender);
         runtime.replaceFunction(kIm2DRenderIndexed, &im2dRenderIndexed);
         if (on)

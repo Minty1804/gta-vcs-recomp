@@ -38,7 +38,16 @@ namespace vcs::carcam
         constexpr uint32_t kTimeStep = 0x004CD110u; // CTimer::ms_fTimeStep (1.0 = 1/50 s)
         constexpr uint32_t kFrameCounter = 0x004CD124u; // CTimer::m_FrameCounter
         constexpr uint32_t kEntityPos = 0x30u, kEntityForward = 0x10u, kMoveSpeed = 0x140u;
-        constexpr uint32_t kVehicleType = 0x354u;   // 4: a boat (the camera follows its nose, not where it moves)
+        constexpr uint32_t kVehicleType = 0x354u;   // 4: a boat (the camera follows its nose, not where it moves), 6 a bike,
+                                                    // 8 the BMX (CBmx's constructor calls CBike's, then writes 8)
+        constexpr uint32_t kVehicleBike = 6u, kVehicleBmx = 8u;
+        // the BMX's camera (willzmkv, gothamor#166): FUN_0029FAF0 tests type 6 (and the Quad, model 230) for the bike row of
+        // the tuning table, the bike's speed FOV and its wheel contacts at +0x668, and forgets 8, so the BMX gets the car
+        // row (1.3 * col max z - 0.40: the camera at the frame's height, Vic's head across the horizon). For the call the
+        // BMX is a bike, its collision model's max z (+0x28: 0.538 / 0.685 m) at least a motorcycle's 0.71 m.
+        constexpr uint32_t kEntityModel = 0x56u; // int16, the model index
+        constexpr uint32_t kModelInfos = 0x00486518u, kModelColModel = 0x14u, kColMaxZ = 0x28u;
+        constexpr float kBmxColMaxZ = 0.71f;
         // CWaterCannons: 3 of 0x250 bytes, +0 the vehicle spraying (0 free; kept until its water has run out, about
         // 0.5 s after the fire button is let go; game-internals.md 4, "The fire truck's water cannon")
         constexpr uint32_t kCannons = 0x004E3A60u, kCannonSize = 0x250u;
@@ -52,6 +61,7 @@ namespace vcs::carcam
         uint8_t *g_rdram = nullptr;
         PS2Runtime::RecompiledFunction g_orig = nullptr;
         std::atomic<bool> g_installed{false};
+        bool g_mouseCam = true, g_bmxCam = true; // VCS_CARCAM=0 / VCS_BMX_CAM=0
         std::atomic<float> g_delay{1.5f};
 
         // game thread
@@ -85,6 +95,13 @@ namespace vcs::carcam
             std::memcpy(&v, g_rdram + (a & kRamMask), 4);
             return v;
         }
+        int16_t rd16s(uint32_t a)
+        {
+            int16_t v;
+            std::memcpy(&v, g_rdram + (a & kRamMask), 2);
+            return v;
+        }
+        void wr32(uint32_t a, uint32_t v) { std::memcpy(g_rdram + (a & kRamMask), &v, 4); }
         void wrf(uint32_t a, float v) { std::memcpy(g_rdram + (a & kRamMask), &v, 4); }
 
         float wrap(float a)
@@ -286,10 +303,36 @@ namespace vcs::carcam
         }
 
         // FUN_0029FAF0 (CCam::Process's cases for modes 18 / 22): the mouse's say first, then the game's update.
+        // The BMX's type and collision height are put back once the original returns. That is code after the original
+        // (AGENTS rule 2): should it ever return before its end, the rest of its update runs with the game's own values
+        // (the car row for one frame), never with a BMX left as a bike.
         PS2_GUEST_CC void followCar(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
-            prepare(GPR_U32(ctx, 4));
+            const uint32_t cam = GPR_U32(ctx, 4);
+            if (g_mouseCam)
+                prepare(cam);
+            const uint32_t vehicle = g_bmxCam && cam ? rd32(cam + kCamTargetEntity) : 0;
+            const bool bmx = vehicle && rd32(vehicle + kVehicleType) == kVehicleBmx;
+            uint32_t col = 0;
+            float colMaxZ = 0.0f;
+            if (bmx)
+            {
+                wr32(vehicle + kVehicleType, kVehicleBike);
+                const int model = rd16s(vehicle + kEntityModel);
+                const uint32_t infos = rd32(kModelInfos);
+                const uint32_t info = infos && model >= 0 && model < 1000 ? rd32(infos + static_cast<uint32_t>(model) * 4u) : 0;
+                const uint32_t c = info ? rd32(info + kModelColModel) : 0;
+                if (c && (colMaxZ = rdf(c + kColMaxZ)) < kBmxColMaxZ)
+                {
+                    col = c;
+                    wrf(col + kColMaxZ, kBmxColMaxZ);
+                }
+            }
             g_orig(rdram, ctx, runtime);
+            if (col)
+                wrf(col + kColMaxZ, colMaxZ);
+            if (bmx)
+                wr32(vehicle + kVehicleType, kVehicleBmx);
         }
     }
 
@@ -298,13 +341,22 @@ namespace vcs::carcam
         g_rdram = runtime.memory().getRDRAM();
         if (const char *e = std::getenv("VCS_CARCAM"); e && e[0] == '0')
         {
+            g_mouseCam = false;
             std::fprintf(stderr, "[carcam] off (VCS_CARCAM=0)\n");
-            return;
         }
+        if (const char *e = std::getenv("VCS_BMX_CAM"); e && e[0] == '0')
+        {
+            g_bmxCam = false;
+            std::fprintf(stderr, "[carcam] the BMX's camera as the game has it (VCS_BMX_CAM=0)\n");
+        }
+        if (!g_mouseCam && !g_bmxCam)
+            return;
         g_orig = runtime.lookupFunction(kFollowCar);
         if (!g_orig)
             return;
         runtime.replaceFunction(kFollowCar, &followCar);
+        if (!g_mouseCam)
+            return;
         g_installed = true;
         // carcam -> ok state=<idle|hold|return> (tools/controls_check.py)
         ps2control::addCommand("carcam", [](const std::string &, ps2control::Reply reply) {
