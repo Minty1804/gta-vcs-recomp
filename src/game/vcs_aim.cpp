@@ -79,9 +79,11 @@ namespace vcs::aim
         constexpr float kStartPitchLimit = 0.35f; // aiming starts about level, not where a steep camera looked
         constexpr uint32_t kCamModeFollowPed = 4;
         constexpr float kStickRate = 2.0f;      // radians a second at full tilt (gamepad)
-        // in a car (the game's drive-by free aim, FUN_002343E0): the dummy at the gun's range from Vic, between 5 deg
-        // below and 20 deg above level (the game's limits for the stick there: 70..95 deg from Vic's up)
-        constexpr float kCarPitchDown = -0.0872665f, kCarPitchUp = 0.3490659f;
+        // in a car (the game's drive-by free aim, FUN_002343E0): the dummy at the gun's range from Vic, between 35 deg
+        // below and 20 deg above level. The game's own limit below is 5 deg (70..95 deg from Vic's up), which leaves the
+        // wheels of a car alongside out of reach in Jive Drive (willzmkv, gothamor#177); the game skips its 95 deg clamp
+        // while the left stick is centred, so the dummy's pitch holds. VCS_CAR_AIM_PITCH=0: the game's 5 deg.
+        constexpr float kCarPitchDownGame = -0.0872665f, kCarPitchDown = -0.6108652f, kCarPitchUp = 0.3490659f;
         // on foot (the forced free aim): 50..110 deg from Vic's up (20 deg below level, 40 above), and 110 deg either side
         // of his heading
         constexpr float kFootPitchDown = -0.3490659f, kFootPitchUp = 0.6981317f, kFootYawLimit = 1.9198622f;
@@ -136,13 +138,16 @@ namespace vcs::aim
         };
         // game thread
         State g_state = State::Idle;
-        int g_wait = 0;               // Entering: frames waited; Released: frames left with R1 up
-        constexpr int kRetryFrames = 8;
+        // The waits below are counted in PS2 frames (1/30 s, ps2Frames()): as frames they ran out 4.8 times sooner at
+        // 144 fps - the retry, the blend and the hand-back cut short (willzmkv, gothamor#180). VCS_AIM_TIMING=0: a frame
+        // counts one, as before.
+        float g_wait = 0.0f;          // Entering: PS2 frames waited; Released: PS2 frames left with R1 up
+        constexpr float kRetryFrames = 8.0f;
         uint32_t g_dummy = 0;
         float g_yaw = 0, g_pitch = 0; // the aim from Vic's shoulders: yaw from +x toward +y, pitch up
-        int g_quickBlend = 0;         // frames left to shorten the camera's blend into / out of free aim
+        float g_quickBlend = 0.0f;    // PS2 frames left to shorten the camera's blend into / out of free aim
         uint32_t g_blendMs = kBlendInMs; // to this
-        int g_handBack = 0;           // frames left to give the follow camera the aim's heading when it is back
+        float g_handBack = 0.0f;      // PS2 frames left to give the follow camera the aim's heading when it is back
         float g_handBeta = 0;
         std::atomic<bool> g_active{false};
         std::atomic<uint32_t> g_shots{0}; // shots sent down the camera ray ("aimstate")
@@ -161,6 +166,21 @@ namespace vcs::aim
             return v;
         }
         void wrf(uint32_t a, float v) { std::memcpy(g_rdram + (a & kRamMask), &v, 4); }
+        // this frame as PS2 frames (1/30 s = a step of 50/30): 1 at 30 fps and below, ~0.21 at 144
+        float ps2Frames()
+        {
+            static const bool on = [] {
+                const char *e = std::getenv("VCS_AIM_TIMING");
+                return !(e && e[0] == '0');
+            }();
+            if (!on || !g_rdram)
+                return 1.0f;
+            constexpr float kPs2Step = 50.0f / 30.0f;
+            const float step = rdf(kTimeStep);
+            if (!(step > 0.0f) || step >= kPs2Step * 0.9f)
+                return 1.0f;
+            return std::clamp(step / kPs2Step, 0.05f, 1.0f);
+        }
         void wrVec(uint32_t a, const float v[3])
         {
             for (int i = 0; i < 3; ++i)
@@ -256,8 +276,8 @@ namespace vcs::aim
                 std::fprintf(stderr, "[aim] free aim off (%s)\n", why);
                 // the follow camera comes back looking where the aim did (game-internals.md 12c)
                 g_handBeta = rdf(activeCam() + kCamBeta);
-                g_handBack = 30;
-                g_quickBlend = 10;
+                g_handBack = 30.0f;
+                g_quickBlend = 10.0f;
                 g_blendMs = kBlendOutMs;
             }
             g_state = State::Idle;
@@ -335,9 +355,9 @@ namespace vcs::aim
             if (g_state == State::Active)
                 if (const uint32_t ped = rd32(kPlayerPed); ped && rd32(ped + kPedTarget) == g_dummy)
                     setFreeAimBit(ped, true);
-            if (g_quickBlend > 0)
+            if (g_quickBlend > 0.0f)
             {
-                --g_quickBlend;
+                g_quickBlend = std::max(0.0f, g_quickBlend - ps2Frames());
                 if (rdram[kTransition])
                     for (uint32_t at : kTransitionDurations)
                         wr32(at, std::min(rd32(at), g_blendMs));
@@ -931,7 +951,12 @@ namespace vcs::aim
                 const float to = std::clamp(std::remainder(g_yaw + turn - heading, 6.2831855f), -kFootYawLimit, kFootYawLimit);
                 turn = std::remainder(heading + to - g_yaw, 6.2831855f);
             }
-            const float pitch = std::clamp(g_pitch + in.tilt + in.tiltRate * kStickRate * dt, car ? kCarPitchDown : kFootPitchDown,
+            static const bool lowerCarPitch = [] {
+                const char *e = std::getenv("VCS_CAR_AIM_PITCH");
+                return !(e && e[0] == '0');
+            }();
+            const float carDown = lowerCarPitch ? kCarPitchDown : kCarPitchDownGame;
+            const float pitch = std::clamp(g_pitch + in.tilt + in.tiltRate * kStickRate * dt, car ? carDown : kFootPitchDown,
                                            car ? kCarPitchUp : kFootPitchUp);
             const float tilt = pitch - g_pitch;
             g_yaw = std::remainder(g_yaw + turn, 6.2831855f);
@@ -1005,7 +1030,7 @@ namespace vcs::aim
                 if (slot >= 0 && slot < 10)
                     clip = static_cast<int>(rd32(ped + kPedWeapons + slot * 0x1Cu + 8u));
             }
-            std::fprintf(stderr, "[aim-log] t=%u fire=%d clip=%d want=%d state=%d wait=%d ped=0x%02x 35c=%02x tgt=%u bit51=%d r1=%d l3=%d own=%d\n",
+            std::fprintf(stderr, "[aim-log] t=%u fire=%d clip=%d want=%d state=%d wait=%.1f ped=0x%02x 35c=%02x tgt=%u bit51=%d r1=%d l3=%d own=%d\n",
                          rd32(0x004CD104u), in.fire ? 1 : 0, clip, in.want ? 1 : 0, static_cast<int>(g_state), g_wait,
                          ped ? rd32(ped + kPedState) : 0u, ped ? rd32(ped + 0x35Cu) & 0xFFu : 0u,
                          target ? (rd32(target + kEntityFlags) & 0xEu) : 0u, ped && freeAimBit(ped) ? 1 : 0, out.r1 ? 1 : 0,
@@ -1059,8 +1084,9 @@ namespace vcs::aim
             out.driver = true;
             return out;
         }
-        if (g_handBack > 0)
-            --g_handBack; // the camera hasn't come back to the follow camera in time: leave it
+        const float frames = ps2Frames();
+        if (g_handBack > 0.0f)
+            g_handBack = std::max(0.0f, g_handBack - frames); // the camera hasn't come back to the follow camera in time: leave it
         if (in.on && scriptFreeAim(ped))
             return scripted(ped, in);
         if (in.on && mountedGun(ped))
@@ -1093,7 +1119,7 @@ namespace vcs::aim
         switch (g_state)
         {
         case State::Released:
-            if (--g_wait <= 0)
+            if ((g_wait -= frames) <= 0.0f)
                 g_state = State::Idle; // R1 up until now; the next report enters again
             return out;
         case State::Held: // a gun in hand again, the button still held: free aim again
@@ -1101,10 +1127,10 @@ namespace vcs::aim
         {
             aimAlongCamera(cam);
             g_state = State::Entering;
-            g_wait = 0;
-            g_quickBlend = 30; // until a few frames after the free-aim lock is there
+            g_wait = 0.0f;
+            g_quickBlend = 30.0f; // until a few frames after the free-aim lock is there
             g_blendMs = kBlendInMs;
-            g_handBack = 0;
+            g_handBack = 0.0f;
             // The camera is the game's until its free aim is there: the mouse keeps turning it meanwhile. Sprinting the
             // game never enters free aim, and taking the camera from the first R1 froze it for each try (20 frames,
             // then 8 turning: the user's "incredibly choppy" turn with the right button held while running).
@@ -1124,7 +1150,7 @@ namespace vcs::aim
                 // try waits for its end instead of letting go for 8 frames and missing it (the aim then came up to 0.3 s
                 // late). The jump and its landing play whole: the aim comes the frame they end.
                 const bool busy = rd32(ped + kPedState) == kPedStateJump || rd32(ped + kPedMoveState) == kMoveSprint;
-                out.r1 = !target && (busy || ++g_wait < 20);
+                out.r1 = !target && (busy || (g_wait += frames) < 20.0f);
                 // L3 held with R1 for the whole try, not only its first frame: the game enters free aim on a frame both
                 // are held (FUN_00235D30), and refuses while Vic is in the air or landing - a jump took the try's one L3
                 // frame, and the aim only came with the next try, ~1 s after landing (the player's report, 2026-11-18).
@@ -1140,7 +1166,8 @@ namespace vcs::aim
             g_dummy = target;
             g_state = State::Active;
             g_active = true;
-            std::fprintf(stderr, "[aim] free aim on (dummy 0x%x, %d frame(s) after R1 + L3)\n", target, g_wait + 1);
+            std::fprintf(stderr, "[aim] free aim on (dummy 0x%x, %d frame(s) after R1 + L3)\n", target,
+                         static_cast<int>(std::ceil(g_wait)) + 1);
             break;
         }
         case State::Active:

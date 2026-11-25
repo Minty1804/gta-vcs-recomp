@@ -36,6 +36,12 @@
 //    `(rand & 0xF00) == 0` (0x3E577C), rolled every frame; a streak then lives 4 s on the ms clock. At 144 fps the slots
 //    refill within ~0.1 s of each other, so all 35 fall past the camera together, then none for ~3 s: the rain pulsed
 //    and vanished (on the PS2 the 1-in-16 roll per 1/30 s spreads them out within ~20 s). The roll fails between ticks.
+// 14. HUD counters and the cutscene's fade-out (willzmkv, gothamor#180): the radio station's name (FUN_0018BBE0: show
+//    0x486160 60 -> 0, fade 0x486161, settle 0x486162, a delay at obj+0x5F0), the breath / armour flash (FUN_0031E3F8:
+//    0x488640 50 -> 0) and the HUD's value-change flash (FUN_0031FFF0: 0x488654 100 -> 0) count down a frame - put back
+//    between ticks by the function each is always followed by (FUN_00104AF8 / FUN_0031FDF0 / FUN_00320710). The end of
+//    a cutscene (CutsceneMgr::Update FUN_00428470) takes (int)(step x 20) ms from its 1000 ms fade-out (mgr+0x98): the
+//    truncation lost 14% of it at 144 fps; the lost fractions are carried and taken off too.
 //
 // rand (FUN_00408058, Park-Miller: seed 0x48A5B8 x 16807 mod 2^31 - 1) is replaced by the same computation, which
 // does what is said above for the listed return addresses only.
@@ -609,6 +615,137 @@ namespace vcs
             g_origMoneyNext(rdram, ctx, runtime);
         }
 
+        // ---- 14. HUD counters and the cutscene's fade-out ------------------------------------------------------------
+        constexpr uint32_t kCutsceneUpdate = 0x00428470u;
+        constexpr uint32_t kCutState = 0x34u, kCutFadeMs = 0x98u, kCutFading = 0x9Cu; // state 2: ending
+        constexpr uint32_t kRadioName = 0x0018BBE0u, kRadioNameNext = 0x00104AF8u;
+        constexpr uint32_t kRadioShow = 0x00486160u, kRadioFade = 0x00486161u, kRadioSettle = 0x00486162u;
+        constexpr uint32_t kRadioDelay = 0x5F0u; // on the object FUN_0018BBE0 gets
+        constexpr uint32_t kHudObject = 0x0048F374u, kHudHelpShown = 0x2A78u; // the counters reset while a help box shows
+        constexpr uint32_t kBreathFlash = 0x0031E3F8u, kBreathFlashNext = 0x0031FDF0u, kBreathCount = 0x00488640u;
+        constexpr uint32_t kChangeFlash = 0x0031FFF0u, kChangeFlashNext = 0x00320710u, kChangeCount = 0x00488654u;
+
+        // game thread
+        float g_cutFadeCarry = 0.0f;
+        struct
+        {
+            bool held = false;
+            uint32_t obj = 0, delay = 0;
+            uint8_t show = 0, fade = 0, settle = 0;
+        } g_radio;
+        bool g_breathHeld = false, g_changeHeld = false;
+        int32_t g_breathWas = 0, g_changeWas = 0;
+        PS2Runtime::RecompiledFunction g_origCutscene = nullptr, g_origRadioName = nullptr, g_origRadioNameNext = nullptr,
+                                       g_origBreath = nullptr, g_origBreathNext = nullptr, g_origChange = nullptr,
+                                       g_origChangeNext = nullptr;
+
+        PS2_GUEST_CC void cutsceneUpdate(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            const uint32_t mgr = GPR_U32(ctx, 4);
+            if (mgr && clock(rdram).share < 1.0f && rd<uint32_t>(rdram, mgr + kCutState) == 2u &&
+                rd<uint32_t>(rdram, mgr + kCutFading) != 0u)
+            {
+                const float stepMs = rd<float>(rdram, kTimeStep) * 20.0f;
+                const int32_t whole = static_cast<int32_t>(stepMs); // what the game takes off
+                g_cutFadeCarry += std::max(0.0f, stepMs - static_cast<float>(whole));
+                const int32_t extra = static_cast<int32_t>(std::floor(g_cutFadeCarry));
+                if (extra > 0)
+                {
+                    g_cutFadeCarry -= static_cast<float>(extra);
+                    const int32_t left = rd<int32_t>(rdram, mgr + kCutFadeMs);
+                    if (whole > 0) // leave the game's own subtraction its end of the fade
+                    {
+                        if (left > whole)
+                            wr<int32_t>(rdram, mgr + kCutFadeMs, left - std::min(extra, left - whole));
+                    }
+                    else
+                        wr<int32_t>(rdram, mgr + kCutFadeMs, left >= extra ? left - extra : -1);
+                }
+            }
+            else
+                g_cutFadeCarry = 0.0f;
+            g_origCutscene(rdram, ctx, runtime);
+        }
+
+        PS2_GUEST_CC void radioName(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            const Clock &c = clock(rdram);
+            g_radio.held = c.share < 1.0f && !c.tick;
+            if (g_radio.held)
+            {
+                g_radio.obj = GPR_U32(ctx, 4);
+                g_radio.delay = rd<uint32_t>(rdram, g_radio.obj + kRadioDelay);
+                g_radio.show = rd<uint8_t>(rdram, kRadioShow);
+                g_radio.fade = rd<uint8_t>(rdram, kRadioFade);
+                g_radio.settle = rd<uint8_t>(rdram, kRadioSettle);
+            }
+            g_origRadioName(rdram, ctx, runtime);
+        }
+
+        PS2_GUEST_CC void radioNameNext(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            if (g_radio.held)
+            {
+                g_radio.held = false;
+                const uint32_t hud = rd<uint32_t>(rdram, kHudObject);
+                if (!hud || rd<uint32_t>(rdram, hud + kHudHelpShown) == 0u) // (else the game reset them: left so)
+                {
+                    // only a count the frame took one off is put back
+                    if (rd<uint8_t>(rdram, kRadioSettle) + 1u == g_radio.settle)
+                        wr<uint8_t>(rdram, kRadioSettle, g_radio.settle);
+                    if (rd<uint8_t>(rdram, kRadioFade) + 1u == g_radio.fade)
+                        wr<uint8_t>(rdram, kRadioFade, g_radio.fade);
+                    if (rd<uint8_t>(rdram, kRadioShow) + 1u == g_radio.show)
+                        wr<uint8_t>(rdram, kRadioShow, g_radio.show);
+                    if (rd<uint32_t>(rdram, g_radio.obj + kRadioDelay) + 1u == g_radio.delay)
+                        wr<uint32_t>(rdram, g_radio.obj + kRadioDelay, g_radio.delay);
+                }
+            }
+            g_origRadioNameNext(rdram, ctx, runtime);
+        }
+
+        PS2_GUEST_CC void breathFlash(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            const Clock &c = clock(rdram);
+            g_breathHeld = c.share < 1.0f && !c.tick;
+            if (g_breathHeld)
+                g_breathWas = rd<int32_t>(rdram, kBreathCount);
+            g_origBreath(rdram, ctx, runtime);
+        }
+
+        PS2_GUEST_CC void breathFlashNext(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            if (g_breathHeld)
+            {
+                g_breathHeld = false;
+                // one off, or the flash restarted at 50 from 0: both wait for the next tick
+                const int32_t now = rd<int32_t>(rdram, kBreathCount);
+                if (now + 1 == g_breathWas || (g_breathWas == 0 && now == 50))
+                    wr<int32_t>(rdram, kBreathCount, g_breathWas);
+            }
+            g_origBreathNext(rdram, ctx, runtime);
+        }
+
+        PS2_GUEST_CC void changeFlash(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            const Clock &c = clock(rdram);
+            g_changeHeld = c.share < 1.0f && !c.tick;
+            if (g_changeHeld)
+                g_changeWas = rd<int32_t>(rdram, kChangeCount);
+            g_origChange(rdram, ctx, runtime);
+        }
+
+        PS2_GUEST_CC void changeFlashNext(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            if (g_changeHeld)
+            {
+                g_changeHeld = false;
+                if (rd<int32_t>(rdram, kChangeCount) + 1 == g_changeWas)
+                    wr<int32_t>(rdram, kChangeCount, g_changeWas);
+            }
+            g_origChangeNext(rdram, ctx, runtime);
+        }
+
         void logEffects(uint8_t *rdram)
         {
             if (!logOn())
@@ -671,6 +808,13 @@ namespace vcs
             {kAddParticle, &g_origAddParticle, &addParticleBurst}, // chains onto vcs_particle_timing's (installed before)
             {kMoneySpray, &g_origMoney, &moneySpray},
             {kMoneySprayNext, &g_origMoneyNext, &moneySprayNext},
+            {kCutsceneUpdate, &g_origCutscene, &cutsceneUpdate},
+            {kRadioName, &g_origRadioName, &radioName},
+            {kRadioNameNext, &g_origRadioNameNext, &radioNameNext},
+            {kBreathFlash, &g_origBreath, &breathFlash},
+            {kBreathFlashNext, &g_origBreathNext, &breathFlashNext},
+            {kChangeFlash, &g_origChange, &changeFlash},
+            {kChangeFlashNext, &g_origChangeNext, &changeFlashNext},
         };
         if (!envEnabled()) // the setting is applied live: with it on the hooks are in and pass everything as before
         {
