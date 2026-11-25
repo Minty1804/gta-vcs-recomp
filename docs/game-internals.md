@@ -2266,6 +2266,46 @@ measurement and the tools behind it.
   an extra sector fades in (1 s, beyond 250 m), the low-detail sector it replaces is drawn under it - at that distance
   the two fight in the depth buffer, and moving there is always one fading. `VCS_HD_FADE=<s>` brings it back.
 
+### 6u. The world scan: which entities are drawn, by a triangle at 300 m depth (2026-11-24)
+
+The player's report: palms on the far shore from (-768, -920), across the water, shown only with the camera turned a
+little aside (heading 351, not 341) or tilted. Free camera at that spot (yaw sweep, then pitch sweep): the palm group is
+missing at the yaws and pitches the player saw, identically at Draw distance 100 % / 300 %, the detailed city's radius
+0 / 3 and on the emulated VU1 path (`PS2X_HLE=0`): the game's. Ruled out on the way: `CCamera::IsSphereVisible`
+(FUN_003816F8; a hook answering "visible" for everything changed nothing), the sector box cull (FUN_00240ED8 ->
+FUN_002F7528 -> VU0 0x0CF8, 6b) and the VU1 per-packet clip (`VCS_EXPERIMENT_NOCLIP`), and the cell chooser
+FUN_0023C820 (camera position only).
+
+- **CRenderer::ScanWorld = `FUN_0035E620`** (VC's, reached from `FUN_0035C310`, which copies the camera position to
+  `0x6F3C00` first). It builds the view's corners from the view window (`FUN_0018F4C0`) and far (`FUN_0018F3F8`, 2000):
+  the LOD corners are corner x 300 / far - **a depth of 300 m** in view space (0x35E8D0 / 0x35E910) - and the near ones
+  0.2 x that (60 m). The 9 points go through the camera LTM (`FUN_00175338`), then to sector units: world x 0.0125 + (30,
+  25) (80 m sectors). The pair of corners used (top or bottom) is picked by the camera's at.z <= 0. The scan code
+  (global `0x486468`, incremented at 0x35E758) marks entities scanned this frame, so overlapping polygons are safe.
+- **`FUN_0035DEA8(polygon a0, points a1, callback a2)`**: VC's convex n-gon walker over the sector grid - vertices
+  sharing a sector row skipped, columns clamped to 0..49, rows below 50; per sector `FUN_00472698(x, y)` (0x38 bytes a
+  sector) and the callback. ScanWorld calls it with the 3-point triangle (camera, two corners) and **ScanSectorList
+  `0x35FAE8`** from 0x35EBC8 (`$ra` 0x35EBD0), and with the 60 m triangle and `0x35FED0`.
+- What it decides: the entities - palms, props, the map's objects. VCS's buildings are the sectors' own packets (6b,
+  6t), so the lists stay short: ScanSectorList's appends (`0x742B80` count `0x4CD598`, `0x744AC0` / `0x4CD59C`,
+  `0x746C80` / `0x4CD5A0`, 2000 entries each by the spacing; `0x746A00` / `0x4CD5A4`, within 30 m, capped at 149 in the
+  code) peaked at 40 / 26 / 2 / 15 over 6 spots x 12 yaws, high and low, at 300 % (40 / 22 / 2 / 16 at 100 % with the
+  game's triangle).
+- **Why things popped**: the limit is a depth, not a distance. A palm 350 m away is outside the triangle in the
+  middle of the view and inside it near the edge (the corners are sqrt(300^2 + w^2) away), so turning toward it hid it;
+  the corners move with the pitch; and neither the LOD scale (`0x4887F8`, Draw distance) nor the detailed city reaches
+  this triangle.
+- **The fix** (`src/game/vcs_world_detail.cpp`, always on; `VCS_SCAN_FAN=0` = the game's triangle): that one call of
+  FUN_0035DEA8 gets a fan instead - the camera and a 9-point arc over the triangle's angle, at the distance of the view's
+  corner (sqrt(300^2 + w^2 + h^2), w the half width from |A - B| / 2, which the pitch leaves alone, h = w x 3/4) times
+  the Draw distance, the chord points pushed out by 1 / cos(step / 2). It holds the triangle, so nothing the game drew
+  goes; what shows is then up to each model's own distance. The polygon lives in the port's scratch (`kPortScratchBase`
+  0x07800000, vcs_memory.h). Checked: the palm group at every yaw 60..93 and pitch -12..12 (none missing; the game's
+  triangle lost it at most of them); game ms within 0.1 at 100 %, +0.1..0.5 at 300 % (bench.py).
+- **Not this**: the bridge sign at (-870, -926) that shows a second, partly blue board by the pitch (-8.9 vs -4.1)
+  stays with the fan; no sector record changes between those pitches either (`VCS_SECTOR_DIFF=1`, 10 alternating
+  steps). It looks like the sign's face and the blank board beside it fighting in the depth buffer - open.
+
 ## 7. Textures: `.XTX`
 
 Confirmed from `LOADSC*.XTX` (263,372 bytes each, 512x512 8-bit):

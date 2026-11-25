@@ -786,6 +786,61 @@ namespace
         }
     }
 
+    // VCS_SECTOR_DIFF=1 (investigation): the world sector records (FUN_00240ED8(level, record)) whose draw (FUN_002409C8
+    // reached) changed since the frame before, with the record's matrix (+0x10 axes, +0x40 position: the unit box, in the
+    // level's own frame, not the world's). Keyed by the record's id and gid: the records are copied between three
+    // buffers (0x400xxxx, 0x408xxxx, 0x410xxxx with the detailed city on), so their addresses change from frame to frame.
+    namespace sectordiff
+    {
+        PS2Runtime::RecompiledFunction g_origCull = nullptr, g_origDraw = nullptr, g_origWorld = nullptr;
+        uint32_t g_record = 0;
+        std::map<uint32_t, uint32_t> g_now, g_before; // id << 16 | gid -> record
+        uint32_t g_frame = 0;
+        float rf(uint8_t *rdram, uint32_t a) { float f; std::memcpy(&f, rdram + (a & PS2_RAM_MASK), 4); return f; }
+        void describe(uint8_t *rdram, const char *what, uint32_t r, uint32_t gid)
+        {
+            const uint32_t m = r + 0x10u;
+            std::fprintf(stderr, "[sectordiff] f%u %s rec 0x%x id %u gid %u pos %.0f,%.0f,%.0f ax (%.0f,%.0f,%.0f) (%.0f,%.0f,%.0f) (%.0f,%.0f,%.0f)\n",
+                         g_frame, what, r, rdram[(r) & PS2_RAM_MASK] | ((rdram[(r + 1) & PS2_RAM_MASK] & 0x7F) << 8), gid,
+                         rf(rdram, m + 0x30), rf(rdram, m + 0x34), rf(rdram, m + 0x38), rf(rdram, m), rf(rdram, m + 4), rf(rdram, m + 8),
+                         rf(rdram, m + 0x10), rf(rdram, m + 0x14), rf(rdram, m + 0x18), rf(rdram, m + 0x20), rf(rdram, m + 0x24), rf(rdram, m + 0x28));
+        }
+        PS2_GUEST_CC void cull(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            g_record = GPR_U32(ctx, 5);
+            g_origCull(rdram, ctx, runtime);
+        }
+        PS2_GUEST_CC void draw(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            if (g_record)
+            {
+                uint16_t gid;
+                std::memcpy(&gid, rdram + ((g_record + 2u) & PS2_RAM_MASK), 2);
+                const uint32_t id = rdram[g_record & PS2_RAM_MASK] | ((rdram[(g_record + 1u) & PS2_RAM_MASK] & 0x7Fu) << 8);
+                g_now[id << 16 | gid] = g_record;
+            }
+            g_origDraw(rdram, ctx, runtime);
+        }
+        PS2_GUEST_CC void world(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            if (GPR_U32(ctx, 5) == 0u && !g_now.empty())
+            {
+                if (++g_frame > 30u)
+                {
+                    for (const auto &[key, r] : g_now)
+                        if (!g_before.count(key))
+                            describe(rdram, "shown", r, key & 0xFFFFu);
+                    for (const auto &[key, r] : g_before)
+                        if (!g_now.count(key))
+                            describe(rdram, "gone ", r, key & 0xFFFFu);
+                }
+                g_before.swap(g_now);
+                g_now.clear();
+            }
+            g_origWorld(rdram, ctx, runtime);
+        }
+    }
+
     // VCS_TRACE_BOXCLIP=1: FUN_0030C8D4(prog, box*, out0*, out1*) = CTC2 CMSAR0; LQC2 vf1,vf2; VCALLMSR; CFC2 vi1,vi2.
     // The sector visibility test (FUN_002F7528) culls unless the low 6 bits come back 0x3F.
     PS2_GUEST_CC void traceBoxClip(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
@@ -1345,6 +1400,18 @@ namespace
         }
         if (std::getenv("VCS_TRACE_BOXCLIP"))
             runtime.replaceFunction(0x0030C8D4u, &traceBoxClip);
+        if (std::getenv("VCS_SECTOR_DIFF"))
+        {
+            sectordiff::g_origCull = runtime.lookupFunction(0x00240ED8u);
+            sectordiff::g_origDraw = runtime.lookupFunction(0x002409C8u);
+            sectordiff::g_origWorld = runtime.lookupFunction(0x0023E748u);
+            if (sectordiff::g_origCull && sectordiff::g_origDraw && sectordiff::g_origWorld)
+            {
+                runtime.replaceFunction(0x00240ED8u, &sectordiff::cull);
+                runtime.replaceFunction(0x002409C8u, &sectordiff::draw);
+                runtime.replaceFunction(0x0023E748u, &sectordiff::world);
+            }
+        }
         if (std::getenv("VCS_EXPERIMENT_NOCLIP")) // timing experiment only: every sector box "fully inside"
         {
             struct AllInside // (a named function: lambdas convert only to the platform's calling convention)

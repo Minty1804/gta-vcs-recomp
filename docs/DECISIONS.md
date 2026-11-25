@@ -2142,3 +2142,13 @@ buffer at that distance, and while moving some sector is always fading. Asked wh
 turn it off: the detail now comes and goes at once (the PS2's own way at its cell edges). `VCS_HD_FADE=1` brings the
 fade back for a run; no setting, since the user did not want one. Same day: the cells are no longer all dropped at the
 hour's change (game-internals.md 6t), which was the cause of the nearby buildings at low detail.
+
+## 2026-11-25 - The world scan's fan: always on, not an option
+
+The palms across the water that showed only with the camera turned aside (the player's report of 2026-11-24) came from
+the game's world scan: it takes the entities from the sectors inside a triangle at a depth of 300 m (game-internals.md
+6u). The port scans a fan over the same angle at the view's corner distance instead, always on: nobody wants things to
+come and go by where they sit in the view, the fan holds the game's triangle (nothing it drew goes), and the cost is
+in the noise at 100 % (+0.1..0.5 ms of game time at 300 %). The fan's radius follows Draw distance, so 100 % is the
+game's own reach. `VCS_SCAN_FAN=0` is the switch back for comparing. Considered and left: only scaling the triangle
+with Draw distance - the depth-not-distance popping and the pitch dependence would have stayed.

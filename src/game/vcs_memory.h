@@ -22,8 +22,12 @@ namespace vcs::memory
     // on at boot.
     constexpr uint32_t kPacketHeapBase = 0x07000000u;
     constexpr uint32_t kPacketHeapSize = 0x00800000u;
+    // Small buffers the port hands the game's code (game/vcs_world_detail.cpp: the world scan's fan polygon).
+    constexpr uint32_t kPortScratchBase = 0x07800000u;
+    constexpr uint32_t kPortScratchSize = 0x00001000u;
     static_assert(kStreamingBase + kStreamingMaxSize <= kHdWorldBase, "the streaming heap runs into the detailed city");
     static_assert(kHdWorldBase + kHdWorldSize <= kPacketHeapBase, "the detailed city runs into the packet heap");
+    static_assert(kPacketHeapBase + kPacketHeapSize <= kPortScratchBase, "the packet heap runs into the port's scratch");
 
     // World > Memory > Streaming memory (applies at the next start: the heap is built at boot).
     void registerSettings();

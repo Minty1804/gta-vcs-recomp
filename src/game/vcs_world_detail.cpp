@@ -32,6 +32,7 @@
 
 #include "game/vcs_display.h"
 #include "game/vcs_hle_world.h"
+#include "game/vcs_memory.h"
 #include "ps2_runtime.h"
 #include "ps2_runtime_macros.h"
 #include "runtime/ps2_control.h"
@@ -604,6 +605,67 @@ namespace vcs::world
             ctx->pc = GPR_U32(ctx, 31);
         }
 
+        // [Minty1804 fork] The world scan's fan (the player's report of 2026-11-24: palms across the water shown only with
+        // the camera turned a little aside, or tilted). CRenderer::ScanWorld (FUN_0035E620, VC's) takes the entities to
+        // draw - palms, props, the map's objects; the buildings are the sectors' own packets - from the 80 m sectors inside
+        // a triangle: the camera and two corners of the view at a depth of 300 m (0x35E8D0 / 0x35E910, the corners'
+        // view-space z), scanned by FUN_0035DEA8(polygon a0, points a1, callback a2 = ScanSectorList 0x35FAE8) from
+        // 0x35EBC8. Depth, not distance: a thing 350 m away is outside the triangle in the middle of the view and inside
+        // it near the edge, so turning toward it hid it; the triangle's corners move with the pitch; and neither the draw
+        // distance nor the detailed city reaches it. Here that call scans a fan instead - the camera and an arc over the
+        // same angle at the distance of the view's corners times the draw distance - which holds the triangle (nothing it
+        // drew goes): what is drawn then depends on the distance (each model's own, scaled by the draw distance), not on
+        // where it sits in the view. FUN_0035DEA8 walks any convex polygon (VC's n-gon walker: vertices sharing a sector
+        // row skipped, columns clamped to 0..49), and the lists ScanSectorList fills stayed far below their 2000 entries
+        // at 300 % (40 at most; game-internals.md 6u). VCS_SCAN_FAN=0: the game's triangle.
+        constexpr uint32_t kScanPolygon = 0x0035DEA8u, kScanSectorList = 0x0035FAE8u, kScanLodReturn = 0x0035EBD0u;
+        constexpr int kFanSteps = 8; // arc segments: 10 points
+        PS2Runtime::RecompiledFunction g_origScanPolygon = nullptr;
+        bool g_scanFan = false;
+        std::atomic<uint64_t> g_fanScans{0};
+        PS2_GUEST_CC void scanPolygon(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+        {
+            if (g_scanFan && GPR_U32(ctx, 31) == kScanLodReturn && GPR_U32(ctx, 6) == kScanSectorList && GPR_U32(ctx, 5) == 3u)
+            {
+                // the polygon in sector units (80 m; x / 80 + 30, y / 80 + 25): the camera, then the two corners
+                const uint32_t poly = GPR_U32(ctx, 4);
+                const float cx = rdf(rdram, poly), cy = rdf(rdram, poly + 4u);
+                const float ax = rdf(rdram, poly + 8u) - cx, ay = rdf(rdram, poly + 12u) - cy;
+                const float bx = rdf(rdram, poly + 16u) - cx, by = rdf(rdram, poly + 20u) - cy;
+                const float ra = std::hypot(ax, ay), rb = std::hypot(bx, by);
+                const float span = std::atan2(ax * by - ay * bx, ax * bx + ay * by); // A to B, signed (the winding kept)
+                const float scale = g_enabled ? std::max(1.0f, std::clamp(g_draw.load(std::memory_order_relaxed), 100, kMaxPercent) / 100.0f) : 1.0f;
+                if (ra > 0.01f && rb > 0.01f && std::isfinite(span) && std::fabs(span) > 0.01f && std::fabs(span) < 3.0f)
+                {
+                    const float step = span / kFanSteps;
+                    // The radius: the view's corner at 300 m depth, sqrt(300^2 + w^2 + h^2) / 80, with w the half width
+                    // (|A - B| / 2: the corners differ along the camera's right, level unless the camera rolls, so the
+                    // pitch leaves it alone) and h the half height (w / aspect, 4:3 the narrowest). The corners as
+                    // the game placed them move with the pitch and lie within that distance; max() keeps the triangle
+                    // inside if a roll ever gets past it. The chords' points out at r / cos(step / 2), so the polygon
+                    // holds the whole arc.
+                    const float w = 0.5f * std::hypot(bx - ax, by - ay);
+                    constexpr float kDepth = 300.0f / 80.0f;
+                    const float corner = std::sqrt(kDepth * kDepth + w * w * (1.0f + 0.75f * 0.75f));
+                    const float r = std::max(corner, std::max(ra, rb)) * scale / std::cos(step * 0.5f);
+                    const float a0 = std::atan2(ay, ax);
+                    const uint32_t out = vcs::memory::kPortScratchBase;
+                    wrf(rdram, out, cx);
+                    wrf(rdram, out + 4u, cy);
+                    for (int i = 0; i <= kFanSteps; ++i)
+                    {
+                        const float a = a0 + step * static_cast<float>(i);
+                        wrf(rdram, out + 8u + i * 8u, cx + r * std::cos(a));
+                        wrf(rdram, out + 12u + i * 8u, cy + r * std::sin(a));
+                    }
+                    SET_GPR_U32(ctx, 4, out);
+                    SET_GPR_U32(ctx, 5, static_cast<uint32_t>(kFanSteps + 2));
+                    g_fanScans.fetch_add(1, std::memory_order_relaxed);
+                }
+            }
+            g_origScanPolygon(rdram, ctx, runtime);
+        }
+
         PS2Runtime::RecompiledFunction g_origStoreShadow = nullptr, g_origStoreStatic = nullptr, g_origStorePoly = nullptr;
 
         bool skipPedShadow(const uint8_t *rdram, R5900Context *ctx, int texReg)
@@ -777,6 +839,17 @@ namespace vcs::world
             }
         }
 
+        // the world scan's fan (always on: a fix of the game's, not an option)
+        if (const char *fan = std::getenv("VCS_SCAN_FAN"); fan && fan[0] == '0')
+            std::fprintf(stderr, "[world] the world scan keeps the game's 300 m triangle (VCS_SCAN_FAN=0)\n");
+        else if ((g_origScanPolygon = runtime.lookupFunction(kScanPolygon)))
+        {
+            runtime.replaceFunction(kScanPolygon, &scanPolygon);
+            g_scanFan = true;
+        }
+        else
+            std::fprintf(stderr, "[world] the world scan's polygon walker not found: the game's triangle stays\n");
+
         // the ped shadow hooks pass everything through unless the option is off
         g_origStoreShadow = runtime.lookupFunction(0x0038A000u);
         g_origStoreStatic = runtime.lookupFunction(0x003898E8u);
@@ -829,7 +902,7 @@ namespace vcs::world
             std::snprintf(text + n, sizeof(text) - n,
                           " peddist=%d peds=%d pedmean=%.1f pedfar=%.1f cardist=%d cars=%d carmean=%.1f carfar=%.1f foliage=%llu "
                           "shadows=%d shadowsskipped=%llu carspawns=%llu carspawnmean=%.1f clear20a=%llu towards=%llu "
-                          "spawncalls=%llu spots=%llu built=%llu survived=%llu",
+                          "spawncalls=%llu spots=%llu built=%llu survived=%llu fan=%d fanscans=%llu",
                           g_pedDistance.load(), g_stPedCount.load(), g_stPedMean.load(), g_stPedFar.load(), g_carDistance.load(),
                           g_stCarCount.load(), g_stCarMean.load(), g_stCarFar.load(),
                           (unsigned long long)vcs::hleworld::solidFarFoliageRaised(), g_pedShadows.load(),
@@ -837,7 +910,8 @@ namespace vcs::world
                           g_stSpawnCount.load() ? double(g_stSpawnSum.load()) / double(g_stSpawnCount.load()) : 0.0,
                           (unsigned long long)g_stClear20A.load(), (unsigned long long)g_stTowards.load(),
                           (unsigned long long)g_stSpawnCalls.load(), (unsigned long long)g_stSpots.load(),
-                          (unsigned long long)g_stBuilt.load(), (unsigned long long)g_stSurvived.load());
+                          (unsigned long long)g_stBuilt.load(), (unsigned long long)g_stSurvived.load(), g_scanFan ? 1 : 0,
+                          (unsigned long long)g_fanScans.load());
             reply(text);
         });
     }

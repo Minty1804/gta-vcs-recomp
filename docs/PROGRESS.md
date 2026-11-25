@@ -1048,7 +1048,16 @@ dropped on uploads (lazy render-target patching).
     turns a little aside, and a bridge sign at (-870, -926) drawn twice / not at all by the camera's pitch. Both are the
     game's own: the free camera at the player's views shows the same at Draw distance 100 %, radius 0 and on the
     emulated VU1 path (`PS2X_HLE=0`) - the palm group across the water from yaw 87 there (84 at 300 %, both radii), the
-    second sign at pitch -4 in every run. Its cause (which test drops the entities by view) not found yet.
+    second sign at pitch -4 in every run.
+    - **Palms: fixed** (2026-11-25). CRenderer::ScanWorld takes the entities to draw from the sectors inside a
+      triangle at a **depth** of 300 m (game-internals.md 6u), so a thing 350 m away shows near the view's edge and
+      not in its middle, and the triangle moves with the pitch. That scan gets a fan now (the same angle, the view's
+      corner distance times Draw distance): the palm group at every yaw 60..93 and pitch -12..12. Lists 40 / 2000 at
+      most at 300 %; game ms +0.1..0.5 at 300 %, within noise at 100 % (bench.py: city spots 2.5-3.9 ms either way).
+      `VCS_SCAN_FAN=0` = the game's triangle.
+    - **Sign: open.** Not the scan (unchanged with the fan) and not the sector records (`VCS_SECTOR_DIFF=1`: none
+      changes between the two pitches over 10 steps). Looks like the sign's face and the blank board next to it
+      fighting in the depth buffer; next: F12's draw log at both pitches.
 
 ## Milestone 9 - Linux (started 2026-10-30)
 
@@ -1283,6 +1292,8 @@ Python scripts still usable on their own. docs/LAUNCHER.md has the whole of it; 
 | `PS2X_IOP_REALTIME=0` | IOP time purely from EE cycles (audio slows with the game) |
 | `VCS_TEST_SAVE=s[:slot]` | save to slot 1 (or 1..8) through the game's code s seconds after boot (mid-script: prefer `tools/saves.py`) |
 | `VCS_TRACE_SECTORS=1`, `VCS_TRACE_CELL=1` | world sector draw / current hex cell vs camera |
+| `VCS_SCAN_FAN=0` | the world scan's 300 m-depth triangle as the game has it: entities (palms, props) beyond ~300 m shown by where they sit in the view and by the pitch, not by distance (game-internals.md 6u) |
+| `VCS_SECTOR_DIFF=1` | analysis: logs the world sector records whose draw changed since the frame before (`[sectordiff] shown / gone`, keyed by id and gid; game-internals.md 6u) |
 | `VCS_SECTOR_PROBE=<file>` | analysis: the file's command, re-read every 200 ms - `list` logs the sector entries drawn (model index, position), a number skips that model index (game-internals.md 6o: which piece of the world a model is) |
 | `VCS_DUMP_RAM=s,s,...` | write EE RAM to ram_<s>.bin at those seconds |
 | `PS2X_DMA_HIST=1` | VIF1 payload per MB of RAM every 5 s |
