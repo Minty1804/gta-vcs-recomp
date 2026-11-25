@@ -1031,16 +1031,19 @@ dropped on uploads (lazy render-target patching).
   packet heap - fixed with a check of every free against the heap's block chain; the bar passed at radius 3 (3 h soak
   all ok, memchecks, cruise 5 hitches against 2, overlap scan, mission buildings; game-internals.md 6t). World > Memory
   > **Streaming memory** (PS2 by default; 9d). Graphics > Image quality > **Sharp trails** (off by default; 6g).
-  - **Open (the player, 2026-11-24, radius 3):** buildings beside you at low detail for some seconds, flicker on the
-    water between the islands, much flicker on far buildings while moving. Measured: not from that day's changes
-    (cruise.py's city route with `VCS_HD_OSC=1`: 233 sectors flipping, 257 with `VCS_HD_SHOW_HIDDEN_EXTRA=1
-    VCS_HD_DRAW_SYNC=0 VCS_HD_SWEEP_BOUNDS=0`); most flips come in the first seconds after the car is put on the route
-    (frames 1625 - 1783), a few dozen over the 150 s drive: 84 far detailed sectors (~600 m, extra cells at the reach's
-    edge) going and coming, 137 of the game's low-detail sectors hidden and shown with them. `VCS_HD_LATE` sees nothing
-    at the route's speed (its camera-jump guard). From the free camera at 50 m over Leaf Links, panning 3 m a shot,
-    radius 3 and 0 blink alike (10396 / 11529 and 7404 / 8888 pixels over 6 frames). Next: the player's spots (F3's
-    position) and a minute with `VCS_HD_FADE=0` - the 1 s fade draws a far detailed sector over the low-detail one it
-    replaces, the suspect for the far flicker.
+  - **The player's reports of 2026-11-24 (radius 3):** buildings beside you at low detail for some seconds, at random;
+    flicker on far buildings while moving and on the water between the islands.
+    - Near buildings at low detail: found and fixed. cruise.py's city route at 11 m/s with `VCS_HD_LATE=1`: 77 detailed
+      sectors drawn first within 65 - 290 m, in bursts of up to 23, each right after every cell was dropped at once -
+      about every game hour by the clock (lit windows: every cell's conditional mask changes; 50 - 60 cells dropped,
+      ~2 s on the game's own list), and at each island swap (the level's data read again). The hour's change now marks
+      the cells and reads them again one a frame, each replaced in one update: the bursts at the hours are gone (66 late
+      in the same run, all at the island swaps; `VCS_HD_CLOCK_DROP=1` = before). The island swaps stay: the game reads
+      its own data again there too.
+    - Far flicker: the 1 s fade drew a far detailed sector over the low-detail one it replaces - off by default now
+      (the user's choice; `VCS_HD_FADE=1` = before). Not measured in the picture: the player checks it.
+    - Not from that day's other changes (233 / 257 sectors flipping at 40 m/s, with / without them); from the free
+      camera at 50 m over Leaf Links radius 3 and 0 blink alike (waves, palms).
 
 ## Milestone 9 - Linux (started 2026-10-30)
 
@@ -1345,6 +1348,7 @@ Python scripts still usable on their own. docs/LAUNCHER.md has the whole of it; 
 | `VCS_HD_DRAW_SYNC=0` | Detailed city: no switch check before the draw (cells a script's switch made stale this frame drawn until the next update), as before 2026-11-24 (game-internals.md 6t) |
 | `VCS_HD_SWEEP_BOUNDS=0` | Detailed city: the geometry table walked to kMaxGid instead of its own length (g_info + 0x12C), as before 2026-11-24 (the DIA_C3 heap corruption at 60 fps; gothamor#207) |
 | `VCS_REMOTE_DRIVE=0` | an RC vehicle driven with the on-foot keys, as before 2026-11-24 (W walks instead of driving it; gothamor#207) |
+| `VCS_HD_CLOCK_DROP=1` | Detailed city: every cell dropped at once when the clock changes its pieces (about every game hour; nearby buildings at low detail for ~2 s), as before 2026-11-24 (game-internals.md 6t) |
 | `VCS_STREAK_LOS=0`, `VCS_STREAK_LOG=1` | the headlights' streaks tested for sight every 2 s and with peds left out, as the game has it (they cross walls and Vic); log the streak coronas in sight every 5 s (game-internals.md 6g, "Headlight streaks over the player") |
 | `VCS_FIGHT_BUTTONS=0` | while fighting, an on-foot key with a fighting button (Sprint's Cross, Jump's Square, Enter vehicle's Triangle) still presses it - Shift heavy-attacks once the heavy attack has another key (CONTROLS.md, Fighting) |
 | `VCS_CAR_SPAWN_GATES=game` | The car spawner's clear20A / not_toward checks as the game has them at a raised Car distance or Traffic density (default: relaxed; game-internals.md 12d) |
@@ -1361,7 +1365,7 @@ Python scripts still usable on their own. docs/LAUNCHER.md has the whole of it; 
 | `VCS_STREAMING_MB=0\|12\|20\|30` | World > Memory > Streaming memory for this run (0: the PS2's 5.4 MB in the main heap; above: the streaming heap at 0x2000000 with that size, CStreaming's cap of 51 lifted; game-internals.md 9d) |
 | `VCS_HD_RADIUS=0..3` | World > Draw distance > Detailed city distance for this run (0 Original, 1 ~450 m, 2 ~580 m, 3 ~720 m; read at boot for the packet heap, live otherwise; game-internals.md 6t) |
 | `VCS_HD_PROBE=x,y,r`, `VCS_HD_TWINS=1`, `VCS_HD_DUPES=1`, `VCS_HD_OSC=1`, `VCS_HD_LATE=1` | Detailed city analysis: what each list build does with every record near a point; low-detail twins kept; detailed sectors drawn twice; sectors flipping state; detail first drawn close (willzmkv's, game-internals.md 6t) |
-| `VCS_HD_DRAWCHECK=1`, `VCS_HD_PKTDEBUG=1`, `VCS_HD_DRAWMODE=n`, `VCS_HD_NODRAW=1`, `VCS_HD_FADE=<s>` | Detailed city packet checks (each drawn sector's packets walked; CALL targets checked against the free ring), draw-mode bisection, the extra sectors not drawn, the fade's length (1 s; 0: none) |
+| `VCS_HD_DRAWCHECK=1`, `VCS_HD_PKTDEBUG=1`, `VCS_HD_DRAWMODE=n`, `VCS_HD_NODRAW=1`, `VCS_HD_FADE=<s>` | Detailed city packet checks (each drawn sector's packets walked; CALL targets checked against the free ring), draw-mode bisection, the extra sectors not drawn, the fade's length (0 by default since 2026-11-24: none; 1 as before) |
 | `memstate`, `hdworld`, `hdpairs`, `hdcompare`, `skipextra`, `keeplod` (gamectl / rig commands) | The heaps above 32 MB: streaming / main / sector packet heap (base, size, in use), the cap's skipped calls; the detailed city's state, its pairs, a comparison with the game's list, sector ids left out / low-detail kept (game-internals.md 6t) |
 | `VCS_QUICK_FIRST_SHOT=0` | The instant first shot off for this run (always on otherwise since 2026-11-17, no menu option: the Mac 10's and Micro SMG's attack started at the loop start; game-internals.md 12c) |
 | `VCS_AIM_LOG=1` | a line per frame while aiming or firing (`[aim-log]`: fire, clip, state, target) and the player's SetFinishCallback calls - for timing the first shot |

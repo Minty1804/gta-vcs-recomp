@@ -2252,6 +2252,19 @@ measurement and the tools behind it.
   pairs a piece or the game names, and the table check at a level's start; `g_maxGid` restarts with the level.
   `VCS_HD_SWEEP_BOUNDS=0` = before. (Their other guard, `inPacketHeap()` before a packet is freed, was ours already:
   the radius-3 hang's fix, above.)
+- **Every cell at once, every game hour** (2026-11-24, the player: buildings beside them at low detail for some
+  seconds, anywhere): `syncCondCells(checkHour)` compares each extra cell's conditional mask once a second, and the hour's
+  pieces (lit windows) change every cell's mask together - 50 - 60 cells dropped in one update about every game hour (a
+  real minute), then read one a frame: ~2 s on the game's own list, its detail ending at its cell's edge. The other
+  burst is the island swap (`FUN_0023BAF0` from 0x3C6E68: the level's data read again, every cell dropped, 90 frames'
+  hold) - the game's own. Measured with `VCS_HD_LATE=1` on cruise.py's route at 11 m/s: 77 sectors first drawn within
+  65 - 290 m, all in those bursts. A clock change now marks the cells `stale`; update() reads the nearest stale or
+  missing one a frame, the stale one dropped in the same update just before its new copy goes in, so no build sees the
+  hole (66 late in the same run, all at the swaps). A switch (level + 0x418..) still drops at once. `VCS_HD_CLOCK_DROP=1`
+  = before; the log says which: `cells to read again` / `cells dropped` / `the level's data read again`.
+- **The fade off by default** (2026-11-24, the user's choice after "much flicker on far buildings while moving"): while
+  an extra sector fades in (1 s, beyond 250 m), the low-detail sector it replaces is drawn under it - at that distance
+  the two fight in the depth buffer, and moving there is always one fading. `VCS_HD_FADE=<s>` brings it back.
 
 ## 7. Textures: `.XTX`
 

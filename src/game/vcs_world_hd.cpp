@@ -278,6 +278,7 @@ namespace vcs::world_hd
             uint32_t owner = 0, areaOwner = 0;         // the table entries' owner tags of ours
             std::vector<std::array<float, 3>> hd;      // the centres of its list's detailed sectors (id < kLodIds) and their gid
             double leaving = 0.0;                      // out of reach since (seconds): fading out, then dropped
+            bool stale = false;                        // its pieces by the hour changed: drawn on until read again
         };
 
         struct Installed
@@ -322,10 +323,12 @@ namespace vcs::world_hd
         // cell's detailed sectors come in through the game's translucent list - FUN_0023E548, the way its own cross-fade
         // draws the incoming list - their alpha rising over kFadeSeconds; the low-detail sectors they replace stay until
         // then. A cell out of reach fades out the same way before it is dropped, the low detail back behind it at once.
-        // VCS_HD_FADE=<seconds> for a test (0: none).
+        // Off by default since 2026-11-24 (the user's choice): while a sector fades in, the low-detail one it replaces is
+        // drawn under it, and at that distance the two fight in the depth buffer - the far buildings flickered while
+        // moving (the player's report). VCS_HD_FADE=<seconds> brings it back (1: as before).
         const double kFadeSeconds = [] {
             const char *e = std::getenv("VCS_HD_FADE");
-            return e && *e ? std::max(0.0, std::strtod(e, nullptr)) : 1.0;
+            return e && *e ? std::max(0.0, std::strtod(e, nullptr)) : 0.0;
         }();
         // (Only the opaque buckets fade. The translucent ones - 6 and 7, leaves and bushes - drawn with a lower alpha made
         // the game's own foliage near the camera flicker, a frame at a time, while anything faded: with a fixed camera,
@@ -2024,16 +2027,43 @@ namespace vcs::world_hd
             std::array<uint32_t, 40> now{};
             std::memcpy(now.data(), g_ram + ((g_level + 0x418u) & PS2_RAM_MASK), sizeof(now));
             const bool changed = now != g_lastSwitches;
+            const std::array<uint32_t, 40> before = g_lastSwitches; // (the log's)
             if (changed)
                 g_lastSwitches = now;
             if ((!changed && !checkHour) || g_cells.empty())
                 return;
+            // Only the clock changed (lit windows, the hour's pieces): every cell's mask changes at once, about every game
+            // hour - dropping them all left the city to the game's own list for ~2 s (detailed buildings beside the player
+            // at low detail, the player's report 2026-11-24). They are marked and read again one a frame by update(), each
+            // dropped only as its new copy goes in. A switch a script flips still drops them at once (mission buildings).
+            // VCS_HD_CLOCK_DROP=1: as before (dropped at once).
+            static const bool clockDrop = [] {
+                const char *e = std::getenv("VCS_HD_CLOCK_DROP");
+                return e && e[0] == '1';
+            }();
+            if (!changed && !clockDrop)
+            {
+                uint32_t marked = 0;
+                for (auto &[k, cp] : g_cells)
+                    if (!cp->stale && condMask(cp->list.at, cp->list.bytes) != cp->condMask)
+                    {
+                        cp->stale = true;
+                        ++marked;
+                    }
+                static uint32_t logged = 0;
+                if (marked && ++logged <= 200u)
+                    std::fprintf(stderr, "[hdworld] %u cells to read again, their pieces by the hour changed (%zu cells)\n", marked,
+                                 g_cells.size());
+                return;
+            }
             bool dropped = false;
+            uint32_t droppedCount = 0;
             for (auto it = g_cells.begin(); it != g_cells.end();)
             {
                 Cell &c = *it->second;
                 if (condMask(c.list.at, c.list.bytes) != c.condMask)
                 {
+                    ++droppedCount;
                     forget(c);
                     it = g_cells.erase(it);
                     ++g_stats.unloads;
@@ -2045,7 +2075,19 @@ namespace vcs::world_hd
                     ++it;
             }
             if (dropped)
+            {
                 sweepPackets();
+                static uint32_t logged = 0;
+                if (++logged <= 200u)
+                {
+                    std::fprintf(stderr, "[hdworld] %u cells dropped, their conditional pieces changed (%s; %zu left)", droppedCount,
+                                 changed ? "a switch" : "the clock", g_cells.size());
+                    for (size_t i = 0; changed && i < now.size(); ++i)
+                        if (now[i] != before[i])
+                            std::fprintf(stderr, " [0x%zx] %u -> %u", 0x418u + i * 4u, before[i], now[i]);
+                    std::fprintf(stderr, "\n");
+                }
+            }
         }
 
         void drawDiffFrame();
@@ -2145,9 +2187,28 @@ namespace vcs::world_hd
                     if (d <= reach && d < best)
                         best = d, bx = x, by = y;
                 }
+            // a stale cell (its hour's pieces changed) nearer than any missing one: read again in its place - dropped and
+            // loaded in the same update, so no build sees the hole
+            bool restale = false;
+            for (const auto &[k, cp] : g_cells)
+                if (cp->stale && cp->leaving == 0.0)
+                {
+                    const float d = std::hypot(cp->cx - camX, cp->cy - camY);
+                    if (d < best)
+                        best = d, bx = cp->x, by = cp->y, restale = true;
+                }
             // (a full arena waits for frees: the largest pieces are ~0.9 MB)
             if (best < 1e9f && g_arena.largest() >= 0x180000u)
             {
+                if (restale)
+                {
+                    const auto it = g_cells.find(key(bx, by));
+                    forget(*it->second);
+                    g_cells.erase(it);
+                    ++g_stats.unloads;
+                    ++g_version;
+                    g_reenter = true;
+                }
                 const uint32_t entry = cellEntry(bx, by);
                 if (!entry || rd32(entry) != kDlrw || rd32(entry + 8u) == 0)
                     g_empty[key(bx, by)] = true;
@@ -2723,6 +2784,10 @@ namespace vcs::world_hd
                 }
                 else if (!g_cells.empty())
                     dropAll(false);
+                static uint32_t logged = 0;
+                if (++logged <= 200u)
+                    std::fprintf(stderr, "[hdworld] the level's data read again (FUN_0023BAF0, $ra 0x%08x): every cell dropped\n",
+                                 getRegU32(ctx, 31));
                 g_levelLoaded = ~0u; // read again at the next frame
                 g_hold = 90;
             }

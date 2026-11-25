@@ -2133,3 +2133,12 @@ turn off, leaving them always on.
   early, the rest of it runs with the game's own values: the car's camera row for that frame, never a BMX left a bike.
 - **Would change it**: a frame-rate audit past 240 fps (then the floor and Unlimited can move together); players asking
   for the round stick by default.
+
+## 2026-11-24 - The detailed city's fade off by default (the user's choice)
+
+The player reported much flicker on far buildings while moving at Detailed city distance 3. The 1 s fade that brings a
+far extra sector in draws it over the low-detail sector it replaces until it is opaque; the two fight in the depth
+buffer at that distance, and while moving some sector is always fading. Asked what VCS_HD_FADE did, the user chose to
+turn it off: the detail now comes and goes at once (the PS2's own way at its cell edges). `VCS_HD_FADE=1` brings the
+fade back for a run; no setting, since the user did not want one. Same day: the cells are no longer all dropped at the
+hour's change (game-internals.md 6t), which was the cause of the nearby buildings at low detail.
