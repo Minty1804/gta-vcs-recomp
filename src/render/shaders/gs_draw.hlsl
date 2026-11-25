@@ -16,8 +16,9 @@
 #define SHADER_DEPTH 1
 #endif
 // NATIVE_FACING: 1 (with SHADER_DEPTH 0; the native draws' pixel shader, gs_hw.cpp drawPipeline) the depth goes out as
-// SV_DepthLessEqual - the rasterised one, or that minus VSOut.facingBias for the side of a triangle that faces away
-// (below); early depth rejection stays on, the output never being nearer than the rasterised depth
+// SV_DepthLessEqual - the rasterised one cut to a whole Z unit (VSOut.zRule.y), minus VSOut.zRule.x for the side of a
+// triangle that faces away (ps_main; game-internals.md 6v / 6w); early depth rejection stays on, the output never being
+// nearer than the rasterised depth. Taken only while either rule is on (gs_hw.cpp hwFacingBias / hwPixelZ)
 #ifndef NATIVE_FACING
 #define NATIVE_FACING 0
 #endif
@@ -68,7 +69,9 @@ struct VSOut
     nointerpolation float4 colFlat : COLOR1; // the recorder gives flat primitives one colour on every vertex
     noperspective float fog : TEXCOORD1;
     noperspective float depth : TEXCOORD2;
-    nointerpolation float facingBias : TEXCOORD3; // native draws: nat[31].w Z units as depth (ps_main), GS draws 0
+    // native draws (ps_main): x the facing bias (nat[31].w Z units as depth), y one Z unit as depth when the depth is
+    // the GS's integer per pixel (nat[30].w on), else 0; GS draws 0, 0
+    nointerpolation float2 zRule : TEXCOORD3;
     float2 clip : SV_ClipDistance0; // native draws: the PS2 clip test's near / far planes
 #if VCS_POINT_SIZE
     // Vulkan and Metal points need one (D3D11's are always 1 pixel). Metal: the vertex stage's output only - a pixel
@@ -83,7 +86,7 @@ VSOut vs_main(VSIn i)
     const float2 p = (i.pos.xy + rtOrigin.z) / targetRtFix.xy;
     o.pos = float4(p.x * 2.0 - 1.0, 1.0 - p.y * 2.0, i.pos.z, 1.0);
     o.depth = i.pos.z;
-    o.facingBias = 0.0;
+    o.zRule = float2(0.0, 0.0);
     o.stq = i.stq;
     o.col = i.col;
     o.colFlat = i.col;
@@ -116,12 +119,14 @@ void nativePosition(float4 S, float4 C, float3 st, inout VSOut o)
     const float3 s = S.xyz * q;
     // XYZF2 from FTOI4: X / Y in 12.4 fixed point, Z the integer part
     const float2 xy = trunc(s.xy * 16.0) / 16.0 - nat[31].xy;
-    const float z = floor(trunc(s.z * 16.0) / 16.0);
+    // the whole-unit depth per pixel (nat[30].w, ps_main) wants the vertices' depth unrounded: rounded, a decal's plane and
+    // its wall's differed by up to a unit, and cut per pixel they fell on different units in stripes
+    const float z = nat[30].w > 1.5 ? s.z : floor(trunc(s.z * 16.0) / 16.0);
     const float depth = min(z * nat[31].z, 1.0);
     const float2 p = (xy + rtOrigin.z) / targetRtFix.xy;
     o.pos = float4((p.x * 2.0 - 1.0) * S.w, (1.0 - p.y * 2.0) * S.w, depth * S.w, S.w);
     o.depth = depth;
-    o.facingBias = nat[31].w * nat[31].z;
+    o.zRule = float2(nat[31].w * nat[31].z, nat[30].w > 0.0 ? nat[31].z : 0.0);
     o.clip = float2(C.z + C.w, C.w - C.z); // the PS2 clip test's near / far planes
     o.stq = st * q;
 #if VCS_POINT_SIZE
@@ -434,10 +439,19 @@ PSOut ps_main(VSOut i)
     // The side facing away from the camera (D3D's front: the native vertices' winding comes out mirrored by the Y flip;
     // Vulkan and Metal see it as D3D does) is pushed facingBias farther, so between two surfaces that close the facing
     // one shows; anything farther apart is untouched. GS draws carry 0 (their depth as before).
+    // [Minty1804 fork] The GS's depth per pixel (game-internals.md 6w): the GS keeps Z as a whole number per pixel, so a
+    // decal on a wall (a window, a sign, a road marking) a fraction of a unit from the wall ties with it and the later draw
+    // wins (ZTST GEQUAL); kept as a float the wall won wherever the two interpolations differed by a hair, in triangles
+    // that moved with the camera. Cut down to the unit: never nearer than the rasterised depth (SV_DepthLessEqual).
+#if SHADER_DEPTH || NATIVE_FACING
 #if SHADER_DEPTH
-    o.depth = front ? max(i.depth - i.facingBias, 0.0) : i.depth;
-#elif NATIVE_FACING
-    o.depth = front ? max(i.pos.z - i.facingBias, 0.0) : i.pos.z;
+    float z = i.depth;
+#else
+    float z = i.pos.z;
+#endif
+    if (i.zRule.y > 0.0)
+        z = floor(z / i.zRule.y) * i.zRule.y; // a power of two: exact
+    o.depth = front ? max(z - i.zRule.x, 0.0) : z;
 #endif
     // [gta-recomp] gsHwSetGradientDither (untextured Gouraud draws only): floor(x + d) with d from a 4x4 Bayer matrix by
     // target pixel, 1/32 .. 31/32 (mean 1/2, as the rounding): a colour between two levels shows as a pattern of both in

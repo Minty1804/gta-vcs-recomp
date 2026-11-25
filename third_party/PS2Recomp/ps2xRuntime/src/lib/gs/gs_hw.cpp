@@ -734,6 +734,28 @@ namespace
         std::vector<uint8_t> bytes;
     };
 
+    // [gta-recomp] the native draws' depth rules (gs_draw.hlsl ps_main, game-internals.md 6v / 6w). The facing rule:
+    // the side of a triangle facing away this many Z units farther (PS2X_HW_FACING_BIAS, 4; 0 = off)
+    static float hwFacingBias()
+    {
+        static const float v = [] {
+            const char *e = std::getenv("PS2X_HW_FACING_BIAS");
+            const float b = e && *e ? static_cast<float>(std::atof(e)) : 4.0f;
+            return b > 0.0f && b <= 64.0f ? b : 0.0f;
+        }();
+        return v;
+    }
+    // The depth per pixel cut to a whole Z unit (PS2X_HW_PIXEL_Z): 2 with the vertices' depth unrounded (the default),
+    // 1 with it rounded as the VU1's FTOI4 does, 0 = the interpolated depth as it is
+    static float hwPixelZ()
+    {
+        static const float v = [] {
+            const char *e = std::getenv("PS2X_HW_PIXEL_Z");
+            return e && *e >= '0' && *e <= '2' && !e[1] ? static_cast<float>(*e - '0') : 2.0f;
+        }();
+        return v;
+    }
+
     struct NativeDrawCmd
     {
         HwState s;
@@ -744,7 +766,8 @@ namespace
         // [gta-recomp] a joined native group (nativeMerge): its parts' strips in the frame's nativeParts, from partsFirst
         // (0: a single draw)
         uint32_t partsFirst = 0, partsCount = 0;
-        float constants[128] = {};    // the kind's 124 + (XYOFFSET x, y in pixels, Z scale, facing bias in Z units)
+        float constants[128] = {};    // the kind's (at most 88) + 123 the whole-unit depth per pixel (pixelZ: 0..2) + 124
+                                      // (XYOFFSET x, y in pixels, Z scale, facing bias in Z units)
     };
 
     struct Frame
@@ -2072,8 +2095,9 @@ namespace
                 // [gta-recomp] the pixel shader built for the draw's texture read (drawSampleMode)
                 // [gta-recomp] ... and without the depth output where the rasterised depth does (shaderDepth)
                 d.pixel = (shaderDepth() ? sh.drawPS : sh.drawPSNoDepth)[sample < render::GsShaders::kSampleModes ? sample : 0][dual ? 1 : 0];
-                // [gta-recomp] native draws (modes 3 / 4): the facing rule's variant (gs_draw.hlsl NATIVE_FACING)
-                if ((mode == 3 || mode == 4) && !shaderDepth())
+                // [gta-recomp] native draws (modes 3 / 4): the depth rules' variant (gs_draw.hlsl NATIVE_FACING); with both
+                // rules off the plain one, no depth output at all
+                if ((mode == 3 || mode == 4) && !shaderDepth() && (hwFacingBias() > 0.0f || hwPixelZ() > 0.0f))
                     d.pixel = sh.drawPSNative[sample < render::GsShaders::kSampleModes ? sample : 0][dual ? 1 : 0];
                 if (mode == 4)
                 {
@@ -5783,14 +5807,9 @@ namespace
             nd.constants[124] = state.context.xyoffset.ofx / 16.0f;
             nd.constants[125] = state.context.xyoffset.ofy / 16.0f;
             nd.constants[126] = zs;
-            // [gta-recomp] the facing rule (gs_draw.hlsl ps_main): the side of a triangle facing away this many Z units
-            // farther; PS2X_HW_FACING_BIAS=0 = the GS's depth as it is
-            static const float facingBias = [] {
-                const char *e = std::getenv("PS2X_HW_FACING_BIAS");
-                const float v = e && *e ? static_cast<float>(std::atof(e)) : 4.0f;
-                return v > 0.0f && v <= 64.0f ? v : 0.0f;
-            }();
-            nd.constants[127] = facingBias;
+            // [gta-recomp] the depth rules (hwFacingBias / hwPixelZ, gs_draw.hlsl ps_main)
+            nd.constants[127] = hwFacingBias();
+            nd.constants[123] = hwPixelZ();
             f.nativeVertices += draw.drawCount;
             f.had3d = true;
             ps2hle::g_gsVerticesRecorded += draw.drawCount;

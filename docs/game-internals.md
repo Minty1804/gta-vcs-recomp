@@ -2314,8 +2314,8 @@ sign the player saw from (-870, -926) at heading 271.9 is such a pair near (-770
 Vice City Mainland / Escobar Airport" sign faces east, away from the player, and its beige back faces west. Seen from the
 west both the beige back (facing the camera) and that sign's own face (facing away, drawn too) cover the same pixels at
 the same depth. At that distance Z24 holds about 46 Z units a metre (Z ~ 10700 at 230 m) and the two quads are less than
-one apart, so which one wins was the rounding's choice pixel by pixel (gs_draw.hlsl's `floor(trunc(z * 16) / 16)`, the
-GS's integer Z). That choice moved with the camera's pitch and with the state the game reached: the sign showed a second,
+one apart, so which one wins was the rounding's choice pixel by pixel (then gs_draw.hlsl's `floor(trunc(z * 16) / 16)` per
+vertex, the GS's integer Z; since 6w the vertices' depth is unrounded and cut per pixel). That choice moved with the camera's pitch and with the state the game reached: the sign showed a second,
 partly blue board in patches.
 
 How it was found: the free camera at the player's two views (pitch -8.9 / -4.1, `sign_flip`), F12's draw log through the
@@ -2337,8 +2337,34 @@ shore) differ only by pedestrians; bench.py the same (render 0.2-0.8 ms, drive 7
 - **Not this**: the Viceport sign at about (-824, -1462) ("Vice City Port Authority / Main Building", the player's
   report of 2026-11-25, seen from (-871, -1445)) whose white face looks cut by a dark board. It is a V of two boards: from
   the west one board's face shows and the other's plain back stands in front of part of it, at an angle - real
-  geometry metres apart, the same with the emulated VU1 path (`PS2X_HLE=0`) and with `PS2X_HW_FACING_BIAS=0`; from the
-  south both faces read. The game's own look, left as it is.
+  geometry metres apart, the same with the emulated VU1 path (`PS2X_HLE=0`), with `PS2X_HW_FACING_BIAS=0`, and with
+  Detailed city 0 and no texture pack (`VCS_HD_RADIUS=0 VCS_TEXPACK=0`); from the south both faces read. The game's own
+  look, left as it is.
+
+### 6w. Decals on walls: the depth per pixel cut to a whole Z unit (2026-11-25)
+
+The player's report of 2026-11-25: the awning building in Little Havana near (-1125, -738) - its upper windows (dark
+quads on the wall under each awning) bitten by the wall in triangles that changed with every step of the camera. The
+window is a second quad on the wall's plane, drawn after it (ZTST GEQUAL: a tie goes to the later draw). The port's native
+draws rounded each vertex's depth to a whole Z unit (the VU1's FTOI4, `floor(trunc(z * 16) / 16)`) and kept the
+rasterised depth between them as a float (D32F): the window's plane and the wall's then differ by up to a unit, varying
+across the quad, and the wall won wherever its value came out a hair nearer - triangles that move with the camera.
+Reproduced: 16 jittered poses around the player's (`awn_jit`, 2560x1440): the cuts in about half of them, D3D12 and D3D11
+alike; the emulated VU1 path (`PS2X_HLE=0`) shows them too (its GS draws keep the same float depth).
+
+The port's fix (always on; `PS2X_HW_PIXEL_Z`): in the native draws the vertices' depth stays unrounded, so a decal's plane
+and its wall's agree to float precision, and the pixel shader cuts the interpolated depth down to a whole Z unit (gs_draw.hlsl
+ps_main, `SV_DepthLessEqual` with the facing rule of 6v): the two then tie and the later draw shows, as the game means.
+Rounding the vertices as before and cutting per pixel (`PS2X_HW_PIXEL_Z=1`) was tried first: the triangles went but thin
+stripes stayed where the two planes fell on either side of a whole unit. Not claimed to be the GS's own rule (that would
+be integer vertices and integer interpolation - mode 1's stripes); it is the port's fix. Things a unit or more apart keep
+their order; GS draws (2D, effects, clipped triangles near the camera) keep their depth as it was.
+
+Checked: the 16 poses clean on D3D12 and D3D11 (with `PS2X_HW_PIXEL_Z=0 PS2X_HW_FACING_BIAS=0` the cuts back); the bridge
+sign (6v) clean at both pitches and after the long route; a downtown street at 8 jittered poses: only the random litter
+on the road differs; fire and explosions on D3D11 / AMD drawn as before (the exported depth once hid them there,
+DECISIONS.md 2026-11-04); GPU time at 2560x1440, MSAA 2x the same (1.2 / 1.8 / 0.6 ms at three spots against 1.2 / 1.8 /
+0.6 with both rules off); cruise, texpack, hud checks pass.
 
 ## 7. Textures: `.XTX`
 

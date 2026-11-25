@@ -2165,3 +2165,15 @@ is the switch back. Considered and left: finer depth (4 more FTOI4 bits, then fu
 state after a long route, and float made it worse: the faces are coplanar, precision cannot choose; culling the far
 side - the PS2 culls nothing, so any quad might be meant to show from both ways; a bias only reorders
 near-ties; the bias on GS draws too - their 2D and effects need no rule and the emulated path stays the reference.
+
+## 2026-11-25 - Decals tie with their wall: the depth per pixel cut to a whole unit, always on
+
+The awning building's windows bitten by the wall in moving triangles (the player's report; game-internals.md 6w), and the
+user's wish for one fix for every sign or decal that breaks at a distance. The native draws keep the vertices' depth
+unrounded and cut the depth to a whole Z unit per pixel, so a decal on its wall's plane ties with it and the later draw
+shows - what the game means by drawing it later with ZTST GEQUAL. Always on: nobody wants windows and signs on walls
+bitten, things a unit or more apart keep their order, the GPU time is the same and early depth rejection stays.
+`PS2X_HW_PIXEL_Z=0` is the switch back (with the facing bias at 0 too, the native draws export no depth at all).
+Considered and left: a polygon offset (a depth bias moves the wall and the decal alike, so it cannot pick the later one);
+the cut with rounded vertices (mode 1: stripes where the two planes fall on either side of a unit); the same on GS draws
+(they are not where the world is drawn, and the emulated path stays as it was for comparisons).

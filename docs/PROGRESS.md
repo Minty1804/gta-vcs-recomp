@@ -1062,6 +1062,14 @@ dropped on uploads (lazy render-target patching).
       rejection kept): the sign clean at both pitches and after a long route; other spots unchanged but for pedestrians;
       bench.py the same. Finer depth (4 bits, float) was tried first and dropped: coplanar faces need a rule.
       `PS2X_HW_FACING_BIAS=0` = before.
+  - **The player's reports of 2026-11-25:**
+    - **The awning building's windows: fixed.** Windows on a wall in Little Havana (-1125, -738) bitten by the wall in
+      triangles that moved with the camera: a decal on its wall's plane, the two depths differing by the vertices'
+      rounding (game-internals.md 6w). Native draws keep the vertices' depth unrounded and cut it to a whole unit per
+      pixel, so they tie and the later draw shows: clean at 16 jittered poses on D3D12 and D3D11; GPU time the same.
+      `PS2X_HW_PIXEL_Z=0` = before (1 = rounded vertices: stripes stay).
+    - **The Viceport V sign (-824, -1462): the game's own** - one board's back stands in front of the other's face
+      from the west; the same on the emulated path, without the rules, without Detailed city and the texture pack.
 
 ## Milestone 9 - Linux (started 2026-10-30)
 
@@ -1473,6 +1481,7 @@ Python scripts still usable on their own. docs/LAUNCHER.md has the whole of it; 
 | `PS2X_HW_DUMP=<frame>` | dump HW render targets + display as PPM |
 | `PS2X_HW_DUMP_KEY=1` | F12 does the same for the next frame with draws (the draw log on stderr). Off by default since 2026-11-10: F12 is the screenshot / record key of Steam, Bandicam and others (GitHub issue 89) |
 | control command `drawdump` | the same as F12's dump without the key (F12 is also the fork's quick save, which a test run must not take): `rig.Game.cmd("drawdump")` |
+| `PS2X_HW_PIXEL_Z=0\|1\|2` | the native draws' depth per pixel: 2 (default) vertices unrounded and the depth cut to a whole Z unit per pixel; 1 vertices rounded as the VU1 does, cut per pixel (stripes on decals); 0 the interpolated depth as it is (decals bitten in triangles; game-internals.md 6w). With this and the facing bias both 0 the native draws export no depth |
 | `PS2X_HW_FACING_BIAS=<Z units>` | the side of a triangle facing away from the camera this much farther in the native draws (4; 0 = the GS's depth as it is: the bridge sign's back and face fighting again; game-internals.md 6v) |
 | `python tools/run.py N name --hidden` + `python tools/gamectl.py ...` | hidden test run driven over the control channel |
 | `python tools/gamectl.py gameinfo` | the F3 game-state panel's lines: player (position, heading, state, health), vehicle, camera, clock / area / pauses, pools, scripts |
