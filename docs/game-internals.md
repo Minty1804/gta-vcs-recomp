@@ -2304,7 +2304,35 @@ FUN_0023C820 (camera position only).
   triangle lost it at most of them); game ms within 0.1 at 100 %, +0.1..0.5 at 300 % (bench.py).
 - **Not this**: the bridge sign at (-870, -926) that shows a second, partly blue board by the pitch (-8.9 vs -4.1)
   stays with the fan; no sector record changes between those pitches either (`VCS_SECTOR_DIFF=1`, 10 alternating
-  steps). It looks like the sign's face and the blank board beside it fighting in the depth buffer - open.
+  steps). It is two signs back to back fighting in the depth buffer: 6v.
+
+### 6v. Thin two-sided things: the face and its back a fraction of a Z unit apart (2026-11-25)
+
+The PS2 draws both sides of every triangle (no culling in the GS). A sign seen from both ways is made of two one-sided
+signs back to back: each a quad with the sign's face and, on the same plane, a plain beige quad for its back. The bridge
+sign the player saw from (-870, -926) at heading 271.9 is such a pair near (-770, -928), about 100 m on: the "Entering
+Vice City Mainland / Escobar Airport" sign faces east, away from the player, and its beige back faces west. Seen from the
+west both the beige back (facing the camera) and that sign's own face (facing away, drawn too) cover the same pixels at
+the same depth. At that distance Z24 holds about 46 Z units a metre (Z ~ 10700 at 230 m) and the two quads are less than
+one apart, so which one wins was the rounding's choice pixel by pixel (gs_draw.hlsl's `floor(trunc(z * 16) / 16)`, the
+GS's integer Z). That choice moved with the camera's pitch and with the state the game reached: the sign showed a second,
+partly blue board in patches.
+
+How it was found: the free camera at the player's two views (pitch -8.9 / -4.1, `sign_flip`), F12's draw log through the
+control channel's `drawdump` (F12 is also the fork's quick save), close-ups from both sides (the beige back, the blue face
+behind it). Not the world scan (6u), not the sector records, not the C++ clipper (`PS2X_HLE_CLIPPED=1` the same), not the
+HD world. Finer depth alone does not settle it - 4 more bits fixed one pose and not a state reached after a long route,
+full float was worse: the two surfaces are coplanar, only a rule picks one.
+
+The port's rule (always on, `PS2X_HW_FACING_BIAS=0` = the GS's depth as it is): in the native draws (the world and lit
+pipelines, gs_hw.cpp drawPipeline modes 3 / 4), the side of a triangle facing away from the camera goes 4 Z units farther
+(gs_draw.hlsl ps_main, `NATIVE_FACING`: `SV_DepthLessEqual`, so early depth rejection stays on). Between two surfaces
+that close the facing one shows; anything a few centimetres apart at that range keeps its order. Away is D3D's front
+face here: the native vertices' winding comes out mirrored by the Y flip (checked: -4 on D3D-front faces fixes the sign,
++4 on back faces makes it worse). Vulkan (negative viewport height, `frontFace` clockwise) and Metal (D3D's clip space)
+see it the same way by construction - not yet checked on those. GS draws (2D, effects, the emulated path) are untouched.
+Checked: the sign at both pitches and after the long route clean; four other spots (fort, streets from high and far, the
+shore) differ only by pedestrians; bench.py the same (render 0.2-0.8 ms, drive 7.1 / 7.2 ms game).
 
 ## 7. Textures: `.XTX`
 

@@ -1055,9 +1055,13 @@ dropped on uploads (lazy render-target patching).
       corner distance times Draw distance): the palm group at every yaw 60..93 and pitch -12..12. Lists 40 / 2000 at
       most at 300 %; game ms +0.1..0.5 at 300 %, within noise at 100 % (bench.py: city spots 2.5-3.9 ms either way).
       `VCS_SCAN_FAN=0` = the game's triangle.
-    - **Sign: open.** Not the scan (unchanged with the fan) and not the sector records (`VCS_SECTOR_DIFF=1`: none
-      changes between the two pitches over 10 steps). Looks like the sign's face and the blank board next to it
-      fighting in the depth buffer; next: F12's draw log at both pitches.
+    - **Sign: fixed** (2026-11-25). Two one-sided signs back to back near (-770, -928): seen from the west the
+      beige back of the far one and its own face (drawn too: the PS2 culls nothing) lie within a Z unit, so Z24's
+      rounding picked one per pixel, differently by pitch and state (game-internals.md 6v). The native draws now push
+      the side of a triangle facing away 4 Z units back (gs_draw.hlsl `NATIVE_FACING`, conservative depth, early depth
+      rejection kept): the sign clean at both pitches and after a long route; other spots unchanged but for pedestrians;
+      bench.py the same. Finer depth (4 bits, float) was tried first and dropped: coplanar faces need a rule.
+      `PS2X_HW_FACING_BIAS=0` = before.
 
 ## Milestone 9 - Linux (started 2026-10-30)
 
@@ -1468,6 +1472,8 @@ Python scripts still usable on their own. docs/LAUNCHER.md has the whole of it; 
 | `VCS_RWATCH=lo,hi` | which code reads a guest range |
 | `PS2X_HW_DUMP=<frame>` | dump HW render targets + display as PPM |
 | `PS2X_HW_DUMP_KEY=1` | F12 does the same for the next frame with draws (the draw log on stderr). Off by default since 2026-11-10: F12 is the screenshot / record key of Steam, Bandicam and others (GitHub issue 89) |
+| control command `drawdump` | the same as F12's dump without the key (F12 is also the fork's quick save, which a test run must not take): `rig.Game.cmd("drawdump")` |
+| `PS2X_HW_FACING_BIAS=<Z units>` | the side of a triangle facing away from the camera this much farther in the native draws (4; 0 = the GS's depth as it is: the bridge sign's back and face fighting again; game-internals.md 6v) |
 | `python tools/run.py N name --hidden` + `python tools/gamectl.py ...` | hidden test run driven over the control channel |
 | `python tools/gamectl.py gameinfo` | the F3 game-state panel's lines: player (position, heading, state, health), vehicle, camera, clock / area / pauses, pools, scripts |
 | `python tools/scenes.py capture OUT` / `compare REF NEW` | reference scenes (screenshots + perf) from an empty card; diff two captures |

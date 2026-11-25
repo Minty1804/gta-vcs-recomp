@@ -15,6 +15,12 @@
 #ifndef SHADER_DEPTH
 #define SHADER_DEPTH 1
 #endif
+// NATIVE_FACING: 1 (with SHADER_DEPTH 0; the native draws' pixel shader, gs_hw.cpp drawPipeline) the depth goes out as
+// SV_DepthLessEqual - the rasterised one, or that minus VSOut.facingBias for the side of a triangle that faces away
+// (below); early depth rejection stays on, the output never being nearer than the rasterised depth
+#ifndef NATIVE_FACING
+#define NATIVE_FACING 0
+#endif
 
 cbuffer Draw : register(b0)
 {
@@ -52,12 +58,17 @@ struct VSIn
 
 struct VSOut
 {
+#if NATIVE_FACING
+    centroid float4 pos : SV_Position; // conservative depth wants it (the same point without MSAA)
+#else
     float4 pos : SV_Position;
+#endif
     noperspective float3 stq : TEXCOORD0;
     noperspective float4 col : COLOR0;
     nointerpolation float4 colFlat : COLOR1; // the recorder gives flat primitives one colour on every vertex
     noperspective float fog : TEXCOORD1;
     noperspective float depth : TEXCOORD2;
+    nointerpolation float facingBias : TEXCOORD3; // native draws: nat[31].w Z units as depth (ps_main), GS draws 0
     float2 clip : SV_ClipDistance0; // native draws: the PS2 clip test's near / far planes
 #if VCS_POINT_SIZE
     // Vulkan and Metal points need one (D3D11's are always 1 pixel). Metal: the vertex stage's output only - a pixel
@@ -72,6 +83,7 @@ VSOut vs_main(VSIn i)
     const float2 p = (i.pos.xy + rtOrigin.z) / targetRtFix.xy;
     o.pos = float4(p.x * 2.0 - 1.0, 1.0 - p.y * 2.0, i.pos.z, 1.0);
     o.depth = i.pos.z;
+    o.facingBias = 0.0;
     o.stq = i.stq;
     o.col = i.col;
     o.colFlat = i.col;
@@ -84,7 +96,8 @@ VSOut vs_main(VSIn i)
 }
 
 // Native draws (packet-level HLE, docs/NATIVE_RENDERER.md stage 4+): the VU1 work on the GPU. One constant block
-// for every kind; nat[31] = GS XYOFFSET in pixels (xy), Z format scale (z), filled by the renderer.
+// for every kind; nat[31] = GS XYOFFSET in pixels (xy), Z format scale (z), the facing bias in Z units (w: ps_main),
+// filled by the renderer.
 cbuffer Native : register(b1)
 {
     float4 nat[32];
@@ -108,6 +121,7 @@ void nativePosition(float4 S, float4 C, float3 st, inout VSOut o)
     const float2 p = (xy + rtOrigin.z) / targetRtFix.xy;
     o.pos = float4((p.x * 2.0 - 1.0) * S.w, (1.0 - p.y * 2.0) * S.w, depth * S.w, S.w);
     o.depth = depth;
+    o.facingBias = nat[31].w * nat[31].z;
     o.clip = float2(C.z + C.w, C.w - C.z); // the PS2 clip test's near / far planes
     o.stq = st * q;
 #if VCS_POINT_SIZE
@@ -399,17 +413,31 @@ struct PSOut
 #endif
 #if SHADER_DEPTH
     float depth : SV_Depth;
+#elif NATIVE_FACING
+    float depth : SV_DepthLessEqual;
 #endif
 };
 
+#if SHADER_DEPTH || NATIVE_FACING
+PSOut ps_main(VSOut i, bool front : SV_IsFrontFace)
+#else
 PSOut ps_main(VSOut i)
+#endif
 {
     PSOut o;
     g_pixel = i.pos.xy;
     // GS Z is Z24/Z32 / 2^n: written directly (going through GL's NDC rounded near values and collapsed far ones; with
     // D3D / Vulkan's 0..1 depth the rasterised value is the same: SHADER_DEPTH 0)
+    // [Minty1804 fork] The facing rule (game-internals.md 6v): the PS2 draws both sides of every triangle, and a thin
+    // sign is two of them back to back, its face and its plain back a fraction of a Z unit apart - which one shows was
+    // the Z24 rounding's choice, so a far sign showed its back's neighbour's face in patches that moved with the camera.
+    // The side facing away from the camera (D3D's front: the native vertices' winding comes out mirrored by the Y flip;
+    // Vulkan and Metal see it as D3D does) is pushed facingBias farther, so between two surfaces that close the facing
+    // one shows; anything farther apart is untouched. GS draws carry 0 (their depth as before).
 #if SHADER_DEPTH
-    o.depth = i.depth;
+    o.depth = front ? max(i.depth - i.facingBias, 0.0) : i.depth;
+#elif NATIVE_FACING
+    o.depth = front ? max(i.pos.z - i.facingBias, 0.0) : i.pos.z;
 #endif
     // [gta-recomp] gsHwSetGradientDither (untextured Gouraud draws only): floor(x + d) with d from a 4x4 Bayer matrix by
     // target pixel, 1/32 .. 31/32 (mean 1/2, as the rounding): a colour between two levels shows as a pattern of both in

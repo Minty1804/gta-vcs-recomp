@@ -25,6 +25,8 @@ namespace render
         rhi::ShaderCode uiPS;
         // drawPS without the depth output (SHADER_DEPTH=0): the rasterised depth, early depth rejection on
         rhi::ShaderCode drawPSNoDepth[kSampleModes][2];
+        // drawPSNoDepth for the native draws (NATIVE_FACING=1): the side of a triangle facing away pushed back
+        rhi::ShaderCode drawPSNative[kSampleModes][2];
     };
 
     // The backend's shaders (empty for the null backend, which never runs them).

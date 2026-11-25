@@ -2152,3 +2152,16 @@ come and go by where they sit in the view, the fan holds the game's triangle (no
 in the noise at 100 % (+0.1..0.5 ms of game time at 300 %). The fan's radius follows Draw distance, so 100 % is the
 game's own reach. `VCS_SCAN_FAN=0` is the switch back for comparing. Considered and left: only scaling the triangle
 with Draw distance - the depth-not-distance popping and the pitch dependence would have stayed.
+
+## 2026-11-25 - The facing rule for coplanar faces: always on, not an option
+
+The bridge sign that showed a second, partly blue board by the camera's pitch (the player's report of 2026-11-24) is two
+one-sided signs back to back: the beige back of one and that sign's own face, drawn too since the PS2 culls nothing, lie
+within a Z unit of each other, and Z24's rounding picked one per pixel (game-internals.md 6v). The native draws now push
+the side of a triangle facing away from the camera 4 Z units farther. Always on: nobody wants a sign's back and face
+fighting, the rule only decides between surfaces that close (a few centimetres at 100 m), it costs nothing measurable,
+and early depth rejection stays (`SV_DepthLessEqual`, never nearer than the rasterised depth). `PS2X_HW_FACING_BIAS=0`
+is the switch back. Considered and left: finer depth (4 more FTOI4 bits, then full float) - it fixed one pose, not the
+state after a long route, and float made it worse: the faces are coplanar, precision cannot choose; culling the far
+side - the PS2 culls nothing, so any quad might be meant to show from both ways; a bias only reorders
+near-ties; the bias on GS draws too - their 2D and effects need no rule and the emulated path stays the reference.

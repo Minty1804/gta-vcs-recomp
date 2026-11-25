@@ -744,7 +744,7 @@ namespace
         // [gta-recomp] a joined native group (nativeMerge): its parts' strips in the frame's nativeParts, from partsFirst
         // (0: a single draw)
         uint32_t partsFirst = 0, partsCount = 0;
-        float constants[128] = {};    // the kind's 124 + (XYOFFSET x, y in pixels, Z scale, 0)
+        float constants[128] = {};    // the kind's 124 + (XYOFFSET x, y in pixels, Z scale, facing bias in Z units)
     };
 
     struct Frame
@@ -2072,6 +2072,9 @@ namespace
                 // [gta-recomp] the pixel shader built for the draw's texture read (drawSampleMode)
                 // [gta-recomp] ... and without the depth output where the rasterised depth does (shaderDepth)
                 d.pixel = (shaderDepth() ? sh.drawPS : sh.drawPSNoDepth)[sample < render::GsShaders::kSampleModes ? sample : 0][dual ? 1 : 0];
+                // [gta-recomp] native draws (modes 3 / 4): the facing rule's variant (gs_draw.hlsl NATIVE_FACING)
+                if ((mode == 3 || mode == 4) && !shaderDepth())
+                    d.pixel = sh.drawPSNative[sample < render::GsShaders::kSampleModes ? sample : 0][dual ? 1 : 0];
                 if (mode == 4)
                 {
                     // [gta-recomp] native VCS lit model (GSNativeDraw::VcsLit): skinned on the CPU, lit / transformed here
@@ -5780,6 +5783,14 @@ namespace
             nd.constants[124] = state.context.xyoffset.ofx / 16.0f;
             nd.constants[125] = state.context.xyoffset.ofy / 16.0f;
             nd.constants[126] = zs;
+            // [gta-recomp] the facing rule (gs_draw.hlsl ps_main): the side of a triangle facing away this many Z units
+            // farther; PS2X_HW_FACING_BIAS=0 = the GS's depth as it is
+            static const float facingBias = [] {
+                const char *e = std::getenv("PS2X_HW_FACING_BIAS");
+                const float v = e && *e ? static_cast<float>(std::atof(e)) : 4.0f;
+                return v > 0.0f && v <= 64.0f ? v : 0.0f;
+            }();
+            nd.constants[127] = facingBias;
             f.nativeVertices += draw.drawCount;
             f.had3d = true;
             ps2hle::g_gsVerticesRecorded += draw.drawCount;
@@ -6104,6 +6115,19 @@ namespace
                 }();
                 const bool f12 = dumpKey && ps2control::keyDown(301 /* KEY_F12 */);
                 if (f12 && !m_f12Down)
+                    m_dumpPending = true;
+                // [gta-recomp] the control channel's `drawdump`: the same as F12 without the key (F12 is also the
+                // fork's quick save; tools take this)
+                static std::atomic<bool> s_dumpRequest{false};
+                static const bool s_dumpCommand = [] {
+                    ps2control::addCommand("drawdump", [](const std::string &, ps2control::Reply reply) {
+                        s_dumpRequest.store(true);
+                        reply("ok");
+                    });
+                    return true;
+                }();
+                (void)s_dumpCommand;
+                if (s_dumpRequest.exchange(false))
                     m_dumpPending = true;
                 m_f12Down = f12;
                 if (dumpAt >= 0 && !m_dumped && m_executedFrames + frames.size() >= static_cast<uint64_t>(dumpAt))

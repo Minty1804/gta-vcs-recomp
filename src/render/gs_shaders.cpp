@@ -43,6 +43,20 @@ using BYTE = unsigned char; // fxc's /Fh headers declare `const BYTE name[]`
 #include "dxbc/gs_draw_ps5_dual_noz.h"
 #include "dxbc/gs_draw_ps6_noz.h"
 #include "dxbc/gs_draw_ps6_dual_noz.h"
+#include "dxbc/gs_draw_ps0_nat.h"
+#include "dxbc/gs_draw_ps0_dual_nat.h"
+#include "dxbc/gs_draw_ps1_nat.h"
+#include "dxbc/gs_draw_ps1_dual_nat.h"
+#include "dxbc/gs_draw_ps2_nat.h"
+#include "dxbc/gs_draw_ps2_dual_nat.h"
+#include "dxbc/gs_draw_ps3_nat.h"
+#include "dxbc/gs_draw_ps3_dual_nat.h"
+#include "dxbc/gs_draw_ps4_nat.h"
+#include "dxbc/gs_draw_ps4_dual_nat.h"
+#include "dxbc/gs_draw_ps5_nat.h"
+#include "dxbc/gs_draw_ps5_dual_nat.h"
+#include "dxbc/gs_draw_ps6_nat.h"
+#include "dxbc/gs_draw_ps6_dual_nat.h"
 #endif
 #if defined(VCS_HAVE_VULKAN)
 #include "spirv/gs_draw_vs.h"
@@ -84,6 +98,20 @@ using BYTE = unsigned char; // fxc's /Fh headers declare `const BYTE name[]`
 #include "spirv/gs_draw_ps5_dual_noz.h"
 #include "spirv/gs_draw_ps6_noz.h"
 #include "spirv/gs_draw_ps6_dual_noz.h"
+#include "spirv/gs_draw_ps0_nat.h"
+#include "spirv/gs_draw_ps0_dual_nat.h"
+#include "spirv/gs_draw_ps1_nat.h"
+#include "spirv/gs_draw_ps1_dual_nat.h"
+#include "spirv/gs_draw_ps2_nat.h"
+#include "spirv/gs_draw_ps2_dual_nat.h"
+#include "spirv/gs_draw_ps3_nat.h"
+#include "spirv/gs_draw_ps3_dual_nat.h"
+#include "spirv/gs_draw_ps4_nat.h"
+#include "spirv/gs_draw_ps4_dual_nat.h"
+#include "spirv/gs_draw_ps5_nat.h"
+#include "spirv/gs_draw_ps5_dual_nat.h"
+#include "spirv/gs_draw_ps6_nat.h"
+#include "spirv/gs_draw_ps6_dual_nat.h"
 #endif
 #if defined(VCS_HAVE_METAL)
 #include "msl/gs_draw_vs.h"
@@ -125,6 +153,20 @@ using BYTE = unsigned char; // fxc's /Fh headers declare `const BYTE name[]`
 #include "msl/gs_draw_ps5_dual_noz.h"
 #include "msl/gs_draw_ps6_noz.h"
 #include "msl/gs_draw_ps6_dual_noz.h"
+#include "msl/gs_draw_ps0_nat.h"
+#include "msl/gs_draw_ps0_dual_nat.h"
+#include "msl/gs_draw_ps1_nat.h"
+#include "msl/gs_draw_ps1_dual_nat.h"
+#include "msl/gs_draw_ps2_nat.h"
+#include "msl/gs_draw_ps2_dual_nat.h"
+#include "msl/gs_draw_ps3_nat.h"
+#include "msl/gs_draw_ps3_dual_nat.h"
+#include "msl/gs_draw_ps4_nat.h"
+#include "msl/gs_draw_ps4_dual_nat.h"
+#include "msl/gs_draw_ps5_nat.h"
+#include "msl/gs_draw_ps5_dual_nat.h"
+#include "msl/gs_draw_ps6_nat.h"
+#include "msl/gs_draw_ps6_dual_nat.h"
 #endif
 
 namespace render
@@ -162,6 +204,15 @@ namespace render
                 {{kGsDrawPS5NoZ, sizeof(kGsDrawPS5NoZ)}, {kGsDrawPS5DualNoZ, sizeof(kGsDrawPS5DualNoZ)}},
                 {{kGsDrawPS6NoZ, sizeof(kGsDrawPS6NoZ)}, {kGsDrawPS6DualNoZ, sizeof(kGsDrawPS6DualNoZ)}},
             },
+            {
+                {{kGsDrawPS0Nat, sizeof(kGsDrawPS0Nat)}, {kGsDrawPS0DualNat, sizeof(kGsDrawPS0DualNat)}},
+                {{kGsDrawPS1Nat, sizeof(kGsDrawPS1Nat)}, {kGsDrawPS1DualNat, sizeof(kGsDrawPS1DualNat)}},
+                {{kGsDrawPS2Nat, sizeof(kGsDrawPS2Nat)}, {kGsDrawPS2DualNat, sizeof(kGsDrawPS2DualNat)}},
+                {{kGsDrawPS3Nat, sizeof(kGsDrawPS3Nat)}, {kGsDrawPS3DualNat, sizeof(kGsDrawPS3DualNat)}},
+                {{kGsDrawPS4Nat, sizeof(kGsDrawPS4Nat)}, {kGsDrawPS4DualNat, sizeof(kGsDrawPS4DualNat)}},
+                {{kGsDrawPS5Nat, sizeof(kGsDrawPS5Nat)}, {kGsDrawPS5DualNat, sizeof(kGsDrawPS5DualNat)}},
+                {{kGsDrawPS6Nat, sizeof(kGsDrawPS6Nat)}, {kGsDrawPS6DualNat, sizeof(kGsDrawPS6DualNat)}},
+            },
         };
         if (backend == rhi::Backend::D3D11 || backend == rhi::Backend::D3D12) // (DXBC runs on D3D12 as it is)
             return dxbc;
@@ -197,6 +248,15 @@ namespace render
                 {{kGsDrawPS5NoZ_spv, sizeof(kGsDrawPS5NoZ_spv)}, {kGsDrawPS5DualNoZ_spv, sizeof(kGsDrawPS5DualNoZ_spv)}},
                 {{kGsDrawPS6NoZ_spv, sizeof(kGsDrawPS6NoZ_spv)}, {kGsDrawPS6DualNoZ_spv, sizeof(kGsDrawPS6DualNoZ_spv)}},
             },
+            {
+                {{kGsDrawPS0Nat_spv, sizeof(kGsDrawPS0Nat_spv)}, {kGsDrawPS0DualNat_spv, sizeof(kGsDrawPS0DualNat_spv)}},
+                {{kGsDrawPS1Nat_spv, sizeof(kGsDrawPS1Nat_spv)}, {kGsDrawPS1DualNat_spv, sizeof(kGsDrawPS1DualNat_spv)}},
+                {{kGsDrawPS2Nat_spv, sizeof(kGsDrawPS2Nat_spv)}, {kGsDrawPS2DualNat_spv, sizeof(kGsDrawPS2DualNat_spv)}},
+                {{kGsDrawPS3Nat_spv, sizeof(kGsDrawPS3Nat_spv)}, {kGsDrawPS3DualNat_spv, sizeof(kGsDrawPS3DualNat_spv)}},
+                {{kGsDrawPS4Nat_spv, sizeof(kGsDrawPS4Nat_spv)}, {kGsDrawPS4DualNat_spv, sizeof(kGsDrawPS4DualNat_spv)}},
+                {{kGsDrawPS5Nat_spv, sizeof(kGsDrawPS5Nat_spv)}, {kGsDrawPS5DualNat_spv, sizeof(kGsDrawPS5DualNat_spv)}},
+                {{kGsDrawPS6Nat_spv, sizeof(kGsDrawPS6Nat_spv)}, {kGsDrawPS6DualNat_spv, sizeof(kGsDrawPS6DualNat_spv)}},
+            },
         };
         if (backend == rhi::Backend::Vulkan)
             return spirv;
@@ -231,6 +291,15 @@ namespace render
                 {{kGsDrawPS4NoZ_msl, sizeof(kGsDrawPS4NoZ_msl)}, {kGsDrawPS4DualNoZ_msl, sizeof(kGsDrawPS4DualNoZ_msl)}},
                 {{kGsDrawPS5NoZ_msl, sizeof(kGsDrawPS5NoZ_msl)}, {kGsDrawPS5DualNoZ_msl, sizeof(kGsDrawPS5DualNoZ_msl)}},
                 {{kGsDrawPS6NoZ_msl, sizeof(kGsDrawPS6NoZ_msl)}, {kGsDrawPS6DualNoZ_msl, sizeof(kGsDrawPS6DualNoZ_msl)}},
+            },
+            {
+                {{kGsDrawPS0Nat_msl, sizeof(kGsDrawPS0Nat_msl)}, {kGsDrawPS0DualNat_msl, sizeof(kGsDrawPS0DualNat_msl)}},
+                {{kGsDrawPS1Nat_msl, sizeof(kGsDrawPS1Nat_msl)}, {kGsDrawPS1DualNat_msl, sizeof(kGsDrawPS1DualNat_msl)}},
+                {{kGsDrawPS2Nat_msl, sizeof(kGsDrawPS2Nat_msl)}, {kGsDrawPS2DualNat_msl, sizeof(kGsDrawPS2DualNat_msl)}},
+                {{kGsDrawPS3Nat_msl, sizeof(kGsDrawPS3Nat_msl)}, {kGsDrawPS3DualNat_msl, sizeof(kGsDrawPS3DualNat_msl)}},
+                {{kGsDrawPS4Nat_msl, sizeof(kGsDrawPS4Nat_msl)}, {kGsDrawPS4DualNat_msl, sizeof(kGsDrawPS4DualNat_msl)}},
+                {{kGsDrawPS5Nat_msl, sizeof(kGsDrawPS5Nat_msl)}, {kGsDrawPS5DualNat_msl, sizeof(kGsDrawPS5DualNat_msl)}},
+                {{kGsDrawPS6Nat_msl, sizeof(kGsDrawPS6Nat_msl)}, {kGsDrawPS6DualNat_msl, sizeof(kGsDrawPS6DualNat_msl)}},
             },
         };
         if (backend == rhi::Backend::Metal)
