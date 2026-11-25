@@ -57,7 +57,7 @@ namespace vcs::input
         // When a control's keys work (Control::when): on foot (third person), in a first-person weapon view (the scopes,
         // the rocket launcher, the M16, the camera, binoculars), in a vehicle (the player drives), in the game's menus
         // (the pause menu, the title screen, and while the game holds the player's controls: cutscenes, shops), and
-        // fighting (on foot, unarmed, the target button held: locked on to a ped or ready to). The PC games' action
+        // fighting (on foot, fists or a melee weapon in hand, the target button held: locked on to a ped or ready to). The PC games' action
         // types (CControllerConfigManager::GetActionType, 0x6167A0 in gta-vc.exe): third person, first person, both
         // (kOnFootAny), vehicle, vehicle and third person (kPlaying), common (kCommon).
         // [Minty1804 fork] kInAir: the player flies a helicopter or a plane (GameState::aircraft) - its own actions, as
@@ -125,12 +125,12 @@ namespace vcs::input
             // [Minty1804 fork] C0SNSLO: L1 steadies the sniper's aim (nothing pressed it in the PC scheme before)
             {"pc_steady_aim", "Steady aim (sniper scope)", "On foot", Target::Button, kL1, 0, 0, KEY_LEFT_SHIFT, 0, kPadOwn, kInScope},
 
-            // VCS's unarmed combat, locked on (UCBT_01..03; C0PUNA Circle the light attack - Fire above -, C0PUHA Cross
+            // VCS's hand-to-hand combat (fists or a melee weapon), locked on (UCBT_01..03; C0PUNA Circle the light attack - Fire above -, C0PUHA Cross
             // the heavy one, C0PUBL Square blocks while held, C0PUGR Triangle grabs). These keys win over the on-foot
             // ones meanwhile: Space kicks rather than jumps.
-            {"pc_heavy_attack", "Heavy attack", "Fighting (unarmed, Target held)", Target::Button, kCross, 0, 0, KEY_SPACE, KEY_MOUSE_X1, kPadOwn, kInFight},
-            {"pc_block", "Block (hold)", "Fighting (unarmed, Target held)", Target::Button, kSquare, 0, 0, KEY_LEFT_SHIFT, KEY_MOUSE_X2, kPadOwn, kInFight},
-            {"pc_grab", "Grab", "Fighting (unarmed, Target held)", Target::Button, kTriangle, 0, 0, KEY_F, 0, kPadOwn, kInFight},
+            {"pc_heavy_attack", "Heavy attack", "Fighting (fists or melee, Target held)", Target::Button, kCross, 0, 0, KEY_SPACE, KEY_MOUSE_X1, kPadOwn, kInFight},
+            {"pc_block", "Block (hold)", "Fighting (fists or melee, Target held)", Target::Button, kSquare, 0, 0, KEY_LEFT_SHIFT, KEY_MOUSE_X2, kPadOwn, kInFight},
+            {"pc_grab", "Grab", "Fighting (fists or melee, Target held)", Target::Button, kTriangle, 0, 0, KEY_F, 0, kPadOwn, kInFight},
 
             // Vehicles: cars, bikes, boats (the Skimmer is a boat to the game: type 1) and the hovercraft (driven as one)
             {"pc_accelerate", "Accelerate", kVehicleSection, Target::Button, kCross, 0, 0, KEY_W, KEY_UP, kPadOwn, kInVehicle},
@@ -381,7 +381,7 @@ namespace vcs::input
             bool menu = false;       // the PC scheme's menu keys apply: paused, no player yet (the title screen, the
                                      // intro), or the player's controls held by the game (cutscenes, shops)
             uint32_t mode = 0;       // the active camera's mode
-            bool unarmed = false;    // the player's fists in hand (weapon slot 0)
+            bool unarmed = false;    // the player's fists or a melee weapon in hand (weapon slot 0 or 1)
             bool playerControl = false; // not paused, the player's controls on, the camera on the player (no script
                                         // camera): a weapon change by the wheel in a vehicle
         };
@@ -420,7 +420,16 @@ namespace vcs::input
             s.paused = paused;
             s.menu = paused || !ped || disabled != 0;
             s.mode = rd32(activeCam()) & 0xFFFFu;
-            s.unarmed = ped && g_rdram[(ped + kPedSlot) & kRamMask] == 0;
+            // [Minty1804 fork] slot 1 (melee: bat, machete, knife...) too, 2026-11-24: locked on with one, Cross is a
+            // blow as with the fists (a machete took 39 health off a ped, a bat 32; Triangle and Square none), so the
+            // fighting keys are the ones to press - with only the fists, Sprint's Shift swung the machete and the
+            // heavy attack's key did nothing (the user's report). VCS_FIGHT_MELEE=0: fists only (before).
+            static const bool meleeFights = [] {
+                const char *e = std::getenv("VCS_FIGHT_MELEE");
+                return !(e && e[0] == '0');
+            }();
+            const uint8_t slot = ped ? g_rdram[(ped + kPedSlot) & kRamMask] : 0xFF;
+            s.unarmed = slot == 0 || (meleeFights && slot == 1);
             s.playerControl = !paused && disabled == 0 && rd32(kLooksAtPlayer) == 1;
             s.footCamera = ped && !s.driving && !paused && rd32(kCam) == kCamModeFollowPed && rd32(kLooksAtPlayer) == 1 &&
                            disabled == 0 && rd32(kCamStickLocked) == 0;
@@ -860,7 +869,7 @@ namespace vcs::input
                         else if (side == 0)
                             side = game.menu ? 2 : 1;
                     }
-            // fighting: unarmed on foot with the target button held - its keys, or its gamepad button
+            // fighting: fists or a melee weapon on foot with the target button held - its keys, or its gamepad button
             auto keyHeld = [&](int key) { return key > 0 && bound(key, alt) && g_keySide[key] == (game.menu ? 2 : 1); };
             bool fighting = false;
             if (!blocked && (pcSituation & kOnFoot) && game.unarmed)

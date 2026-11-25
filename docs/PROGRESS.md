@@ -1044,6 +1044,11 @@ dropped on uploads (lazy render-target patching).
       (the user's choice; `VCS_HD_FADE=1` = before). Not measured in the picture: the player checks it.
     - Not from that day's other changes (233 / 257 sectors flipping at 40 m/s, with / without them); from the free
       camera at 50 m over Leaf Links radius 3 and 0 blink alike (waves, palms).
+  - **The player's later reports of 2026-11-24:** palms across the water from (-768, -920) shown only when the camera
+    turns a little aside, and a bridge sign at (-870, -926) drawn twice / not at all by the camera's pitch. Both are the
+    game's own: the free camera at the player's views shows the same at Draw distance 100 %, radius 0 and on the
+    emulated VU1 path (`PS2X_HLE=0`) - the palm group across the water from yaw 87 there (84 at 300 %, both radii), the
+    second sign at pitch -4 in every run. Its cause (which test drops the entities by view) not found yet.
 
 ## Milestone 9 - Linux (started 2026-10-30)
 
@@ -1350,6 +1355,7 @@ Python scripts still usable on their own. docs/LAUNCHER.md has the whole of it; 
 | `VCS_REMOTE_DRIVE=0` | an RC vehicle driven with the on-foot keys, as before 2026-11-24 (W walks instead of driving it; gothamor#207) |
 | `VCS_HD_CLOCK_DROP=1` | Detailed city: every cell dropped at once when the clock changes its pieces (about every game hour; nearby buildings at low detail for ~2 s), as before 2026-11-24 (game-internals.md 6t) |
 | `VCS_STREAK_LOS=0`, `VCS_STREAK_LOG=1` | the headlights' streaks tested for sight every 2 s and with peds left out, as the game has it (they cross walls and Vic); log the streak coronas in sight every 5 s (game-internals.md 6g, "Headlight streaks over the player") |
+| `VCS_FIGHT_MELEE=0` | fighting (the Fighting section's keys) with the fists only: with a melee weapon locked on, the on-foot keys press Cross / Square / Triangle as before 2026-11-24 (Sprint's Shift swings the machete; CONTROLS.md, Fighting) |
 | `VCS_FIGHT_BUTTONS=0` | while fighting, an on-foot key with a fighting button (Sprint's Cross, Jump's Square, Enter vehicle's Triangle) still presses it - Shift heavy-attacks once the heavy attack has another key (CONTROLS.md, Fighting) |
 | `VCS_CAR_SPAWN_GATES=game` | The car spawner's clear20A / not_toward checks as the game has them at a raised Car distance or Traffic density (default: relaxed; game-internals.md 12d) |
 | `VCS_CAR_DISTANCE=100..200` | World > Draw distance > Car distance for this run (percent of GenerationDistMultiplier while the car spawner and RemoveDistantCars run; game-internals.md 12d) |

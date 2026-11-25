@@ -5,7 +5,7 @@ every default key, by situation, checked in the pad report it makes (the game ho
     python tools/pc_scheme_check.py [OUT] [--port 47674]
 
 Loads the Fort Baxter rig save (a copy, hidden), then: on foot, each default key gives its PS2 button or stick direction, and the vehicle-only keys give
-nothing; unarmed with Target held the fighting keys win (Space a heavy attack, not a jump); in a vehicle the same keys
+nothing; fists or a machete with Target held the fighting keys win (Space a heavy attack, not a jump); in a vehicle the same keys
 mean the vehicle actions (W accelerates, Shift honks, R the radio) and the on-foot-only keys give nothing; Escape and P
 pause; a rebound on-foot key keeps its vehicle binding (keys shared by situation, as on PC), a clashing one takes it.
 In a helicopter (a Maverick) the Aircraft actions' keys (W climbs, Q / E turn, A / D bank) and nothing of the car's
@@ -123,6 +123,23 @@ def run(c):
              "space %04x shift %04x f %04x" % (space["buttons"], shift["buttons"], f["buttons"]))
     else:
         c.ok("fighting: skipped (a weapon in hand, slot %d)" % slot, True)
+    # a melee weapon fights with the same keys (2026-11-24: with a machete Shift - Sprint, Cross - swung it); the fists
+    # back after (the trainer's "no weapons")
+    g.cmd("trainer weapon 9")
+    time.sleep(1.0)
+    melee = g.peek(ped + 0x789, 1)[0]
+    g.cmd("key mouseright down")
+    time.sleep(0.5)
+    try:
+        space, shift, f = c.held("space"), c.held("shift"), c.held("f")
+    finally:
+        g.cmd("key mouseright up")
+    c.ok("fighting with a machete: Space heavy attack, Shift block, F grab",
+         melee == 1 and space["buttons"] == R1 | CROSS and shift["buttons"] == R1 | SQUARE and
+         f["buttons"] == R1 | TRIANGLE,
+         "slot %d space %04x shift %04x f %04x" % (melee, space["buttons"], shift["buttons"], f["buttons"]))
+    g.cmd("trainer noweapons")
+    time.sleep(1.0)
 
     # the game holding the controls (a shop): the menu keys
     g.scm(rig.Scm.op(rig.Scm.SET_PLAYER_CONTROL, rig.Scm.PLAYER, rig.Scm.i(0)) + rig.Scm.end())

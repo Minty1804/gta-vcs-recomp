@@ -820,7 +820,7 @@ namespace
             {"World", {"Draw distance", "Traffic and people", "Details", "Memory"}},
             {"Game", {"Combat", "Map and saving", "Button prompts", "Subtitles", "Start-up", "Window"}},
             {"Audio", {"Volume", "Output"}},
-            {"Keyboard", {"On foot", "Fighting (unarmed, Target held)", "Vehicle (cars, bikes, boats)",
+            {"Keyboard", {"On foot", "Fighting (fists or melee, Target held)", "Vehicle (cars, bikes, boats)",
                           "Aircraft (helicopters, planes)", "All situations", "Mouse", "Menus and pause", "Shortcuts"}},
             {"Gamepad", {}},
             {"Mods", {"Mod loader", "Installed mods", "Folder"}}, // [Minty1804 fork] willzmkv's mod loader (mods/modloader.h)

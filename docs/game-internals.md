@@ -3229,6 +3229,10 @@ timing at 60 fps; independent timing at 60 / 144 fps got through, by luck (below
   sites, recruiting)**, **unarmed combat, locked on** (UCBT_01..03): PUNA Circle light attack, PUHA Cross heavy
   attack, PUBL Square block (held), PUGR Triangle grab ("making them defenseless to your attacks"), TAXJU L3, SWIMF Cross, SWIMO Square, AMBUY / AMEXI Cross / Triangle (shops), AMLEF / AMRIG
   D-pad left / right. The controls' actions press these (src/game/vcs_input.cpp, docs/CONTROLS.md).
+  **A melee weapon fights the same way** (2026-11-24, the rig: a ped 1.4 m ahead, R1 held from the injected gamepad,
+  three presses of each button): with a machete (weapon slot 1, ped +0x789) Cross took 39 health off the ped and a
+  baseball bat's 32, Circle 58 / 98, Triangle and Square none - Cross is a blow with a melee weapon too, not only with
+  the fists, so the controls' Fighting section applies to slot 0 and 1 (`VCS_FIGHT_MELEE=0`: the fists only).
   Checked in game (2026-11-19, the gamepad injected, `prompts text C0<key>`): **no crouch** - L3 on foot leaves ped
   +0x1C8 bit 45 (crouched) clear standing, moving and aiming; the text has no crouch key. Held with a gun and R1, L3
   puts the ped in **state 0x16** (manual aim: Vic aims where the stick points, the camera mode 11 - FREE1). `C0ANS`

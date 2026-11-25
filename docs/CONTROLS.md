@@ -47,7 +47,8 @@ The wheel bound to Sniper zoom in / out zooms in steps that the scope eases (as 
 Square / Cross taps. Whenever the wheel's meaning changes (into or out of a scope, a vehicle, the menus), notches still
 queued are dropped, so zoom notches scrolled just before leaving the scope don't come out as weapon changes.
 
-**Fighting** (VCS's unarmed combat: fists in hand and Target / lock on held - locked on to a ped, or ready to). These
+**Fighting** (VCS's hand-to-hand combat: fists or a melee weapon - bat, machete, knife... - in hand and Target / lock on
+held - locked on to a ped, or ready to). These
 keys win over the on-foot ones meanwhile (Space kicks instead of jumping, Shift blocks instead of sprinting); let go of
 Target and they are the on-foot keys again.
 
@@ -64,6 +65,11 @@ While fighting, Cross, Square and Triangle come only from these rows: an on-foot
 (Sprint is Cross, Jump Square, Enter vehicle Triangle) does nothing until Target is let go, whatever the fighting keys
 are bound to - before 2026-11-24, with the heavy attack moved off Space, Shift (Sprint) still heavy-attacked.
 `VCS_FIGHT_BUTTONS=0` = before.
+
+A melee weapon fights with the same buttons: locked on with a machete, Cross is a blow (a ped lost 39 health to three,
+to a bat 32) and Triangle / Square none, as with the fists. Until 2026-11-24 only the fists counted, so with a machete
+in hand Shift (Sprint, Cross) swung it and the heavy attack's own key did what it does on foot (the player's report:
+"the fighting keys don't match the configuration"). `VCS_FIGHT_MELEE=0` = fists only, as before.
 
 **Vehicle** (cars, bikes, boats - the Skimmer is a boat to the game - and the hovercraft, which drives like one)
 
