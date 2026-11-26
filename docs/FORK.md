@@ -90,6 +90,8 @@ PCSX2's region (`-r<w>x<h>-`) and mip-level (`-mip<n>`) file names (skipped and 
 - Texture packs: no stutter when an HD image comes back into view (each keeps its GPU texture, in a cache sized by the
   card's memory).
 - The detailed city: Downtown's construction building keeps its blue glass.
+- Anisotropic filtering and texture packs: no dark line down the middle of people's faces from a few metres away (the
+  filter no longer reads the far edge of the head texture).
 - Traffic at a raised Car distance: the car spawner no longer builds cars only to throw them away (86 - 88 % of them
   in Little Havana at 200 %).
 

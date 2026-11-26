@@ -1262,6 +1262,7 @@ Python scripts still usable on their own. docs/LAUNCHER.md has the whole of it; 
 | `VCS_TEXPACK_CACHE_MB=<n>` | decoded pack images kept for textures made again (1024) |
 | `PS2X_HW_PACK_ANISO=<n>` | anisotropic filtering of pack images at most n (4) |
 | `PS2X_HW_PACK_REGION=0` | pack images (the hardware sampler) clamp the whole image, as before 2026-11-23: REGION_CLAMP ignored, the HUD's text picks up lines of the neighbouring glyphs |
+| `PS2X_HW_AF_TILE=0` | the hardware sampler (anisotropic filtering, pack images) repeats across a texture's edge, as before 2026-11-26: a dark line down the middle of peds' faces from a few metres |
 | `PS2X_HW_HUD_TEXWATCH=1` | `[hud-tex]` lines: the shown HUD layer's textures (key, `p` pack image / `g` the game's / `!` none, `r` region-clamped), logged when they change |
 | `VCS_WALK_FIX=0` | Walk (hold) scales the stick as floats, as before 2026-11-16: a diagonal walk (W + D) stands still |
 | `VCS_FOOT_WALL=0` | on foot the mouse's turn does not ask the camera's update for the pull-in at walls: the camera stands at a wall's edge while its heading turns on, as before 2026-11-11 |

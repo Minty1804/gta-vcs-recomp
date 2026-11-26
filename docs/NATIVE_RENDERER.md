@@ -503,6 +503,13 @@ it is 1920x1080, 3 x 2.41 pixels per PS2 pixel.
   the CPU (2x2 box, rounded: `buildMipChain`) and the texture made in one plain creation with every level
   (`rhi::Device::createTextureLevels`) - before 2026-11-02 each new texture was a render target with a `GenerateMips`
   pass on the main thread, which made texture bursts hitch (PERFORMANCE.md 21; `PS2X_HW_CPU_MIPS=0` = before).
+  A repeating texture through the hardware sampler (this and a pack's image) is read inside the copy of the texture the
+  pixel is in (2026-11-26, `sampleHw` wrap 3): the position kept half a texel of the level the hardware reads (the
+  short axis', or long / anisotropy) from the copy's edges. The hardware's repeat filtered across the edge into the
+  opposite one over a whole mip texel: a ped's head texture is half a face, the middle of the face on its right edge and
+  hair on the left (mengga: 115 against 0), mirrored - a dark line down every face from a few metres, strongest with a
+  pack (a dip of 8 / 255 in the middle column at 5 m, gone). Tiling textures have matching edges: wall and ground
+  sharpness unchanged (0.95 / 0.96). `PS2X_HW_AF_TILE=0` = the hardware's repeat, as before.
 - **New textures are made off the main thread** (D3D11; Vulkan when asked, 2026-11-02, PERFORMANCE.md 21, 25): the GS stage decodes a texture
   (a paletted one through a 256-entry table: `GSCpuBackend::paletteTable`) and hands the pixels to two helper threads
   that make it on the free-threaded device (`rhi::Device::freeThreadedCreation`, `HwBackend::makeTextureEarly`); the

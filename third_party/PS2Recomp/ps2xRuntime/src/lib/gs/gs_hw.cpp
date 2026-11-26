@@ -1232,6 +1232,7 @@ namespace
                 const char *e = std::getenv("PS2X_HW_PACK_ANISO");
                 const uint32_t cap = e && *e ? static_cast<uint32_t>(std::strtoul(e, nullptr, 10)) : 4u;
                 const uint32_t aniso = std::min(m_anisotropy, cap);
+                m_packAniso = aniso > 1u ? aniso : 1u;
                 for (int u = 0; u < 2; ++u)
                     for (int v = 0; v < 2; ++v)
                         m_packSampler[u][v] = m_dev.createSampler({rhi::Filter::Linear, u ? rhi::Wrap::Repeat : rhi::Wrap::Clamp,
@@ -3282,6 +3283,25 @@ namespace
                 c.texSizeWrap[2] = c.texSizeWrap[2] == 0 ? 0 : 1;
                 c.texSizeWrap[3] = c.texSizeWrap[3] == 0 ? 0 : 1;
             }
+            // [gta-recomp] the hardware sampler on a repeating texture (anisotropic filtering, a pack's image): its filter kept
+            // inside the copy of the texture the pixel is in (gs_draw.hlsl sampleHw, wrap 3) - the hardware's repeat blended
+            // the far edge in over a whole mip texel: a dark line down the middle of every ped's face from a few metres away
+            // (2026-11-26). PS2X_HW_AF_TILE=0: the hardware's repeat, as before
+            static const bool afTile = [] {
+                const char *e = std::getenv("PS2X_HW_AF_TILE");
+                return !(e && e[0] == '0');
+            }();
+            if (afTile && c.linearIipFgeAte[0] == 2)
+            {
+                if (c.texSizeWrap[2] == 0)
+                    c.texSizeWrap[2] = 3;
+                if (c.texSizeWrap[3] == 0)
+                    c.texSizeWrap[3] = 3;
+                // the sampler's anisotropy: the shader works out the level the hardware reads from it
+                c.filterDest[3] = static_cast<float>(hwSampler == m_anisoSampler[s.wms == 0u ? 1 : 0][s.wmt == 0u ? 1 : 0].get()
+                                                         ? std::max(m_anisotropy, 1u)
+                                                         : m_packAniso);
+            }
             c.rtOrigin[0] = s.rtOx;
             c.rtOrigin[1] = s.rtOy;
             c.rtOrigin[2] = pixelCentreOffset();
@@ -3392,6 +3412,7 @@ namespace
         uint32_t m_msaa = 1, m_anisotropy = 0;           // [gta-recomp] GSHwOptions
         std::unique_ptr<rhi::Sampler> m_anisoSampler[2][2]; // [gta-recomp] [U repeat][V repeat]
         std::unique_ptr<rhi::Sampler> m_gatherSampler[2][2]; // [gta-recomp] nearest, [U repeat][V repeat]: gs_draw.hlsl mode 3
+        uint32_t m_packAniso = 1; // [gta-recomp] the pack sampler's anisotropy (gs_draw.hlsl sampleHw: wrap 3's level)
         std::unique_ptr<rhi::Sampler> m_packSampler[2][2];   // [gta-recomp] texture packs' images, [U repeat][V repeat]
         std::unordered_set<uint64_t> m_packTextures;         // [gta-recomp] the texture keys holding a pack's image
         std::unordered_set<uint64_t> m_cutOutTextures;       // [gta-recomp] the ones with holes (hasHoles, gsHwSetCutOutSplit)

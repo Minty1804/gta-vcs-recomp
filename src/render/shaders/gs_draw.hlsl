@@ -38,7 +38,8 @@ cbuffer Draw : register(b0)
     float4 fogColor;       // rgb 0..255
     float4 filterSize;     // a filtered read (atstArefAfailRt.w == 3, sampleRtFiltered): xy the footprint of one target
                            // PS2 pixel in source texels (the tent's half-width), zw the source's size in texels (clamp)
-    float4 filterDest;     // a filtered read: xy the target's own scale (target pixels per PS2 pixel); z: 1 = the
+    float4 filterDest;     // a filtered read: xy the target's own scale (target pixels per PS2 pixel); w: the hardware
+                           // sampler's anisotropy (sampleHw, wrap 3); z: 1 = the
                            // interpolated colour rounded through an ordered dither (gsHwSetGradientDither)
 };
 
@@ -342,10 +343,16 @@ float4 sampleRtFiltered(float2 uv)
 // a texel of the level read (from the gradients, never below the hardware's) inside the region's rectangle, so neither the filter nor a mip level reaches the
 // next cell (a pack's 4x font sheet, minified at most resolutions, showed bits of the neighbouring glyphs). The
 // gradients are the unclamped ones: the level is the one the draw would pick anyway.
+// [gta-recomp] Wrap 3 (gs_hw.cpp, PS2X_HW_AF_TILE): a repeating texture kept the same way inside the copy of the texture the
+// pixel is in. The hardware's repeat filters across the texture's edge into the opposite one, over the whole footprint of
+// the mip level it reads: a ped's head texture is half a face with the middle of the face on its edge, mirrored, so far
+// away the hair on the other edge came into the middle of every face as a dark line (the user's report, 2026-11-26; the
+// GS's own bilinear reads half a texel across - not seen). A texture made to tile has matching edges: kept inside, it
+// reads what it would have read across.
 float4 sampleHw(float2 uv)
 {
     float2 n = uv / float2(texSizeWrap.xy);
-    [branch] if (texSizeWrap.z == 2 || texSizeWrap.w == 2)
+    [branch] if (texSizeWrap.z >= 2 || texSizeWrap.w >= 2)
     {
         const float2 dx = ddx(n), dy = ddy(n);
         uint w, h, levels;
@@ -357,10 +364,24 @@ float4 sampleHw(float2 uv)
         const float2 inset = 0.5 * exp2(lod) / float2(w, h);
         const float2 lo = float2(region.xz) / float2(texSizeWrap.xy) + inset;
         const float2 hi = float2(region.yw + 1) / float2(texSizeWrap.xy) - inset;
+        // wrap 3: the level the hardware reads - anisotropic filtering takes up to filterDest.w samples along the long
+        // axis, at the level of the short one (or of long / anisotropy). The long axis' level (above) would clamp a
+        // tiling wall seen at a grazing angle by many texels: it blurred
+        const float lx = length(dx * size), ly = length(dy * size);
+        const float rmax = max(max(lx, ly), 1e-6), rmin = max(min(lx, ly), 1e-6);
+        const float taps = clamp(rmax / rmin, 1.0, max(filterDest.w, 1.0));
+        const float tlod = clamp(ceil(log2(max(rmax / taps, 1e-6))), 0.0, float(levels) - 1.0);
+        const float2 tinset = min(0.5 * exp2(tlod) / size, 0.5);
+        const float2 tile = floor(n);
+        const float2 tlo = tile + tinset, thi = tile + 1.0 - tinset;
         if (texSizeWrap.z == 2)
             n.x = lo.x <= hi.x ? clamp(n.x, lo.x, hi.x) : 0.5 * (lo.x + hi.x);
+        else if (texSizeWrap.z == 3)
+            n.x = clamp(n.x, tlo.x, thi.x);
         if (texSizeWrap.w == 2)
             n.y = lo.y <= hi.y ? clamp(n.y, lo.y, hi.y) : 0.5 * (lo.y + hi.y);
+        else if (texSizeWrap.w == 3)
+            n.y = clamp(n.y, tlo.y, thi.y);
         return tex.SampleGrad(hwSampler, n, dx, dy) * 255.0;
     }
     return tex.Sample(hwSampler, n) * 255.0;
