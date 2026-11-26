@@ -27,8 +27,12 @@ game looks or plays is a setting in the F2 menu, with the PS2's behaviour as one
 
 ## Getting it
 
-This fork makes **no releases**: you build the branch from git. Upstream's releases and the launcher's *Update* button
-install upstream's version, without these changes.
+**The easy way**: download the newest [release](https://github.com/Minty1804/gta-vcs-recomp/releases/latest)
+(Windows: `VCS-Recomp-<version>-windows.zip`; Linux: the AppImage; macOS: the `.dmg`), extract it into a short local
+folder, start `VCSLauncher.exe` and follow **Folder -> Disc -> Build tools -> Build -> Play**. The launcher's *Updates*
+follows this fork's releases. Upstream's releases install upstream's version, without these changes.
+
+**From git** (the newest changes, between releases):
 
 1. Install **Python 3** and **Git**. Windows needs nothing else: the build downloads its own compiler (~190 MB, once).
    Linux and macOS: `python3 tools/build.py --check-deps` says what to install

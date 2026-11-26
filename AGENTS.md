@@ -86,8 +86,8 @@ python tools/doctor.py [--json]              # folder, compiler, disc, build sta
 python tools/build_dir.py [check|set P|reset] # the build folder elsewhere (.vcs-build-dir, VCS_BUILD_DIR): tc.BUILD follows;
                                              # the test tools keep writing to build\ in the source folder
 python tools/release.py [--ref vX | --worktree]   # the Windows release zip (build/dist); refuses game files. The number is
-                                             # VERSION (root; 0.3.0): bump it before tagging - the tag must match;
-                                             # (this fork makes no releases: "Releases" below)
+                                             # VERSION (root; 0.4.0): bump it before tagging - the tag must match;
+                                             # (this fork's releases: "Releases" below)
 python3 tools/release.py --platform linux [--worktree --allow-new-glibc]   # the Linux AppImage (CI builds it on
                                              # Ubuntu 22.04 for glibc 2.35; a v* tag publishes zip + AppImage together)
 python3 tools/release.py --platform macos [--worktree]   # the macOS .dmg: the app next to an Applications link
@@ -200,9 +200,12 @@ player's card; `rig.default_save`).
 
 ## Releases
 
-This fork makes no releases and keeps no version numbers (the user's choice, 2026-11-23): players build the branch
-from git (README, "Getting it"). Upstream's release notes (`docs/releases/`) were removed here;
-`tools/release.py`, `VERSION` and the CI release job stay as upstream has them, unused.
+This fork publishes releases as upstream does (the user's choice, 2026-11-26; until then it had none): `VERSION` is
+the fork's own number (0.4.0 the first, after upstream's 0.3.0), a `v<VERSION>` tag pushed to origin makes CI
+(`.github/workflows/launcher.yml`) build the Windows zip, the Linux AppImage and the macOS .dmg and publish them on one
+release with `docs/releases/v<VERSION>.md` as its notes. `RELEASE.json` names origin, so the launcher's Updates follow
+this fork. Only the fork's own notes are in `docs/releases/` (upstream's were removed). Bump VERSION, write the notes,
+commit, then tag - only when the user asks for a release.
 
 ## Rules that keep things working
 

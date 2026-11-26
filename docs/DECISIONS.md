@@ -2242,3 +2242,13 @@ unchanged to docs/FORK.md. The credits' commit hashes are in FORK_IMPORTS.md. Up
 and a link. A pass over every doc found no broken links and no missing tools. The switches it flagged are either in
 the runtime or written as removed history, so nothing else was deleted. Upstream's docs keep their structure: a
 restructure would conflict on every rebase.
+
+## 2026-11-26 - releases after all, numbered from 0.4.0 (the user's request)
+
+The user asked for a release with the launcher, as willzmkv's fork has, so people can download it instead of cloning
+(2026-11-23 they had chosen no releases). Upstream's machinery is used as it is: `tools/release.py` and the CI job on a
+`v*` tag (Windows zip, Linux AppImage, macOS .dmg, one GitHub release). The number continues upstream's (0.3.0 was its
+last when this fork's changes were taken) rather than willzmkv's 1.0.x, whose tags are in this clone from its remote.
+RELEASE.json takes the repository from origin, so a release built from this fork updates from this fork. Releases
+still hold no game code or data: the launcher builds the game on the player's PC from their disc.
+
