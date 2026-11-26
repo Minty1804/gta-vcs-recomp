@@ -306,8 +306,8 @@ def rebind(cs, ig, block, base):
                     np_[k] += q[k] * w / total
                     nn_[k] += r[k] * w / total
             merged = {}
-            for bone, w in weights:
-                merged[target[bone]] = merged.get(target[bone], 0.0) + w
+            for bone, w in weights:  # summing to 1 (csmarty's dropped weights left less)
+                merged[target[bone]] = merged.get(target[bone], 0.0) + w / total
             work.append((mi, pa + i * 6, na + i * 3, wa + i * 16, tuple(np_), norm(nn_), sorted(merged.items(), key=lambda t: -t[1])))
 
     xs = [w[4][0] for w in work]

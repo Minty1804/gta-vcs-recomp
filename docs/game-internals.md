@@ -4238,15 +4238,16 @@ outside their repository; their notes are their game-internals.md 12g, the start
   below `0x4CD5CC` = (70 m x LODDistMultiplier)^2 - nothing past it, nothing in between. `0x4CD5D8` (the same value,
   VC's ms_pedLodDist) is written by SetRenderWareCamera and read nowhere (a search of the generated code for the
   address and its lui / offset forms). A ped model is one element with one geometry (gameplay: 1,900-2,600 vertices,
-  8-11 meshes). The GS emulation samples the base level of every texture (the game's mip levels are not used), so a
-  far ped is the same model and the same texture as a near one. What "detail at a distance" can mean is the cut
+  8-11 meshes). From the GS front end's code (gs_frontend.cpp: TEX1 gives only the filter; no MIPTBP level is read)
+  the base level of every texture is sampled, so a far ped is the same model and texture as a near one (not checked
+  in a picture). What "detail at a distance" can mean is the cut
   itself: it follows LODDistMultiplier (the Draw distance, 6o), while the Pedestrian distance (12d) moves where peds
   live - at 200 % with the draw distance at 100 % they lived to ~130 m (mean 112 m, the population's ring) and were
   drawn to 70 m. `vcs_world_detail.cpp` now writes the cut as 70 m x LODDistMultiplier x max(1, pedestrian distance /
   draw distance) (`VCS_PED_DRAW_FOLLOW=0`: the game's). Measured (draw 100 %, pedestrians 200 %, gamefiles_check's
   street at noon): the cut 70 -> 140 m, draws 367 -> 442, game ms 4.1 -> 4.2, GPU 0.45 -> 0.7 ms. With the draw
-  distance at 300 % the cut is already 210 m and nothing changes. Cutscene objects carry 0 at +0x24 (the default
-  callback): no distance cut at all.
+  distance at 300 % the cut is already 210 m and nothing changes. Cutscene models carry 0 at their element's +0x24
+  in the file (no render callback named; what a cutscene object sets at run time was not looked at).
 - **The cutscene models** (`csplr` .. `csplr14`, `csphil`, `cslansm`, ...): not in the streaming table; each is an
   `ldm` in the gap after its texture dictionary `cs<name>.xtx` in GTA3PS2.IMG (the table's next entry ends the gap).
   33 dictionaries have a gameplay model of the same name; 30 are peds (Vic's 14 outfits, arman, barry, bry, diaz,
@@ -4277,9 +4278,11 @@ outside their repository; their notes are their game-internals.md 12g, the start
   pelvis - left out); each vertex is the blend of its bones' moves by its weights, the normals turned the same way.
   Bones map by id, else to the nearest ancestor with one (the face -> the head, 26 / 36 -> the finger). Positions are
   quantised again (the geometry's scale / position, sphere and box; each mesh's sphere and box two units out).
-  Checked (`tools/csped_check.py`): Vic standing, walking off and with a pistol, and Phil, Lance, Louise, Marty,
-  Jerry, Diaz made as street peds - drawn with their cutscene heads and hands under the gameplay animations, nothing
-  in the logs. Files: 117-143 KB instead of 62-93 KB, the dictionaries 3-5 times larger.
+  Checked (`tools/csped_check.py`): Vic standing (front, side, back, face, hand) and with a pistol in his hand, and
+  Phil, Lance, Louise, Marty, Jerry, Diaz and outfit 13 made as street peds - drawn with their cutscene heads and
+  hands in the gameplay idle pose, nothing in the logs. Not photographed: running, aiming, driving, a mission's
+  cutscene with the mod on. The gameplay plr's vertices weight none to the finger bones (skin indices 11 / 16): the
+  game's finger animation was never seen on Vic and now bends the cutscene fingers. Files: 117-143 KB instead of 62-93 KB, the dictionaries 3-5 times larger.
 
 ## 13. Open questions / next research targets
 

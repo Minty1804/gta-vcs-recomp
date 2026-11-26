@@ -2214,3 +2214,20 @@ the cut with rounded vertices (mode 1: stripes where the two planes fall on eith
   would shine through the house in front of it.
 - A fix, not an option: the option itself (Distant lights) stays off by default. `VCS_LODLIGHTS_ORIGIN=cell|old` and
   `VCS_LODLIGHTS_DEPTH=0` go back for comparing.
+
+## 2026-11-26 - Cutscene characters: the cutscene mesh re-bound onto the gameplay model, made from the player's disc
+
+The player asked for the characters' cutscene models in gameplay (after willzmkv's HD Hands, FORK_IMPORTS row 56).
+- **Re-bound, not wrapped.** The cutscene model with a gameplay header (collision, a global table naming the ped
+  callback) would load, but its skeleton is not the gameplay one: turned 180 degrees, other bone axes, Vic's arms in a
+  T-pose, no jaw id 6. The gameplay animations set local rotations in the gameplay axes, so it would be twisted. So the
+  gameplay file stays (the bones the game looks up, its collision and callback) and only the mesh is taken: moved onto
+  the gameplay skeleton (a turn about z and a shift fitted to the trunk and legs, each limb swung about its own joint
+  onto the gameplay bone's direction), its weights moved by bone id. game-internals.md 12g.
+- **The face rig goes to the head** (its bones have no gameplay counterpart; the cutscene's jaw joints could be put
+  on the gameplay jaw, but which of its bones move the chin was not worked out): the face stays at rest in play.
+- **Joints not moved.** The limbs are swung, not shifted onto the gameplay joints: the cutscene head joint sits 8-10
+  cm lower than the gameplay one and shoulders up to 6 cm, rig choices rather than anatomy, and moving the pieces to
+  match would open seams at the neck and shoulders. Limbs bend at the gameplay joints, a few cm from the cutscene's.
+- **A converter, not shipped files**: the models are the game's data, so the mod is made from the player's own disc
+  (`tools/csped.py build` into `modloader/Cutscene characters`), for every character that has both models (30).
