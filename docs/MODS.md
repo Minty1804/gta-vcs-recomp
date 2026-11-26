@@ -257,6 +257,35 @@ python tools/weaponmod_check.py              # modloader/HD Weapons in the game:
 - **Cost** (measured in willzmkv's fork): an HD weapon in view costs 1-2 ms a frame: faceted HD meshes make one
   draw per ~70 strip vertices. The conversion at boot runs on every core (194 files in 1.7 s).
 
+### Cutscene characters: `tools/csped.py` (this fork, 2026-11-26)
+
+Vic (all 14 outfits) and the story characters in gameplay with their **cutscene models**: the cutscene head and face,
+the hands with the fingers apart, the cutscene textures (3-5 times larger). The player's request, after willzmkv's
+"HD Hands" (their fork's bundled mod: Vic's cutscene hands grafted onto his gameplay model by hand, outside their
+repository; their notes - where the cutscene models are, their bones - were the starting point). This is a converter
+instead: it makes the mod from your own disc, for every character that has both models.
+
+```
+python tools/csped.py list                     # the characters with both models (30 peds)
+python tools/csped.py build                    # -> modloader/Cutscene characters/<name>.mdl + <name>.xtx
+python tools/csped.py build phil plr*          # only these
+python tools/csped_check.py                    # Vic and six story characters photographed, without and with the mod
+```
+
+- **What it does** (game-internals.md 12g): the gameplay model kept - its skeleton, collision and render callback, so
+  the game sees the bones it expects - with the cutscene mesh in place of its own, re-bound to the gameplay skeleton
+  (turned onto it, each limb swung onto the gameplay bone's direction, weights moved by bone id), positions quantised
+  again. The cutscene texture dictionary goes in as it is.
+- **Who**: Vic's outfits plr .. plr14; arman, barry, bry, diaz, diego, jerry, lansm / lanst (Lance), lou / loum
+  (Louise), marty, phcol / phcol2 (Phil's colonel outfits), phil, reni / renop. Street pedestrians have no cutscene
+  models: they stay as they are.
+- **What changes in play**: the face is the cutscene's, at rest (the face rig's bones follow the head: no blinking or
+  talking - the gameplay jaw bone is not moved by the cutscene mesh); the fingers follow the gameplay finger bone (the
+  cutscene's second joint with it); limbs bend at the gameplay joints, which sit up to ~10 cm from the cutscene's.
+  Switch the mod off in F2 > Mods for the original models (the next time a model streams in).
+- **Cost**: each converted model is 117-143 KB instead of 62-93 KB and its dictionary 3-5 times larger; only the
+  characters in a mission are loaded at a time.
+
 ## Checked in this fork (2026-11-23)
 
 - `tools/rwinfo.py --self-test`, `txd2xtx.py --self-test`, `gxt.py --self-test`: pass; `dff2mdl.py --self-test`:

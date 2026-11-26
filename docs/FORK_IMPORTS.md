@@ -51,6 +51,7 @@ and docs refer to them). "Size": S hours, M a day or so, L several days, XL a pr
 | 53 | World | Detailed city: the geometry table walked by its own length (the DIA_C3 freeze at 60 fps: a word past the Mainland's table freed as a packet; gothamor#207) | willzmkv 01b3602 (its vcs_world_hd part) | 2026-11-24: `tableCount()`, `g_maxGid` reset with the level; `VCS_HD_SWEEP_BOUNDS=0`; their `inPacketHeap` guard was ours already (game-internals 6t). The Mainland's table: 6215 entries (logged); no piece's gid past it |
 | 54 | Controls | An RC vehicle driven with the vehicle's keys (W walked instead; gothamor#207) | willzmkv 01b3602 (its vcs_input part) | 2026-11-24: `Players[0].m_pRemoteVehicle` taken as driving, no radio / drive-by / exit tap for it; `VCS_REMOTE_DRIVE=0` (game-internals 12) |
 | 55 | Controls | The gamepad's left stick without the game's square dead zone (their issue 93) | willzmkv 6bc138b | 2026-11-24: an option, Gamepad > Sticks and triggers, off as on the PS2 (theirs on: DECISIONS 2026-11-24); the Walk key's diagonal was ours already |
+| 56 | Mods | The story characters' cutscene models in gameplay (their HD Hands: Vic's cutscene hands on his gameplay model) | willzmkv (HD Hands, bundled mod outside their repository; their game-internals 12g notes) | 2026-11-26: the idea and their findings taken; done here as a converter of our own for all 30 characters, the whole cutscene mesh re-bound to the gameplay skeleton (`tools/csped.py`, `tools/csped_check.py`; game-internals 12g, MODS.md) |
 
 ## Open or skipped
 
@@ -86,8 +87,8 @@ Rows 11 and 13 looked at again on 2026-11-20 (the user: mods "if needed" after t
 
 PAL disc (ChrisM-Pek), browser port (floriandotorg), Android (batinium, KenRylo-One), Intel Macs (knox29 PR #190),
 macOS path fixes (tanvir-glide PR #186, only with a space in the build path), localized disc builds and launcher
-settings (MaksVolkov7863), CI files (mahoganyprogrammer), willzmkv's bundled mods (HD Hands, HD Hud, PT-BR: shipped from outside their repository,
-made from the game's own files, and they need row 11 / 13's mod loader) and their branding, donations and release notes. From their 2026-11-23 hotfix (4db3d56): Direct3D 12 and Automatic prompts
+settings (MaksVolkov7863), CI files (mahoganyprogrammer), willzmkv's bundled mods (HD Hud, PT-BR: shipped from outside their repository,
+made from the game's own files; HD Hands' idea is row 56) and their branding, donations and release notes. From their 2026-11-23 hotfix (4db3d56): Direct3D 12 and Automatic prompts
 by default, free aim on and the Dot reticle by default (0952147), the Game Language option and pause-menu tab spacing (row
 9's), the launcher's sync, their PC foot camera (ours is our own); DomestoBot's pool bounds (01b3602: their 140-slot
 pool only). Already ours: fire on AMD (upstream since 2026-11-04), draw

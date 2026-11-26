@@ -144,7 +144,8 @@ The settings menu (F2) is laid out by what a setting does: **Display**, **Graphi
 
 - **Detailed city distance**: the detailed buildings of neighbouring cells instead of the low-detail city, in memory
   beyond the PS2's 32 MB.
-- **Pedestrian and car distance** up to twice as far, parked cars too; cars keep their detail further.
+- **Pedestrian and car distance** up to twice as far, parked cars too; cars keep their detail further, people are
+  drawn as far as they appear.
 - **Distant lights**: ~4,400 street lights glowing over the city at night (Project2DFX's table).
 - **Streaming memory** up to 30 MB: more different cars in traffic.
 - Far palms solid, far fences see-through, the city in view from interiors.
@@ -186,6 +187,8 @@ The settings menu (F2) is laid out by what a setting does: **Display**, **Graphi
   and prioritised in F2 while the game runs.
 - Textures, game files (models, texts, the main script) and **PC Vice City car mods and VC / SA weapon mods**,
   converted to VCS's formats while the game loads ([docs/MODS.md](docs/MODS.md)).
+- **Cutscene characters**: Vic and the story characters in gameplay with their cutscene models (faces, hands with
+  fingers), made from your disc by `tools/csped.py` as a mod.
 
 </td>
 <td width="50%" valign="top">
@@ -519,6 +522,9 @@ is listed here (the full list of candidates, done or not: [docs/FORK_IMPORTS.md]
   in the detailed city, RC vehicles on the keyboard, the left stick without the square dead zone:
   [willzmkv](https://github.com/willzmkv) (dejot), from their fork (commits 23dcc3a, fb7c061, 4285f99, bac530a,
   7d56b57, 4349493, 4db3d56, 01b3602, 6bc138b), re-done on ours.
+- **Cutscene characters** (the cutscene models in gameplay): the idea and the first findings - where the cutscene
+  models are, their bones - from [willzmkv](https://github.com/willzmkv)'s (dejot) HD Hands and their fork's notes
+  (game-internals 12g); the converter is this fork's.
 - **This README's layout** (centred header, badges, feature tables side by side, collapsed sections): after
   [willzmkv](https://github.com/willzmkv)'s (dejot) README for their fork.
 

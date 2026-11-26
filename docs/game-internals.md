@@ -4225,6 +4225,62 @@ load.
   the player's settings (30 fps, draw distance 300 %), boot_quick (the player at z -166 after a cold boot) and, after the
   first two fixes, load_near (the slot); all 13 pass since, with the game's settings and with the player's.
 
+### 12g. Ped models: no detail levels; the cutscene models in gameplay (2026-11-26, this fork)
+
+The player asked for the NPCs' LODs to stay detailed further away, and for the characters to wear their cutscene
+models in gameplay (willzmkv's fork did this by hand for Vic's hands: their "HD Hands" mod, a hybrid `plr.mdl` made
+outside their repository; their notes are their game-internals.md 12g, the starting point here).
+
+- **Peds have no LOD meshes.** FUN_0036D838 registers the render callbacks a model's global table names (19 of them,
+  FUN_00324A18); the 19th, function **0x12**, is **FUN_0036EB70** (the value at a gameplay ped element's +0x24, the
+  global table's one entry): it takes the clump (atomic +0x18), its distance squared from the camera (FUN_0036F0C0) and
+  draws the atomic (FUN_0036DBF8 -> the default FUN_0039EC18, with the clump's alpha FUN_0036ED68) only while that is
+  below `0x4CD5CC` = (70 m x LODDistMultiplier)^2 - nothing past it, nothing in between. `0x4CD5D8` (the same value,
+  VC's ms_pedLodDist) is written by SetRenderWareCamera and read nowhere (a search of the generated code for the
+  address and its lui / offset forms). A ped model is one element with one geometry (gameplay: 1,900-2,600 vertices,
+  8-11 meshes). The GS emulation samples the base level of every texture (the game's mip levels are not used), so a
+  far ped is the same model and the same texture as a near one. What "detail at a distance" can mean is the cut
+  itself: it follows LODDistMultiplier (the Draw distance, 6o), while the Pedestrian distance (12d) moves where peds
+  live - at 200 % with the draw distance at 100 % they lived to ~130 m (mean 112 m, the population's ring) and were
+  drawn to 70 m. `vcs_world_detail.cpp` now writes the cut as 70 m x LODDistMultiplier x max(1, pedestrian distance /
+  draw distance) (`VCS_PED_DRAW_FOLLOW=0`: the game's). Measured (draw 100 %, pedestrians 200 %, gamefiles_check's
+  street at noon): the cut 70 -> 140 m, draws 367 -> 442, game ms 4.1 -> 4.2, GPU 0.45 -> 0.7 ms. With the draw
+  distance at 300 % the cut is already 210 m and nothing changes. Cutscene objects carry 0 at +0x24 (the default
+  callback): no distance cut at all.
+- **The cutscene models** (`csplr` .. `csplr14`, `csphil`, `cslansm`, ...): not in the streaming table; each is an
+  `ldm` in the gap after its texture dictionary `cs<name>.xtx` in GTA3PS2.IMG (the table's next entry ends the gap).
+  33 dictionaries have a gameplay model of the same name; 30 are peds (Vic's 14 outfits, arman, barry, bry, diaz,
+  diego, jerry, lansm, lanst, lou, loum, marty, phcol, phcol2, phil, reni, renop) - bobcat / stinger / umber are
+  vehicles. A cutscene model has its element group at 0x20 (a gameplay ped: {collision model, element group} there,
+  the collision 0x60 bytes + 10 spheres of 0x20), no global table (0 at the element's +0x24), one element, a
+  49-bone hierarchy (48 for some) and skin; 3,200-4,000 vertices in ~100 meshes of ~150 batches; its dictionary has
+  every texture it names (`cs_vance_head_x`, `cs_vance_t-shirt_arm`, and `ig_*` ones at their own size).
+- **Its skeleton is another.** Hierarchy (element +0x2C): {+4 count, +0x30 records of 8 bytes {id, index, flags (2
+  push, 1 pop: RenderWare's HAnim tree), 0xAA}}; skin (geometry +0x18): {+0 count, +0xC the inverse bind matrices, 64
+  bytes, RenderWare's right / up / at / pos}; a vertex's V4-32 weights carry the bone's **skin index** x 4 in their
+  low 10 bits (one palette for the geometry, not per mesh). The gameplay ids: 0 root, 1 pelvis, 2 spine, 3 spine1, 4
+  neck, 5 head, 6 jaw, 21-25 / 31-35 the arms (clavicle, upper arm, forearm, hand, finger), 41-43 / 51-53 the legs,
+  255 the toes. The cutscene skeleton has all of them but 6, plus 26 / 36 (a second finger joint under 25 / 35) and
+  ids 7-9, 27-29, 37-39, 44-60 (the face); its bind matrices differ in everything: the model turned 180 degrees about z
+  (left and right swapped in x, the toes along -y; some, csphil, with the origin at the feet: the pelvis at z 0.98
+  instead of -0.36), other local axes per bone, Vic's arms in a T-pose where his gameplay models (plr, plr2, plr5)
+  have them 70 degrees lower, joints a few cm elsewhere (the cutscene head joint 8-10 cm lower). The gameplay
+  animations set local rotations in the gameplay bones' axes, so the cutscene skeleton cannot simply be used.
+  Some csmarty vertices (5 batches' copies) name bones 134-214 of 49: on the PS2 they read past the matrices.
+- **The conversion** (`tools/csped.py`, a mod: docs/MODS.md "Cutscene characters"): the gameplay file kept (nodes,
+  hierarchy, skin, collision, the callback) with its geometry cut out and the cutscene geometry appended (same
+  alignment mod 128; its skin pointer to the gameplay skin, its materials copied, their names into the tail). The mesh
+  is moved onto the gameplay skeleton: a turn about z and a shift fitted to the trunk and leg joints (yaw 180 for most,
+  0 for arman / barry / bry / diaz / diego / jerry, 164 for plr13, whose gameplay model stands turned; worst joint
+  4.5-11 cm off), then each limb bone with one shared child is swung about its own joint, parent before child, until
+  it points as the gameplay bone does (Vic's upper arms 70 degrees; most bones 3-10; bones under 3 cm - root to
+  pelvis - left out); each vertex is the blend of its bones' moves by its weights, the normals turned the same way.
+  Bones map by id, else to the nearest ancestor with one (the face -> the head, 26 / 36 -> the finger). Positions are
+  quantised again (the geometry's scale / position, sphere and box; each mesh's sphere and box two units out).
+  Checked (`tools/csped_check.py`): Vic standing, walking off and with a pistol, and Phil, Lance, Louise, Marty,
+  Jerry, Diaz made as street peds - drawn with their cutscene heads and hands under the gameplay animations, nothing
+  in the logs. Files: 117-143 KB instead of 62-93 KB, the dictionaries 3-5 times larger.
+
 ## 13. Open questions / next research targets
 
 - Main loop, frame limiter, CTimer (section 4) - milestone 4 (60 fps).

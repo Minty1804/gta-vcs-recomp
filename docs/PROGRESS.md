@@ -1381,6 +1381,7 @@ Python scripts still usable on their own. docs/LAUNCHER.md has the whole of it; 
 | `VCS_DRIVEBY_RATE=0\|1` | Game > Combat > Drive-by fire rate for this run: 0 as on the PS2, 1 the gun's own rate (the menu shows it read-only) |
 | `VCS_DRIVEBY_HOOKS=0` | the NPC drive-by's fire rate left alone: a shot every frame, as the original game (the setting then does nothing; game/vcs_driveby.h) |
 | `VCS_PED_DISTANCE=100..200` | World > Draw distance > Pedestrian distance for this run (percent of the game's spawn / removal distances; game-internals.md 12d) |
+| `VCS_PED_DRAW_FOLLOW=0` | Peds drawn only to the game's cut (70 m x LODDistMultiplier) even when the Pedestrian distance is above the Draw distance (game-internals.md 12g) |
 | `VCS_MODS=1` / `VCS_TEST_MODS=1` | a test run loads the mods in `modloader/` (`VCS_MODS` fixes the switch; `VCS_TEST_MODS` leaves the switches to the `setting` command); `VCS_MODLOADER_DIR=<dir>` another folder, the only one a test run writes to (docs/MODS.md) |
 | `VCS_MOD_FILES=0` | the mods' game files (IMG entries, GXT, SCM, converted .dff / .txd) not served; their textures still are |
 | `PS2X_HW_PACK_GPU_MB=<MB>` | GPU memory kept for texture pack images after the game's texture goes (35 % of the card's memory, 512 - 4096; 1536 when the backend doesn't say; 0: every texture made again uploads its image again; PERFORMANCE.md 33) |

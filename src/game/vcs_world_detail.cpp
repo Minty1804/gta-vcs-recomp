@@ -578,12 +578,26 @@ namespace vcs::world
         // and 60 / 150 m (big vehicles) - scale with GenerationDistMultiplier (TheCamera+0x7D0), not with the
         // LODDistMultiplier the draw distance raises, so cars drawn far away stayed low detail (the player's report,
         // 2026-11-18). At 100% the original runs; above, this reproduction with G x the draw distance (game-internals.md
-        // 6o). The rest - the camera globals, the component-cull and ped distances from LODDistMultiplier - as the game.
+        // 6o). The rest - the camera globals, the component-cull distance from LODDistMultiplier - as the game.
+        // [Minty1804 fork] Peds: VCS's ped models have one mesh and no detail levels; the only distance is this cut -
+        // the ped render callback FUN_0036EB70 (registered 19th in FUN_0036D838: function 0x12, the value at a gameplay
+        // ped element's +0x24) draws a ped only nearer than sqrt(0x4CD5CC) = 70 m x LODDistMultiplier (0x4CD5D8, the
+        // same value, is read nowhere; game-internals.md 6o). LODDistMultiplier carries the draw distance, not the
+        // Pedestrian distance, which moves where peds live (FUN_002B44C8): at 200% with the draw distance at 100% they
+        // lived to ~130 m and were drawn to ~70 m - an empty ring. So the cut is 70 m x LODDistMultiplier x
+        // max(1, pedestrian distance / draw distance): peds drawn as far as they live, whichever of the two is larger.
+        // VCS_PED_DRAW_FOLLOW=0: the game's cut (LODDistMultiplier alone).
+        bool pedDrawFollows()
+        {
+            static const bool on = !(std::getenv("VCS_PED_DRAW_FOLLOW") && *std::getenv("VCS_PED_DRAW_FOLLOW") == '0');
+            return on;
+        }
         PS2Runtime::RecompiledFunction g_origVisCamera = nullptr;
         PS2_GUEST_CC void visibilityCamera(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
             const int draw = std::clamp(g_draw.load(std::memory_order_relaxed), 100, kMaxPercent);
-            if (draw == 100 || !g_orig.valid)
+            const int pedDist = pedDrawFollows() ? std::clamp(g_pedDistance.load(std::memory_order_relaxed), 100, kPedDistanceMax) : 100;
+            if ((draw == 100 && pedDist <= draw) || !g_orig.valid)
                 return g_origVisCamera(rdram, ctx, runtime);
             const uint32_t cam = GPR_U32(ctx, 4);
             wr32(rdram, 0x00488E08u, cam);
@@ -594,7 +608,8 @@ namespace vcs::world
             const float lod = rdf(rdram, kCamera + 0x7DCu);
             const float gen = rdf(rdram, kCamera + 0x7D0u) * (draw / 100.0f);
             wrf(rdram, 0x004CD5C0u, camMode == 1 || camMode == 0x25 ? 1.0e6f : lod * (lod * 400.0f));
-            const float ped = lod * (lod * 4900.0f);
+            const float pedLod = lod * std::max(1.0f, static_cast<float>(pedDist) / static_cast<float>(draw));
+            const float ped = pedLod * (pedLod * 4900.0f);
             wrf(rdram, 0x004CD5D8u, ped);
             wrf(rdram, 0x004CD5CCu, ped);
             wrf(rdram, 0x004CD5BCu, gen * (gen * 4900.0f));  // car: high detail to 70 m
@@ -804,8 +819,8 @@ namespace vcs::world
 
         settings::Spec s = percentSpec("enhance.ped_distance", "Pedestrian distance",
                                        "How far away people appear and are removed. 100% is the original game (they "
-                                       "appear 35-60 m away). Raise the draw distance with it so they are drawn that far; "
-                                       "the same number of people spreads over a wider area.",
+                                       "appear 35-60 m away). They are drawn as far as they appear, whatever the draw "
+                                       "distance; the same number of people spreads over a wider area.",
                                        "VCS_PED_DISTANCE", g_pedDistance);
         s.page = "World";
         s.section = "Draw distance";
