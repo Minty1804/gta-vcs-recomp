@@ -2231,3 +2231,14 @@ The player asked for the characters' cutscene models in gameplay (after willzmkv
   match would open seams at the neck and shoulders. Limbs bend at the gameplay joints, a few cm from the cutscene's.
 - **A converter, not shipped files**: the models are the game's data, so the mod is made from the player's own disc
   (`tools/csped.py build` into `modloader/Cutscene characters`), for every character that has both models (30).
+
+## 2026-11-26 - A short README; the detail in docs/FORK.md
+
+The user asked for a minimal README like willzmkv's, showing only the main differences from upstream. The README went
+from 534 lines to 137. It keeps the install from git (the only way to get this fork), the no-game-data notice, one
+table of the main changes, the keys, the common problems, and the credits grouped by author with every name and
+licence. The upstream-vs-fork tables, with their settings and defaults, and the texture-pack instructions moved
+unchanged to docs/FORK.md. The credits' commit hashes are in FORK_IMPORTS.md. Upstream's own features take one line
+and a link. A pass over every doc found no broken links and no missing tools. The switches it flagged are either in
+the runtime or written as removed history, so nothing else was deleted. Upstream's docs keep their structure: a
+restructure would conflict on every rebase.

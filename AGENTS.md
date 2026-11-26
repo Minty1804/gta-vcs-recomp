@@ -20,6 +20,7 @@ detailed knowledge lives in `docs/`:
 | [docs/LINUX.md](docs/LINUX.md) | The Linux build: packages, flags, the Vulkan backend, what differs from Windows, the work list |
 | [docs/MACOS.md](docs/MACOS.md) | The macOS build (Apple Silicon): Apple's tools only, the Metal backend, sse2neon, what differs, the work list |
 | [docs/LAUNCHER.md](docs/LAUNCHER.md) | The launcher and releases: what a release holds, the player's flow, the tools behind each button, the `@vcs` events, what was checked |
+| [docs/FORK.md](docs/FORK.md) | This fork: every change against upstream, its setting and default (the README has the short list) |
 | [docs/FORK_IMPORTS.md](docs/FORK_IMPORTS.md) | This fork: what other forks have, what was taken from them (done / open / later), with their authors |
 | [docs/mods/](docs/mods) | This fork: the GPS route and the quick save in detail (the game's structures they use, what was checked) |
 | [docs/MODS.md](docs/MODS.md) | This fork: the mod loader (`modloader/`, modloader.ini), game files from mods, PC car and weapon mods converted (willzmkv's) |
@@ -200,7 +201,7 @@ player's card; `rig.default_save`).
 ## Releases
 
 This fork makes no releases and keeps no version numbers (the user's choice, 2026-11-23): players build the branch
-from git (README, "What this fork adds > Getting it"). Upstream's release notes (`docs/releases/`) were removed here;
+from git (README, "Getting it"). Upstream's release notes (`docs/releases/`) were removed here;
 `tools/release.py`, `VERSION` and the CI release job stay as upstream has them, unused.
 
 ## Rules that keep things working
