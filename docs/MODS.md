@@ -266,10 +266,11 @@ repository; their notes - where the cutscene models are, their bones - were the 
 instead: it makes the mod from your own disc, for every character that has both models.
 
 ```
-python tools/csped.py list                     # the characters with both models (30 peds)
+python tools/csped.py list                     # the characters with both models (36 peds)
 python tools/csped.py build                    # -> modloader/Cutscene characters/<name>.mdl + <name>.xtx
 python tools/csped.py build phil plr*          # only these
-python tools/csped_check.py                    # Vic and six story characters photographed, without and with the mod
+python tools/csped.py build --skip 'plr*'      # everyone but Vic
+python tools/csped_check.py                    # Vic and 13 characters photographed, without and with the mod
 ```
 
 - **What it does** (game-internals.md 12g): the gameplay model kept - its skeleton, collision and render callback, so
@@ -277,8 +278,11 @@ python tools/csped_check.py                    # Vic and six story characters ph
   (turned onto it, each limb swung onto the gameplay bone's direction, weights moved by bone id), positions quantised
   again. The cutscene texture dictionary goes in as it is.
 - **Who**: Vic's outfits plr .. plr14; arman, barry, bry, diaz, diego, jerry, lansm / lanst (Lance), lou / loum
-  (Louise), marty, phcol / phcol2 (Phil's colonel outfits), phil, reni / renop. Street pedestrians have no cutscene
-  models: they stay as they are.
+  (Louise), marty, phcol / phcol2 (Phil's colonel outfits), phil, reni / renop; and paired by their textures (the
+  cutscene model has another name): umber (Umberto), diagga / diaggb (Diaz's men), loub (Louise, madame outfit),
+  mengga / menggb (the Mendez' men - their cutscene models wear other clothes). Street pedestrians and the
+  cutscene-only characters (the Cubans of the cutscenes, Hank, Javier, Troy, Frankie, Janet, Mary-Jo...) have no
+  gameplay model to put them on.
 - **What changes in play**: the face is the cutscene's, at rest (the face rig's bones follow the head: no blinking or
   talking - the gameplay jaw bone is not moved by the cutscene mesh); the fingers follow the gameplay finger bone (the
   cutscene's second joint with it); limbs bend at the gameplay joints, which sit up to ~10 cm from the cutscene's.

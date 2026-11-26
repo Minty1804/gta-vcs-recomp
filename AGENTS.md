@@ -138,9 +138,9 @@ python tools/gamefiles_check.py [OUT]                         # game files from 
 python tools/img.py table|list|extract                        # GTA3PS2.IMG's entries from your disc (build/img; never in git)
 python tools/dff2mdl.py|txd2xtx.py convert ...                # a PC .dff / .txd to VCS's .mdl / .xtx (--self-test: the disc's meshes)
 python tools/carmod_check.py|weaponmod_check.py [OUT]         # a PC car / weapon mod in the game (needs the mod's files)
-python tools/csped.py list|build [NAMES] [--out DIR]          # the story characters' cutscene models onto their gameplay
+python tools/csped.py list|build [NAMES] [--skip N] [--out DIR] # the story characters' cutscene models onto their gameplay
                                                               # models, as a mod (modloader/Cutscene characters; game-internals 12g)
-python tools/csped_check.py [OUT]                             # Vic and seven characters with / without that mod (pictures)
+python tools/csped_check.py [OUT]                             # Vic and 13 characters with / without that mod (pictures)
 python tools/traffic_spawn_check.py [OUT]                     # the car spawner's gates at a raised Car distance (row 42)
 python tools/hud_check.py [OUT] [--control]                   # HUD at the screen edges: radar left, centred text in the middle;
                                                               # the HUD whole in the rain (no layer made stale in its frame);

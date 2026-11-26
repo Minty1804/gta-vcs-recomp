@@ -4251,8 +4251,13 @@ outside their repository; their notes are their game-internals.md 12g, the start
 - **The cutscene models** (`csplr` .. `csplr14`, `csphil`, `cslansm`, ...): not in the streaming table; each is an
   `ldm` in the gap after its texture dictionary `cs<name>.xtx` in GTA3PS2.IMG (the table's next entry ends the gap).
   33 dictionaries have a gameplay model of the same name; 30 are peds (Vic's 14 outfits, arman, barry, bry, diaz,
-  diego, jerry, lansm, lanst, lou, loum, marty, phcol, phcol2, phil, reni, renop) - bobcat / stinger / umber are
-  vehicles. A cutscene model has its element group at 0x20 (a gameplay ped: {collision model, element group} there,
+  diego, jerry, lansm, lanst, lou, loum, marty, phcol, phcol2, phil, reni, renop) - bobcat / stinger are vehicles,
+  csumber a one-sector stub. Six more pair with a gameplay model of another name, found by their texture names
+  (`ig_umberto_*` / `cs_umberto_*`): csumb -> umber (Umberto), csdass1 / csdass2 -> diagga / diaggb (Diaz's men,
+  `ig_dass1_*`), cslous -> loub (Louise in the madame outfit, shot - the gameplay model has the blood too), csmeng1 /
+  csmeng2 -> mengga / menggb (the Mendez' men: the same texture set, but other clothes and faces than the gameplay
+  ones). The other cutscene peds have no gameplay model: cscub1-4, csemman / csemwom, cshank, csjavie, csped1,
+  cstroy, cswfwom, and frank / janet / loua / maryj (cutscene dictionaries without the cs prefix, a model after each). A cutscene model has its element group at 0x20 (a gameplay ped: {collision model, element group} there,
   the collision 0x60 bytes + 10 spheres of 0x20), no global table (0 at the element's +0x24), one element, a
   49-bone hierarchy (48 for some) and skin; 3,200-4,000 vertices in ~100 meshes of ~150 batches; its dictionary has
   every texture it names (`cs_vance_head_x`, `cs_vance_t-shirt_arm`, and `ig_*` ones at their own size).
@@ -4272,14 +4277,16 @@ outside their repository; their notes are their game-internals.md 12g, the start
   hierarchy, skin, collision, the callback) with its geometry cut out and the cutscene geometry appended (same
   alignment mod 128; its skin pointer to the gameplay skin, its materials copied, their names into the tail). The mesh
   is moved onto the gameplay skeleton: a turn about z and a shift fitted to the trunk and leg joints (yaw 180 for most,
-  0 for arman / barry / bry / diaz / diego / jerry, 164 for plr13, whose gameplay model stands turned; worst joint
-  4.5-11 cm off), then each limb bone with one shared child is swung about its own joint, parent before child, until
+  0 for arman / barry / bry / diaz / diego / jerry / umber, 164 for plr13, whose gameplay model stands turned, 157-164
+  for diagga / diaggb / loub and 123-125 for mengga / menggb, whose cutscene models stand turned; worst joint 4.5-11
+  cm off, 18-21 cm for the Mendez' men), then each limb bone with one shared child is swung about its own joint, parent before child, until
   it points as the gameplay bone does (Vic's upper arms 70 degrees; most bones 3-10; bones under 3 cm - root to
   pelvis - left out); each vertex is the blend of its bones' moves by its weights, the normals turned the same way.
   Bones map by id, else to the nearest ancestor with one (the face -> the head, 26 / 36 -> the finger). Positions are
   quantised again (the geometry's scale / position, sphere and box; each mesh's sphere and box two units out).
   Checked (`tools/csped_check.py`): Vic standing (front, side, back, face, hand) and with a pistol in his hand, and
-  Phil, Lance, Louise, Marty, Jerry, Diaz and outfit 13 made as street peds - drawn with their cutscene heads and
+  Phil, Lance, Louise, Marty, Jerry, Diaz, outfit 13, Umberto, Diaz's and the Mendez' men and Louise (loub) made as
+  street peds - drawn with their cutscene heads and
   hands in the gameplay idle pose, nothing in the logs. Not photographed: running, aiming, driving, a mission's
   cutscene with the mod on. The gameplay plr's vertices weight none to the finger bones (skin indices 11 / 16): the
   game's finger animation was never seen on Vic and now bends the cutscene fingers. Files: 117-143 KB instead of 62-93 KB, the dictionaries 3-5 times larger.

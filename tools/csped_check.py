@@ -29,9 +29,12 @@ import toolchain as tc  # noqa: E402
 # (name, distance from the player, height above his position, angle from his facing in degrees)
 VIEWS = (("front", 2.6, 0.2, 0.0), ("side", 2.6, 0.2, 90.0), ("back", 2.6, 0.3, 180.0), ("face", 0.9, 0.55, 15.0),
          ("hand", 0.8, -0.35, -60.0))
-# story characters by model index (tools/img.py list): phil, lansm (Lance), lou, marty, jerry, diaz
+# story characters by model index (tools/img.py list): phil, lansm (Lance), lou, marty, jerry, diaz, umber (Umberto),
+# Diaz's and the Mendez' men, loub (Louise)
 CHARACTERS = (("phil", 147), ("lansm", 136), ("lou", 138), ("marty", 142), ("jerry", 135), ("diaz", 128),
-              ("plr13", 166))  # plr13: the one outfit whose gameplay model stands turned (16 degrees off)
+              ("plr13", 166),  # plr13: the one outfit whose gameplay model stands turned (16 degrees off)
+              # paired by csped.CUTSCENE_NAME (their cutscene models stand turned against the gameplay ones)
+              ("umber", 153), ("diagga", 109), ("diaggb", 110), ("mengga", 113), ("menggb", 114), ("loub", 140))
 CONVERT = ["plr*"] + [name for name, _ in CHARACTERS]
 DELETE_CHAR = 0x003F  # as framerate_audit.py
 PISTOL = 19  # the pistol's weapon type (as driver_aim_check.py; GIVE_WEAPON_TO_CHAR selects it)

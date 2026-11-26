@@ -99,5 +99,5 @@ PCSX2's region (`-r<w>x<h>-`) and mip-level (`-mip<n>`) file names (skipped and 
 |---|---|---|
 | **Mod loader** | None | `modloader/` next to the game, one folder per mod, PC GTA's Mod Loader `modloader.ini` (priorities, ignores); *Mods* in F2: Load mods, a switch and a priority per mod, applied while the game runs (on by default; with no mods it does nothing) |
 | **What a mod can hold** | - | PCSX2-named textures (as a texture pack); VCS's own files by name (`admiral.mdl`, `ENGLISH.GXT`, `MAIN.SCM`), any size; PC Vice City cars (`.dff` + `.txd`) and VC / SA weapons, converted while the game loads - [MODS.md](MODS.md) |
-| **Cutscene characters** | Gameplay models: mitten hands, plain faces | `python tools/csped.py build` makes a mod from your disc: Vic's 14 outfits and 16 story characters drawn in gameplay with their cutscene meshes (faces, fingers) on the gameplay bones; switched in *Mods* like any other - [MODS.md](MODS.md) |
+| **Cutscene characters** | Gameplay models: mitten hands, plain faces | `python tools/csped.py build` makes a mod from your disc: Vic's 14 outfits and 22 story characters (`--skip 'plr*'`: all but Vic) drawn in gameplay with their cutscene meshes (faces, fingers) on the gameplay bones; switched in *Mods* like any other - [MODS.md](MODS.md) |
 

@@ -2,10 +2,11 @@
 """Cutscene characters in gameplay: each story character's cutscene model on its gameplay skeleton, as a mod.
 
     python tools/csped.py list                       the characters that have both models on your disc
-    python tools/csped.py build [NAMES...] [--out DIR] [--iso ISO]
+    python tools/csped.py build [NAMES...] [--skip NAME] [--out DIR] [--iso ISO]
                                                      the mod (default: modloader/Cutscene characters): for each
-                                                     character (all, or the names given: plr, phil, plr*), <name>.mdl
-                                                     and <name>.xtx replacing the gameplay entries
+                                                     character (all, or the names given: plr, phil, plr*; --skip 'plr*'
+                                                     leaves Vic out), <name>.mdl and <name>.xtx replacing the gameplay
+                                                     entries
     python tools/csped.py check FILE.mdl             a converted model read back: bones, weights, bounds
 
 VCS keeps two models of Vic and of the story characters (docs/game-internals.md 12i): the gameplay one (`plr.mdl`,
@@ -42,6 +43,10 @@ import mdlinfo  # noqa: E402
 import toolchain as tc  # noqa: E402
 
 MOD_NAME = "Cutscene characters"
+# gameplay models whose cutscene model has another name (paired by their textures: ig_umberto_* / cs_umberto_*,
+# ig_dass1_* / cs_dass1_*, ig_louise_madame_* / cs_louise_madame_*; the Mendez goons by their identical texture sets)
+CUTSCENE_NAME = {"umber": "umb", "diagga": "dass1", "diaggb": "dass2", "mengga": "meng1", "menggb": "meng2",
+                 "loub": "lous"}
 PUSH, POP = 2, 1
 # trunk and legs: the joints the two skeletons place alike (the fit that turns the cutscene mesh onto the gameplay one)
 FIT_IDS = (0, 1, 2, 3, 41, 42, 43, 51, 52, 53)
@@ -464,12 +469,15 @@ def characters(table):
     for e in ents:
         if "name" in e:
             named[(e["name"], e.get("kind") == "txd")] = e
+    gameplay_of = {cs: ig for ig, cs in CUTSCENE_NAME.items()}
     out = []
     for i, e in enumerate(ents):
         name = e.get("name", "")
         if e.get("kind") != "txd" or not name.startswith("cs") or i + 1 >= len(ents):
             continue
-        base = name[2:]
+        base = gameplay_of.get(name[2:], name[2:])
+        if base in CUTSCENE_NAME and CUTSCENE_NAME[base] != name[2:]:
+            continue  # csumber: a one-sector stub; Umberto's cutscene model is csumb
         mdl, txd = named.get((base, False)), named.get((base, True))
         if not (mdl and txd):
             continue
@@ -492,9 +500,10 @@ def table_or_make():
     return img.load_table()
 
 
-def build(names, out, iso_given):
+def build(names, out, iso_given, skip=()):
     t = table_or_make()
-    chars = [c for c in characters(t) if not names or any(fnmatch.fnmatch(c[0], n.lower()) for n in names)]
+    chars = [c for c in characters(t) if (not names or any(fnmatch.fnmatch(c[0], n.lower()) for n in names))
+             and not any(fnmatch.fnmatch(c[0], n.lower()) for n in skip)]
     if not chars:
         raise SystemExit("no character matches %s" % (" ".join(names) or "(all)"))
     os.makedirs(out, exist_ok=True)
@@ -504,9 +513,9 @@ def build(names, out, iso_given):
             try:
                 raw = read_sectors(iso, t, start, gap)
                 if raw[:4] != b"ldm\0":
-                    raise ValueError("no model after cs%s.xtx" % base)
+                    raise ValueError("no model after %s.xtx" % cstxd["name"])
                 csize = struct.unpack_from("<I", raw, 8)[0]
-                cs = Ped(raw[:csize], "cs" + base)
+                cs = Ped(raw[:csize], cstxd["name"])
                 ig = Ped(read_sectors(iso, t, mdl["offset"], mdl["sectors"]), base)
                 if cs.gameplay or not ig.gameplay:
                     raise ValueError("unexpected model kinds")
@@ -555,16 +564,17 @@ def main():
     b.add_argument("names", nargs="*")
     b.add_argument("--out", default=os.path.join(tc.ROOT, "modloader", MOD_NAME))
     b.add_argument("--iso")
+    b.add_argument("--skip", action="append", default=[], help="names left out (--skip 'plr*': all but Vic)")
     c = sub_.add_parser("check")
     c.add_argument("file")
     a = ap.parse_args()
     if a.cmd == "list":
         for base, mdl, txd, cstxd, (start, gap) in characters(table_or_make()):
-            print("%-8s gameplay %s.mdl %3d + %s.xtx %3d sectors; cutscene cs%s.xtx %3d + model %3d sectors" % (
-                base, base, mdl["sectors"], base, txd["sectors"], base, cstxd["sectors"], gap))
+            print("%-8s gameplay %s.mdl %3d + %s.xtx %3d sectors; cutscene %s.xtx %3d + model %3d sectors" % (
+                base, base, mdl["sectors"], base, txd["sectors"], cstxd["name"], cstxd["sectors"], gap))
         return 0
     if a.cmd == "build":
-        return build(a.names, a.out, a.iso)
+        return build(a.names, a.out, a.iso, a.skip)
     return check(a.file)
 
 
