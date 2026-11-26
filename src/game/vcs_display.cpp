@@ -11,6 +11,12 @@
 // alone (right (cos h, -sin h) at cam+0xB60, left (-cos h, -sin h) at +0xB70, h = FOV / 2: the 4:3 view). Without a
 // fix buildings, peds and cars at the screen edges vanish in widescreen. The test is wrapped: before it runs, side
 // planes the game has rebuilt are widened to the Hor+ view (edge at tan h x r). VCS_WIDE_CULL=0: the game's planes.
+// The bottom / top planes (+0xB80 / +0xB90, (0, -sin v, -+cos v)) use v = 0.7 x h, which ends inside the picture at
+// any aspect (tan v 0.456 against the view window's 0.525 at FOV 70): objects in the top and bottom eighths of the
+// picture - a dish on a roof, a lamp's head - came and went as the camera tilted (the same planes as on the PS2: they
+// come from the FOV alone). They are moved to the view window's vertical edge as well (never narrowed); its ratio to
+// tan(FOV / 2) comes from the per-frame view window call (the resize-time 16:9 default only lowers it for a frame, and
+// a lower one keeps the game's planes). VCS_VERT_CULL=0: the game's vertical planes.
 //
 // The game's own widescreen preference (pause menu Display, option 14; *(*0x48F3D0 + 0x30)) is the PS2's anamorphic
 // mode for a TV that stretches the picture: a Vert- 16:9 aspect, the HUD, text, pause map and menu layouts squeezed to
@@ -44,20 +50,29 @@ namespace vcs
 
         constexpr uint32_t kRightPlane = 0xB60u; // CCamera: camera-space frustum normals, x right, y forward, z up
         constexpr uint32_t kLeftPlane = 0xB70u;
+        constexpr uint32_t kBottomPlane = 0xB80u; // (0, -sin v, -cos v): y at +4, z at +8
+        constexpr uint32_t kTopPlane = 0xB90u;    // (0, -sin v, +cos v)
 
         std::atomic<float> g_widening{1.0f};
         std::atomic<int> g_gamePreference{0}; // the value the game's preference is kept at; -1: left to the game
         std::atomic<bool> g_cutsceneBars{true};
         bool g_wideCull = true;
+        bool g_vertCull = true;
+        // The view window's vertical extent over tan(FOV / 2) (the planes' tan h): 1 / aspect, 3 / (4 r) in PS2 cutscene
+        // framing; set by each view window call (setViewWindow), 0 before the first.
+        std::atomic<float> g_vertRatio{0.0f};
 
-        // Per camera object, its side planes as the game built them and as they were widened (game thread only: the
-        // camera's FUN_0037b2c8 and every IsSphereVisible run there). In practice one camera (TheCamera, 0x6F44D0).
+        // Per camera object, its planes as the game built them and as they were moved (game thread only: the camera's
+        // FUN_0037b2c8 and every IsSphereVisible run there). In practice one camera (TheCamera, 0x6F44D0).
+        constexpr uint32_t kPlaneFloats[8] = {kRightPlane, kRightPlane + 4, kLeftPlane, kLeftPlane + 4,
+                                              kBottomPlane + 4, kBottomPlane + 8, kTopPlane + 4, kTopPlane + 8};
         struct SidePlanes
         {
             uint32_t camera = 0;
             float r = 1.0f;
-            float game[4] = {}; // right x, y, left x, y
-            float wide[4] = {};
+            float vert = 0.0f;  // the vertical ratio they were moved with (0: the game's)
+            float game[8] = {}; // right x, y, left x, y, bottom y, z, top y, z
+            float wide[8] = {};
         };
         SidePlanes g_planes[4];
         unsigned g_nextPlanes = 0;
@@ -96,6 +111,7 @@ namespace vcs
         PS2_GUEST_CC void setViewWindow(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
         {
             const float r = g_widening.load(std::memory_order_relaxed);
+            const float tanHalf = ctx->f[12];
             if (ps2Framing(rdram, r))
                 ctx->f[13] = (4.0f / 3.0f) * r; // the 4:3 width (f12 as it is), the display's height
             else if (r > 1.0001f || r < 0.9999f)
@@ -103,6 +119,8 @@ namespace vcs
                 ctx->f[12] *= r; // horizontal extent x r
                 ctx->f[13] *= r; // vertical extent (x / aspect) unchanged
             }
+            if (ctx->f[12] > 0.0f && ctx->f[13] > 0.0f && tanHalf > 0.0f)
+                g_vertRatio.store(ctx->f[12] / ctx->f[13] / tanHalf, std::memory_order_relaxed);
             FUN_001ab9e0_0x1ab9e0(rdram, ctx, runtime);
         }
 
@@ -124,43 +142,60 @@ namespace vcs
             wide[0] = len > 0.0f ? a / len : game[0];
             wide[1] = len > 0.0f ? b / len : game[1];
         }
+
+        // A vertical plane (y, z) = (-sin v, +-cos v) has its edge at |z| / y = tan v; moved to tan h x ratio (h from
+        // the game's right plane (cos h, -sin h)), never inside the game's edge: (-t, +-1), normalised.
+        void openPlane(const float *game, float tanH, float ratio, float *wide)
+        {
+            const float c = std::fabs(game[1]);
+            const float t = std::fmax(tanH * ratio, c > 0.0f ? -game[0] / c : 0.0f);
+            const float len = std::sqrt(t * t + 1.0f);
+            wide[0] = -t / len;
+            wide[1] = (game[1] < 0.0f ? -1.0f : 1.0f) / len;
+        }
     }
 
     void prepareSphereTest(uint8_t *rdram, uint32_t camera)
     {
-        if (!g_wideCull)
+        if (!g_wideCull && !g_vertCull)
             return;
         // (PS2 cutscene framing: the 4:3 width, the game's own side planes)
         const float widening = g_widening.load(std::memory_order_relaxed);
-        const float r = ps2Framing(rdram, widening) ? 1.0f : widening;
+        const float r = !g_wideCull || ps2Framing(rdram, widening) ? 1.0f : widening;
+        const float vert = g_vertCull ? g_vertRatio.load(std::memory_order_relaxed) : 0.0f;
         SidePlanes *found = nullptr;
         for (SidePlanes &e : g_planes)
             if (e.camera == camera)
                 found = &e;
-        if (r == 1.0f && (!found || found->r == 1.0f))
-            return; // 4:3: the game's planes
-        float now[4] = {loadFloat(rdram, camera + kRightPlane), loadFloat(rdram, camera + kRightPlane + 4),
-                        loadFloat(rdram, camera + kLeftPlane), loadFloat(rdram, camera + kLeftPlane + 4)};
+        if (r == 1.0f && vert == 0.0f && (!found || (found->r == 1.0f && found->vert == 0.0f)))
+            return; // the game's planes
+        float now[8];
+        for (int i = 0; i < 8; ++i)
+            now[i] = loadFloat(rdram, camera + kPlaneFloats[i]);
         const bool ours = found && std::memcmp(now, found->wide, sizeof(now)) == 0;
-        if (ours && found->r == r)
-            return; // widened already (the game rebuilds them in FUN_0037b2c8, once per camera update)
+        if (ours && found->r == r && found->vert == vert)
+            return; // moved already (the game rebuilds them in FUN_0037b2c8, once per camera update)
         SidePlanes &p = found ? *found : g_planes[g_nextPlanes++ % 4u];
         if (!ours)
-            std::memcpy(p.game, now, sizeof(now)); // rebuilt by the game: the 4:3 planes
-        // else: the ratio changed since they were widened (r = 1: the game's planes go back)
+            std::memcpy(p.game, now, sizeof(now)); // rebuilt by the game: its planes
+        // else: the ratios changed since they were moved (r = 1 / vert = 0: the game's planes go back)
         p.camera = camera;
         p.r = r;
-        if (r == 1.0f)
-            std::memcpy(p.wide, p.game, sizeof(p.wide));
-        else
+        p.vert = vert;
+        std::memcpy(p.wide, p.game, sizeof(p.wide));
+        if (r != 1.0f)
         {
             widenPlane(p.game, r, p.wide);
             widenPlane(p.game + 2, r, p.wide + 2);
         }
-        storeFloat(rdram, camera + kRightPlane, p.wide[0]);
-        storeFloat(rdram, camera + kRightPlane + 4, p.wide[1]);
-        storeFloat(rdram, camera + kLeftPlane, p.wide[2]);
-        storeFloat(rdram, camera + kLeftPlane + 4, p.wide[3]);
+        if (vert > 0.0f && p.game[0] > 0.0f)
+        {
+            const float tanH = -p.game[1] / p.game[0]; // the game's right plane: the 4:3 half width
+            openPlane(p.game + 4, tanH, vert, p.wide + 4);
+            openPlane(p.game + 6, tanH, vert, p.wide + 6);
+        }
+        for (int i = 0; i < 8; ++i)
+            storeFloat(rdram, camera + kPlaneFloats[i], p.wide[i]);
     }
 
     namespace
@@ -222,6 +257,8 @@ namespace vcs
         runtime.replaceFunction(0x001AB9E0u, &setViewWindow);
         if (const char *e = std::getenv("VCS_WIDE_CULL"); e && *e == '0')
             g_wideCull = false;
+        if (const char *e = std::getenv("VCS_VERT_CULL"); e && *e == '0')
+            g_vertCull = false;
         runtime.replaceFunction(0x003816F8u, &sphereVisible); // VCS_TRACE_VISIBLE replaces it again, calling prepareSphereTest
         if (const char *e = std::getenv("VCS_WIDESCREEN"); e && *e) // testing: the PS2's own (Vert-, anamorphic) mode
             g_gamePreference.store(std::strcmp(e, "game") == 0 ? -1 : *e == '0' ? 0 : 1, std::memory_order_relaxed);

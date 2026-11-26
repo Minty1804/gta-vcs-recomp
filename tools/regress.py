@@ -16,8 +16,8 @@ Steps (each a tool of its own, run in turn; the game window shows):
             the mission stuck on "Loading...")
   haze      tools/haze_check.py: mission 94's cutscene with original timing at 60 fps (a thug run over behind the
             fade, his audio line waited for for ever) and the haze across a 16:9 picture
-  widecull  at 16:9, 16:10, 21:9 and 32:9 the entity culling (CCamera's side planes) reaches the screen edges, not
-            the 4:3 ones
+  widecull  at 16:9, 16:10, 21:9 and 32:9 the entity culling (CCamera's planes) reaches the screen edges, not the
+            4:3 ones, and the top / bottom edges, not the game's narrower vertical planes
   widepref  the game's own (anamorphic) widescreen preference stays off; mission 50's cutscene has its black bars by
             default and none with Display > Cutscene black bars off
   scopemask the sniper scope and the camera at 16:9: their black mask reaches the screen edges (no world beside it),
@@ -158,7 +158,9 @@ def step_haze(out, quick):
 def step_widecull(out, quick):
     """Widescreen culling (game-internals.md 5): CCamera::IsSphereVisible's side planes (TheCamera 0x6F44D0 + 0xB60,
     right (cos h, -sin h)) must end where the widened view window does (tan(FOV / 2) x r at 0x742AC0), not at the
-    game's 4:3 edge. Fixed 2026-10-27 (src/game/vcs_display.cpp, prepareSphereTest)."""
+    game's 4:3 edge. Fixed 2026-10-27 (src/game/vcs_display.cpp, prepareSphereTest). The top / bottom planes (+0xB90 /
+    +0xB80, (0, -sin v, +-cos v)) must end at the view window's vertical edge (0x742AC0 x / 0x742AC4), not the game's
+    v = 0.7 h, inside the picture (2026-11-26)."""
     sys.path.insert(0, TOOLS)
     import rig  # noqa: E402
     res = {}
@@ -170,13 +172,18 @@ def step_widecull(out, quick):
             g.cmd("pause on")
             rx, ry = g.peekf(0x6F44D0 + 0xB60, 2)
             lx, ly = g.peekf(0x6F44D0 + 0xB70, 2)
-            window = g.peekf(0x742AC0, 1)[0]
+            window, wy = g.peekf(0x742AC0, 2)
+            by, bz = g.peekf(0x6F44D0 + 0xB84, 2)
+            ty, tz = g.peekf(0x6F44D0 + 0xB94, 2)
             g.cmd("pause off")
         finally:
             g.quit()
         right, left = -ry / rx, ly / lx
+        vwin, top, bottom = window / wy, -ty / tz, by / bz
         res[aspect] = {"view_window": round(window, 4), "right_edge": round(right, 4), "left_edge": round(left, 4),
-                       "pass": abs(right - window) < 1e-3 * window and abs(left - window) < 1e-3 * window}
+                       "view_window_y": round(vwin, 4), "top_edge": round(top, 4), "bottom_edge": round(bottom, 4),
+                       "pass": abs(right - window) < 1e-3 * window and abs(left - window) < 1e-3 * window and
+                       abs(top - vwin) < 1e-3 * vwin and abs(bottom - vwin) < 1e-3 * vwin}
     return res
 
 
@@ -398,8 +405,9 @@ def compare(base, new):
         notes.append("menushape: frames whose shape does not fit their picture at the pause menu %s" % json.dumps(ms))
     for aspect, r in new.get("widecull", {}).items():
         if isinstance(r, dict) and r.get("pass") is not True:
-            notes.append("widecull %s: entity culling edge %s, view window %s (models culled at the 4:3 edges again?)" % (
-                aspect, r.get("right_edge"), r.get("view_window")))
+            notes.append("widecull %s: entity culling edges %s / %s, view window %s / %s (models culled at the 4:3 or "
+                         "the game's vertical edges again?)" % (aspect, r.get("right_edge"), r.get("top_edge"),
+                                                               r.get("view_window"), r.get("view_window_y")))
     for s in new.get("scenes", {}).get("compare_failed", []):
         notes.append("scene %s differs from the baseline (see scenes_compare.log, diff images)" % s)
     return notes

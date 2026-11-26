@@ -92,6 +92,8 @@ PCSX2's region (`-r<w>x<h>-`) and mip-level (`-mip<n>`) file names (skipped and 
 - The detailed city: Downtown's construction building keeps its blue glass.
 - Anisotropic filtering and texture packs: no dark line down the middle of people's faces from a few metres away (the
   filter no longer reads the far edge of the head texture).
+- Objects near the top and bottom of the picture (a dish on a roof, a lamp's head) no longer come and go as the camera
+  tilts: the game's own vertical culling ended about an eighth inside the picture.
 - Traffic at a raised Car distance: the car spawner no longer builds cars only to throw them away (86 - 88 % of them
   in Little Havana at 200 %).
 

@@ -906,6 +906,13 @@ dropped on uploads (lazy render-target patching).
   Sector culling was already right. Checked: plane edge = view window x at 16:9 (0.9336) and 16:10 (0.8402),
   regress step "widecull" (fails with `VCS_WIDE_CULL=0`: 0.7002); spheres passing the test at 16:9 +8-25% over the
   three bench spots; 4:3 untouched (the wrapper returns before reading memory).
+- **Culling at the top and bottom of the picture** (2026-11-26, reported by the user: a dish on a roof at (-606, 1371)
+  shown or not by a couple of degrees of the camera's pitch). The same test's top / bottom planes use v = 0.7 x h, an
+  edge at tan 0.456 against the view window's 0.525 (FOV 70) at any aspect: the top and bottom ~13 % of the picture
+  culled spheres whose centre was there. Moved to the view window's vertical edge too (never narrowed;
+  `VCS_VERT_CULL=0` = the game's). Checked: the free camera at the user's spot, yaw 172, pitch -13.5 / -14 - the
+  dish's base only with the game's planes, base, arm and dish with the new ones; regress "widecull" now also checks
+  the top / bottom edges (0.5251 against the window's 0.5252 at 16:9, 16:10, 21:9, 32:9); hud_check passes.
 - **The game's own widescreen option retired; Cutscene black bars a setting** (2026-11-06, the user's report: with the
   pause menu's Display > Widescreen on, cutscenes had no bars). Every effect of that option read from the code
   (game-internals.md 5a): a Vert- 16:9 aspect, the HUD / text / pause map 3/4 wide and the `_WIDE` menu layouts - the
@@ -1339,6 +1346,7 @@ Python scripts still usable on their own. docs/LAUNCHER.md has the whole of it; 
 | `PS2X_HLE_REDRAW=0` | 0x02c0's re-draws / shine passes and the float-image prelit packets on the VU1 |
 | `VCS_HUD_RW=0` | no HUD context at the RenderWare level (the 16:9 weapon icon goes back to the screen edge; no native HUD, no anchoring) |
 | `VCS_HUD=0/2/1` | HUD in widescreen: keep 4:3 in the middle / screen edges / stretch (the menu's Display > HUD) |
+| `VCS_VERT_CULL=0` | entities culled by the game's top / bottom camera planes (v = 0.7 x h, about an eighth inside the picture: objects at the top and bottom edges come and go with the camera's pitch, as before 2026-11-26) |
 | `VCS_WIDE_CULL=0` | widescreen: entities culled by the game's 4:3 camera planes (models vanish at the screen edges, as before 2026-10-27) |
 | `VCS_CUTSCENE_FRAMING=1/0` | cutscenes in the PS2's framing (the 4:3 width, Vert-, no bars) / the Hor+ view, for one run (Display > Cutscene framing) |
 | `VCS_HUD_SKY=0` | the sky's full-screen fill may be taken for a fade by the HUD layer, as before 2026-11-19 (the dark sky in a cutscene's fade-in; tools/cutscene_check.py's control) |

@@ -624,6 +624,15 @@ the globals each frame:
   (Hor+ keeps the vertical view). No other reader of those planes (the writes are only in FUN_0037b2c8, the reads
   only in FUN_003816F8). Regression check: `tools/regress.py` step "widecull" (the planes' edge equals the view
   window's x at `0x742AC0`, which holds (tan(FOV / 2) x r, aspect x r, near 0.3, far 2000)).
+- **The vertical planes end inside the picture** (found 2026-11-26, the user's dish on a roof at (-606, 1371) that
+  came and went with a couple of degrees of pitch). v = 0.7 x h gives tan v = 0.456 at FOV 70, while the view window's
+  vertical extent is tan h / aspect = 0.525 (4:3, and Hor+ keeps it): a sphere whose centre is in the top or bottom
+  ~13 % of the picture is culled unless its radius reaches back in - on the PS2 as well, the planes being the FOV's
+  alone. The bottom / top normals are (0, -sin v, -+cos v) at +0xB80 / +0xB90 (y at +4, z at +8; FUN_003816F8 reads
+  only those two, `lwc1 0x8($v0)` / `0x4($v0)` at 0x3817C0 / 0x3817EC). Fix: the same wrapper moves them to the view
+  window's edge (`vcs_display.cpp`, the ratio of the per-frame view window call's y to tan(FOV / 2); never narrower
+  than the game's; `VCS_VERT_CULL=0`). Checked against the user's dish (free camera, pitch -13.5 / -14: its arm and dish
+  missing with the game's planes) and by regress "widecull" (the top / bottom edges equal the window's).
 - The sector test (6b) builds its clip planes in `FUN_002F7620` from that `0x742AC0` view window, so it was already
   wide: its side planes at 16:9 are (-+0.73095, -0.68243), the same 43.0 degrees as the widened entity planes.
 - `FUN_0039fc48` (3D point to screen for sprites: coronas, light glows) only rejects by near / far; it sizes the
