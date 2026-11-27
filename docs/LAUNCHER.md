@@ -336,7 +336,9 @@ repository root, ~1 MB stripped, 27 s from scratch on the dev laptop.
   2026-11-14). Update (`update.py apply`) downloads the new image, mounts it out of Finder's sight, copies the app out
   with `ditto` and puts it where the old one is (`VCS_APP_BUNDLE`, which the launcher passes to its tools); an app
   macOS runs from a quarantined download in place (App Translocation) is refused with "move it to Applications". The first start of an unsigned download needs
-  System Settings > Privacy & Security > Open Anyway. CI: the `macos` job (macos-15), which `publish` waits for.
+  System Settings > Privacy & Security > Open Anyway. CI: the `macos` job (macos-15) builds and self-tests it on pushes and pull requests only. This fork
+  never publishes the .dmg (the user's rule, 2026-11-26: DECISIONS.md); `release.py --platform macos` still makes one
+  locally.
 
 ## How it fits together
 

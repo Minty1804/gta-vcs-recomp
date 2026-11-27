@@ -1,5 +1,5 @@
 # The launcher (docs/LAUNCHER.md): built and self-tested on every change to it or the tools it runs, on Windows, on
-# Linux (Vulkan through lavapipe, with the validation layer: any message fails the job) and on macOS (Apple Silicon). On a tag v*, each platform
+# Linux (Vulkan through lavapipe, with the validation layer: any message fails the job) and on macOS (Apple Silicon). On a tag v*, Windows and Linux
 # makes its release file - the Windows zip (tools/release.py: source, launcher, embeddable Python, the libraries) and
 # the Linux AppImage (release.py --platform linux) - no game code, which only ever exists on a player's PC - and
 # `publish` puts both on one GitHub release, so the two always ship together.
@@ -17,7 +17,7 @@ on:
   workflow_dispatch:
     inputs:
       platforms:
-        description: "Platforms to build: all, or any of linux windows macos"
+        description: "Platforms to build: all (Windows and Linux), or any of linux windows macos"
         default: all
 
 permissions:
@@ -155,7 +155,9 @@ jobs:
   # glslang + SPIRV-Cross built from pinned sources (tools/shader_tools.py, cached). A virtual Mac may have no Metal
   # device: the self-test then reports the renderer as skipped (VCS_SELFTEST_NO_GPU) instead of failing.
   macos:
-    if: github.event_name != 'workflow_dispatch' || inputs.platforms == 'all' || contains(inputs.platforms, 'macos')
+    # a build check only: this fork never publishes a macOS build (the user's rule, 2026-11-26; DECISIONS.md), so no
+    # tag run and no manual run unless named
+    if: (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/')) || github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && contains(inputs.platforms, 'macos'))
     runs-on: macos-15
     env:
       VCS_SELFTEST_NO_GPU: "1"
@@ -198,26 +200,13 @@ jobs:
           path: ${{ runner.temp }}/shots
           if-no-files-found: ignore
 
-      # the disk image (the app next to an Applications link), self-tested as a player starts it. A manual run makes it
-      # too, as an artifact: only a tag publishes
-      - name: Release app
-        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
-        run: python3 tools/release.py --platform macos --ref ${{ github.ref_name }} --launcher VCSLauncher.app
 
-      - uses: actions/upload-artifact@v4
-        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
-        with:
-          name: release-macos
-          path: |
-            build/dist/*.dmg
-            build/dist/*.dmg.sha256
-
-  # every platform's files on one release, only when all were made: Windows, Linux and macOS ship together
+  # both platforms' files on one release, only when both were made: Windows and Linux ship together (no macOS)
   # The title as every release has it; the notes from docs/releases/<tag>.md when the tag has one (written for players),
   # else GitHub's generated list.
   publish:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [linux, windows, macos]
+    needs: [linux, windows]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

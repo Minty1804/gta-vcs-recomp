@@ -28,7 +28,8 @@ game looks or plays is a setting in the F2 menu, with the PS2's behaviour as one
 ## Getting it
 
 **The easy way**: download the newest [release](https://github.com/Minty1804/gta-vcs-recomp/releases/latest)
-(Windows: `VCS-Recomp-<version>-windows.zip`; Linux: the AppImage; macOS: the `.dmg`), extract it into a short local
+(Windows: `VCS-Recomp-<version>-windows.zip`; Linux: the AppImage; no macOS download: on a Mac, build from git
+below), extract it into a short local
 folder, start `VCSLauncher.exe` and follow **Folder -> Disc -> Build tools -> Build -> Play**. The launcher's *Updates*
 follows this fork's releases. Upstream's releases install upstream's version, without these changes.
 

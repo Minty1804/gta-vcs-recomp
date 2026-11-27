@@ -202,8 +202,10 @@ player's card; `rig.default_save`).
 
 This fork publishes releases as upstream does (the user's choice, 2026-11-26; until then it had none): `VERSION` is
 the fork's own number (0.4.0 the first, after upstream's 0.3.0), a `v<VERSION>` tag pushed to origin makes CI
-(`.github/workflows/launcher.yml`) build the Windows zip, the Linux AppImage and the macOS .dmg and publish them on one
-release with `docs/releases/v<VERSION>.md` as its notes. `RELEASE.json` names origin, so the launcher's Updates follow
+(`.github/workflows/launcher.yml`) build the Windows zip and the Linux AppImage and publish them on one release with
+`docs/releases/v<VERSION>.md` as its notes. **Never publish a macOS build** (the user's rule, 2026-11-26): no .dmg on
+a release, from CI or by hand; the Mac build stays a build from source (docs/MACOS.md), and CI's `macos` job only
+checks pushes and pull requests. `RELEASE.json` names origin, so the launcher's Updates follow
 this fork. Only the fork's own notes are in `docs/releases/` (upstream's were removed). Bump VERSION, write the notes,
 commit, then tag - only when the user asks for a release.
 

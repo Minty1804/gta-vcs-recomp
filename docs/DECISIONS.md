@@ -2252,3 +2252,10 @@ last when this fork's changes were taken) rather than willzmkv's 1.0.x, whose ta
 RELEASE.json takes the repository from origin, so a release built from this fork updates from this fork. Releases
 still hold no game code or data: the launcher builds the game on the player's PC from their disc.
 
+## 2026-11-26 - no macOS build on releases, ever (the user's rule)
+
+v0.4.0's Mac job waited ten hours for a GitHub runner and the release with it. The user chose to publish Windows and
+Linux only and never to publish a Mac build. CI's tag run builds and publishes the Windows zip and the Linux AppImage;
+the `macos` job runs on pushes and pull requests as a build check and makes no .dmg. A Mac player builds from git
+(docs/MACOS.md).
+
