@@ -1232,7 +1232,6 @@ namespace
                 const char *e = std::getenv("PS2X_HW_PACK_ANISO");
                 const uint32_t cap = e && *e ? static_cast<uint32_t>(std::strtoul(e, nullptr, 10)) : 4u;
                 const uint32_t aniso = std::min(m_anisotropy, cap);
-                m_packAniso = aniso > 1u ? aniso : 1u;
                 for (int u = 0; u < 2; ++u)
                     for (int v = 0; v < 2; ++v)
                         m_packSampler[u][v] = m_dev.createSampler({rhi::Filter::Linear, u ? rhi::Wrap::Repeat : rhi::Wrap::Clamp,
@@ -3297,10 +3296,14 @@ namespace
                     c.texSizeWrap[2] = 3;
                 if (c.texSizeWrap[3] == 0)
                     c.texSizeWrap[3] = 3;
-                // the sampler's anisotropy: the shader works out the level the hardware reads from it
-                c.filterDest[3] = static_cast<float>(hwSampler == m_anisoSampler[s.wms == 0u ? 1 : 0][s.wmt == 0u ? 1 : 0].get()
-                                                         ? std::max(m_anisotropy, 1u)
-                                                         : m_packAniso);
+                // [gta-recomp] and the sampler clamps on those axes (the shader passes the coordinate inside the copy):
+                // keeping the sample's centre inside by half a texel of the level (2026-11-26) was not enough -
+                // anisotropic filtering's taps along the long axis still repeated across the edge, the hair into the
+                // middle of a face as a dotted line (2026-11-27)
+                const bool pack = hwSampler == m_packSampler[s.wms == 0u ? 1 : 0][s.wmt == 0u ? 1 : 0].get();
+                auto &samplers = pack ? m_packSampler : m_anisoSampler;
+                if (samplers[0][0])
+                    hwSampler = samplers[0][0].get();
             }
             c.rtOrigin[0] = s.rtOx;
             c.rtOrigin[1] = s.rtOy;
@@ -3313,6 +3316,15 @@ namespace
             // [gta-recomp] gsHwSetGradientDither: an untextured Gouraud draw's colour through the shader's ordered dither
             // (not with the alpha test on: a mask's alpha compared against AREF stays exact)
             c.filterDest[2] = (s.iip && !s.tme && !s.ate && g_gradientDither.load(std::memory_order_relaxed)) ? 1.0f : 0.0f;
+            // [gta-recomp] perspective-textured draws read their texture coordinate at the covered samples' centroid
+            // (gs_draw.hlsl VSOut.stqC): with MSAA a pixel on a triangle's edge took it at the pixel centre, past the
+            // triangle, and read past the texture's edge where the two meet - a dotted dark line down the middle of
+            // faces (2026-11-27). The same point without MSAA. PS2X_HW_CENTROID=0: the pixel centre, as before
+            static const bool centroid = [] {
+                const char *e = std::getenv("PS2X_HW_CENTROID");
+                return !(e && e[0] == '0');
+            }();
+            c.filterDest[3] = (centroid && s.tme && !s.fst) ? 1.0f : 0.0f;
 
             GsBlend b;
             if (!gsBlend(s, b))
@@ -3412,7 +3424,6 @@ namespace
         uint32_t m_msaa = 1, m_anisotropy = 0;           // [gta-recomp] GSHwOptions
         std::unique_ptr<rhi::Sampler> m_anisoSampler[2][2]; // [gta-recomp] [U repeat][V repeat]
         std::unique_ptr<rhi::Sampler> m_gatherSampler[2][2]; // [gta-recomp] nearest, [U repeat][V repeat]: gs_draw.hlsl mode 3
-        uint32_t m_packAniso = 1; // [gta-recomp] the pack sampler's anisotropy (gs_draw.hlsl sampleHw: wrap 3's level)
         std::unique_ptr<rhi::Sampler> m_packSampler[2][2];   // [gta-recomp] texture packs' images, [U repeat][V repeat]
         std::unordered_set<uint64_t> m_packTextures;         // [gta-recomp] the texture keys holding a pack's image
         std::unordered_set<uint64_t> m_cutOutTextures;       // [gta-recomp] the ones with holes (hasHoles, gsHwSetCutOutSplit)

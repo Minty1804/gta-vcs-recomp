@@ -4299,6 +4299,16 @@ outside their repository; their notes are their game-internals.md 12g, the start
   hands in the gameplay idle pose, nothing in the logs. Not photographed: running, aiming, driving, a mission's
   cutscene with the mod on. The gameplay plr's vertices weight none to the finger bones (skin indices 11 / 16): the
   game's finger animation was never seen on Vic and now bends the cutscene fingers. Files: 117-143 KB instead of 62-93 KB, the dictionaries 3-5 times larger.
+- **Head textures are half a face, mirrored** (2026-11-27): cutscene and gameplay heads alike map both halves of the face
+  onto one half-face texture, the middle of the face on its right edge and hair on its left (cs_louise_head_shot,
+  128x128: u bytes 0-127 with the uv matrix's scale, the middle of the face at u byte 125, 0.98 of the width; its
+  columns there are skin). Anything that reads past that edge draws the hair down the middle of the face: the port's
+  anisotropic filtering did (its taps along the long axis), and with MSAA the pixels on the middle edge did (the
+  coordinate extrapolated past the triangle) - both fixed in the renderer (NATIVE_RENDERER.md, anisotropic filtering;
+  `PS2X_HW_AF_TILE`, `PS2X_HW_CENTROID`). Ruled out on the way, for whoever sees a line on a model again: no crack
+  (positions shared between meshes skin identically - their weights differ only in weight-0 slots), no T-junction
+  near the middle, no repeated or sliver triangles, not the depth rules of 6v / 6w (a run that looked clean without
+  them was the pose's luck), not the vertex lighting (the colour alone showed no line), not the pack's images.
 
 ## 13. Open questions / next research targets
 

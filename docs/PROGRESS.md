@@ -913,6 +913,15 @@ dropped on uploads (lazy render-target patching).
   `VCS_VERT_CULL=0` = the game's). Checked: the free camera at the user's spot, yaw 172, pitch -13.5 / -14 - the
   dish's base only with the game's planes, base, arm and dish with the new ones; regress "widecull" now also checks
   the top / bottom edges (0.5251 against the window's 0.5252 at 16:9, 16:10, 21:9, 32:9); hud_check passes.
+- **The dark line down the middle of faces, for good** (2026-11-27, the user's report after the 2026-11-26 fix: "still
+  a black line in the middle of the characters"). Two causes, both reading past the edge of a mirrored half-face head
+  texture (game-internals.md 12g): anisotropic filtering's taps along the long axis still repeated across the edge
+  (the 2026-11-26 fix kept only the sample's centre inside) - now the coordinate goes into the texture's copy and a
+  clamping sampler reads it; and with MSAA the pixels on the face's middle edge took the coordinate at the pixel
+  centre, extrapolated past the triangle - perspective-textured draws now read it at the centroid
+  (`PS2X_HW_CENTROID=0` = before). Checked with the user's settings (pack on, MSAA 2, anisotropic 16x): Louise from the
+  mod (loub) at 1.6 / 2.5 / 4 / 6 m and the game's own Louise and Phil - the line before, none after (`PS2X_HW_ANISO=0`
+  and `PS2X_HW_MSAA=1` each removed one of the two); the street behind the same but for the edges' antialiasing.
 - **The game's own widescreen option retired; Cutscene black bars a setting** (2026-11-06, the user's report: with the
   pause menu's Display > Widescreen on, cutscenes had no bars). Every effect of that option read from the code
   (game-internals.md 5a): a Vert- 16:9 aspect, the HUD / text / pause map 3/4 wide and the `_WIDE` menu layouts - the
@@ -1269,7 +1278,8 @@ Python scripts still usable on their own. docs/LAUNCHER.md has the whole of it; 
 | `VCS_TEXPACK_CACHE_MB=<n>` | decoded pack images kept for textures made again (1024) |
 | `PS2X_HW_PACK_ANISO=<n>` | anisotropic filtering of pack images at most n (4) |
 | `PS2X_HW_PACK_REGION=0` | pack images (the hardware sampler) clamp the whole image, as before 2026-11-23: REGION_CLAMP ignored, the HUD's text picks up lines of the neighbouring glyphs |
-| `PS2X_HW_AF_TILE=0` | the hardware sampler (anisotropic filtering, pack images) repeats across a texture's edge, as before 2026-11-26: a dark line down the middle of peds' faces from a few metres |
+| `PS2X_HW_AF_TILE=0` | the hardware sampler (anisotropic filtering, pack images) repeats across a texture's edge, as before 2026-11-26: a dark line down the middle of peds' faces from a few metres (since 2026-11-27 the coordinate is read inside the copy through a clamping sampler) |
+| `PS2X_HW_CENTROID=0` | perspective-textured draws take their texture coordinate at the pixel centre, as before 2026-11-27: with MSAA dark dots down the middle of peds' faces (the coordinate extrapolated past the triangle's edge, NATIVE_RENDERER.md) |
 | `PS2X_HW_HUD_TEXWATCH=1` | `[hud-tex]` lines: the shown HUD layer's textures (key, `p` pack image / `g` the game's / `!` none, `r` region-clamped), logged when they change |
 | `VCS_WALK_FIX=0` | Walk (hold) scales the stick as floats, as before 2026-11-16: a diagonal walk (W + D) stands still |
 | `VCS_FOOT_WALL=0` | on foot the mouse's turn does not ask the camera's update for the pull-in at walls: the camera stands at a wall's edge while its heading turns on, as before 2026-11-11 |

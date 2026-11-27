@@ -38,9 +38,9 @@ cbuffer Draw : register(b0)
     float4 fogColor;       // rgb 0..255
     float4 filterSize;     // a filtered read (atstArefAfailRt.w == 3, sampleRtFiltered): xy the footprint of one target
                            // PS2 pixel in source texels (the tent's half-width), zw the source's size in texels (clamp)
-    float4 filterDest;     // a filtered read: xy the target's own scale (target pixels per PS2 pixel); w: the hardware
-                           // sampler's anisotropy (sampleHw, wrap 3); z: 1 = the
-                           // interpolated colour rounded through an ordered dither (gsHwSetGradientDither)
+    float4 filterDest;     // a filtered read: xy the target's own scale (target pixels per PS2 pixel); z: 1 = the
+                           // interpolated colour rounded through an ordered dither (gsHwSetGradientDither); w: 1 = the
+                           // texture coordinate taken at the covered samples' centroid (VSOut.stqC, PS2X_HW_CENTROID)
 };
 
 struct VSIn
@@ -66,6 +66,12 @@ struct VSOut
     float4 pos : SV_Position;
 #endif
     noperspective float3 stq : TEXCOORD0;
+    // [gta-recomp] the same, interpolated at the centroid of the samples the triangle covers (MSAA; the pixel centre
+    // without it): ps_main takes it for perspective-textured draws (filterDest.w). At the pixel centre a pixel on a
+    // triangle's edge extrapolates the coordinate past the triangle: where a texture's edge lies on that edge - the middle of
+    // a ped's face, its head texture mirrored - it read past the texture's edge, the hair across, a dotted dark line down
+    // the face with MSAA (2026-11-27)
+    centroid noperspective float3 stqC : TEXCOORD4;
     noperspective float4 col : COLOR0;
     nointerpolation float4 colFlat : COLOR1; // the recorder gives flat primitives one colour on every vertex
     noperspective float fog : TEXCOORD1;
@@ -89,6 +95,7 @@ VSOut vs_main(VSIn i)
     o.depth = i.pos.z;
     o.zRule = float2(0.0, 0.0);
     o.stq = i.stq;
+    o.stqC = i.stq;
     o.col = i.col;
     o.colFlat = i.col;
     o.fog = i.fog;
@@ -130,6 +137,7 @@ void nativePosition(float4 S, float4 C, float3 st, inout VSOut o)
     o.zRule = float2(nat[31].w * nat[31].z, nat[30].w > 0.0 ? nat[31].z : 0.0);
     o.clip = float2(C.z + C.w, C.w - C.z); // the PS2 clip test's near / far planes
     o.stq = st * q;
+    o.stqC = o.stq;
 #if VCS_POINT_SIZE
     o.psize = 1.0;
 #endif
@@ -343,12 +351,12 @@ float4 sampleRtFiltered(float2 uv)
 // a texel of the level read (from the gradients, never below the hardware's) inside the region's rectangle, so neither the filter nor a mip level reaches the
 // next cell (a pack's 4x font sheet, minified at most resolutions, showed bits of the neighbouring glyphs). The
 // gradients are the unclamped ones: the level is the one the draw would pick anyway.
-// [gta-recomp] Wrap 3 (gs_hw.cpp, PS2X_HW_AF_TILE): a repeating texture kept the same way inside the copy of the texture the
-// pixel is in. The hardware's repeat filters across the texture's edge into the opposite one, over the whole footprint of
-// the mip level it reads: a ped's head texture is half a face with the middle of the face on its edge, mirrored, so far
-// away the hair on the other edge came into the middle of every face as a dark line (the user's report, 2026-11-26; the
-// GS's own bilinear reads half a texel across - not seen). A texture made to tile has matching edges: kept inside, it
-// reads what it would have read across.
+// [gta-recomp] Wrap 3 (gs_hw.cpp, PS2X_HW_AF_TILE): a repeating texture read inside the copy of the texture the pixel is
+// in, through a clamping sampler. The hardware's repeat filters across the texture's edge into the opposite one, over the
+// whole footprint it reads (the mip level, anisotropic filtering's taps along the long axis): a ped's head texture is half
+// a face with the middle of the face on its edge, mirrored, so the hair on the other edge came into the middle of every
+// face as a dark dotted line (the user's reports, 2026-11-26 / 27; the GS's own bilinear reads at most half a texel
+// across - not seen). A texture made to tile has matching edges: clamped, it reads what it would have read across.
 float4 sampleHw(float2 uv)
 {
     float2 n = uv / float2(texSizeWrap.xy);
@@ -364,24 +372,20 @@ float4 sampleHw(float2 uv)
         const float2 inset = 0.5 * exp2(lod) / float2(w, h);
         const float2 lo = float2(region.xz) / float2(texSizeWrap.xy) + inset;
         const float2 hi = float2(region.yw + 1) / float2(texSizeWrap.xy) - inset;
-        // wrap 3: the level the hardware reads - anisotropic filtering takes up to filterDest.w samples along the long
-        // axis, at the level of the short one (or of long / anisotropy). The long axis' level (above) would clamp a
-        // tiling wall seen at a grazing angle by many texels: it blurred
-        const float lx = length(dx * size), ly = length(dy * size);
-        const float rmax = max(max(lx, ly), 1e-6), rmin = max(min(lx, ly), 1e-6);
-        const float taps = clamp(rmax / rmin, 1.0, max(filterDest.w, 1.0));
-        const float tlod = clamp(ceil(log2(max(rmax / taps, 1e-6))), 0.0, float(levels) - 1.0);
-        const float2 tinset = min(0.5 * exp2(tlod) / size, 0.5);
+        // wrap 3: the coordinate inside its copy of the texture, through a clamping sampler (gs_hw.cpp): no tap of the
+        // filter - anisotropic ones along the long axis included - and no mip level reads past the edge. Keeping only the
+        // sample's centre half a texel of the level inside (2026-11-26) left the anisotropic taps repeating across: the
+        // dotted line down faces stayed (2026-11-27). The gradients are the unwrapped coordinate's: the same level and
+        // footprint as before.
         const float2 tile = floor(n);
-        const float2 tlo = tile + tinset, thi = tile + 1.0 - tinset;
         if (texSizeWrap.z == 2)
             n.x = lo.x <= hi.x ? clamp(n.x, lo.x, hi.x) : 0.5 * (lo.x + hi.x);
         else if (texSizeWrap.z == 3)
-            n.x = clamp(n.x, tlo.x, thi.x);
+            n.x -= tile.x;
         if (texSizeWrap.w == 2)
             n.y = lo.y <= hi.y ? clamp(n.y, lo.y, hi.y) : 0.5 * (lo.y + hi.y);
         else if (texSizeWrap.w == 3)
-            n.y = clamp(n.y, tlo.y, thi.y);
+            n.y -= tile.y;
         return tex.SampleGrad(hwSampler, n, dx, dy) * 255.0;
     }
     return tex.Sample(hwSampler, n) * 255.0;
@@ -489,7 +493,8 @@ PSOut ps_main(VSOut i)
 #if SAMPLE_MODE != 1
     if (tmeTfxTccFst.x == 1)
     {
-        const float2 uv = (tmeTfxTccFst.w == 1) ? i.stq.xy : (i.stq.xy / i.stq.z) * float2(texSizeWrap.xy);
+        const float3 stq = filterDest.w > 0.5 ? i.stqC : i.stq;
+        const float2 uv = (tmeTfxTccFst.w == 1) ? stq.xy : (stq.xy / stq.z) * float2(texSizeWrap.xy);
         const float4 t = sampleTex(uv);
         const int tfx = tmeTfxTccFst.y;
         const bool tcc = tmeTfxTccFst.z == 1;
